@@ -5,8 +5,8 @@
 > two disagree, **this file wins**. It supersedes `idea.md` §14 (roadmap) and adds
 > decisions D18+.
 
-**Last updated:** 2026-10-10 · **Current position:** Phase 1, steps 1–2 done; next is
-step 3 (parser).
+**Last updated:** 2026-10-10 · **Current position:** Phase 1, steps 1–2 done; step 3
+(parser) built and awaiting review; next is step 4 (indexing CLI).
 
 ---
 
@@ -205,7 +205,7 @@ latency for uncertain gain), fine-tuning.
 | ORM / DB access | SQLAlchemy 2 async + asyncpg | Typed models, raw-SQL escape hatch for retrieval queries | SQLModel; raw asyncpg |
 | Migrations | Alembic | Standard with SQLAlchemy | — |
 | Jobs | Celery + Redis | Retries, chains/groups, routing to separate queues | RQ, Arq, Dramatiq |
-| Parsing | py-tree-sitter + tree-sitter-language-pack | Fast, error-tolerant, many grammars, concrete syntax tree | Python `ast` (Python only, fails on invalid code) |
+| Parsing | py-tree-sitter 0.25.x + official grammar wheels (`tree-sitter-python`, `-javascript`, `-typescript`) | Fast, error-tolerant, concrete syntax tree; grammars hash-pinned in `uv.lock` (D31, D32) | Python `ast` (Python only, fails on invalid code); tree-sitter-language-pack (downloads grammars at runtime) |
 | Graph analysis | NetworkX | PageRank in one call; graph sizes are small | igraph (faster, less readable) |
 | Database | PostgreSQL 16 + pgvector 0.8 (HNSW) + tsvector (GIN) | One store for everything (D1) | Qdrant + Neo4j |
 | LLM runtime | **Ollama** (native, GPU) | Free, local, structured outputs, already installed | llama.cpp server, vLLM (Linux only) |
@@ -665,7 +665,7 @@ what was built, how to run it, and what to verify. Estimates are rough
 |---|---|---|---|
 | 1 ✅ | Monorepo, compose, uv workspace, ruff/pytest, CI, empty Next.js | `docker compose up` healthy; tests green | — |
 | 2 ✅ | Models, initial migration, `/health` (DB + Redis), migrate service | `alembic check` clean; 200/503 behaviour verified | — |
-| 3 | Parser: walker + skip rules → Python extractor → JS/TS extractor → resolver | Plain dataclasses out; resolution order per §5.4 | 4–6 d |
+| 3 🔍 | Parser: walker + skip rules → Python extractor → JS/TS extractor → resolver | Plain dataclasses out; resolution order per §5.4 | built; in review |
 | 4 | Migration (§4.2 row 1), `core.index` CLI: incremental persist, re-link, `index_runs`, summary | 2nd run on an unchanged repo = zero writes; summary includes % resolved (all / in-repo) | 3–4 d |
 | 5 | Fixture repos (Python, JS, TS) with `expected.json`; exact-match tests for nodes and edges, incl. unresolved; idempotency test | Every node and edge asserted; CI green | 2–3 d |
 
@@ -998,6 +998,12 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D28 | Demo = hosted read-only data + local generation | Hosted GPU; hosted LLM API | Stays free; the optional `openai_compatible` provider remains an escape hatch |
 | D29 | Each phase gets its own migration; applied migrations are never edited | Squash/edit the initial migration | Practises real migration discipline; history is part of the story |
 | D30 | Reviews from CLI/evals are stored as `reviews` rows (`source` column) | Separate eval tables | One pipeline, one trace format, and the dashboard can show eval runs |
+| D31 | Official per-language grammar wheels instead of `tree-sitter-language-pack` | language-pack 1.x | language-pack 1.x downloads native grammar libraries at runtime (network needed, not pinned by `uv.lock`); the wheels are the same grammars, bundled and hash-pinned |
+| D32 | Pin `tree-sitter<0.26` | Latest | py-tree-sitter 0.26.0 segfaults reading `Node.start_point` on larger files (reproduced 2026-10-10); 0.25.2 is fine. Re-test before lifting |
+| D33 | Qualified names: Python dotted (`pkg.mod.Class.method`); JS/TS `path/without/ext:Symbol.member`; nested defs `outer.<locals>.inner` | One scheme for both | JS module paths contain `/` and `.`, so `:` separates module from member unambiguously; `<locals>` mirrors Python's `__qualname__` |
+| D34 | Calls to builtins / JS globals (`len`, `print`, `console.log`) produce **no edge** unless shadowed by a definition or import | Keep them as unresolved edges | They can never resolve, carry no review signal, and would make up a large share of all edges |
+| D35 | One edge per (source, kind, target): call sites are deduplicated | One edge per call site | The graph models relationships; call-site counts aren't needed for expansion or ranking |
+| D36 | Re-parse the whole repo on every index run (writes stay incremental) | Parse only changed files | Resolution of an unchanged file can depend on others; parsing is cheap (SQLAlchemy, 258 files: 3.7 s) |
 
 ---
 

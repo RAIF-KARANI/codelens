@@ -10,6 +10,15 @@ dependencies = [
     "asyncpg>=0.30",
     "pgvector>=0.3.6",
     "alembic>=1.14",
+    # <0.26: py-tree-sitter 0.26.0 segfaults reading Node.start_point on larger
+    # files (reproduced on Windows, 2026-10-10). Re-test before lifting the pin.
+    "tree-sitter>=0.25.2,<0.26",
+    # Official per-language grammar wheels: hash-pinned in uv.lock, no runtime
+    # downloads (unlike tree-sitter-language-pack 1.x).
+    "tree-sitter-python>=0.25.0",
+    "tree-sitter-javascript>=0.25.0",
+    "tree-sitter-typescript>=0.23.2",
+    "pathspec>=1.1.1",
 ]
 
 [build-system]
