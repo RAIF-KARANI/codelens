@@ -7,6 +7,12 @@ StrEnum members compare equal to their string values, which keeps JSON and DB I/
 from enum import StrEnum
 
 
+class Language(StrEnum):
+    PYTHON = "python"
+    JAVASCRIPT = "javascript"
+    TYPESCRIPT = "typescript"
+
+
 class RepoStatus(StrEnum):
     PENDING = "pending"
     INDEXING = "indexing"
