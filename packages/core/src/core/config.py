@@ -41,6 +41,9 @@ class Settings(BaseSettings):
 
     embed_model: str = "qwen3-embedding:0.6b"
     embed_batch_size: int = Field(default=32, gt=0)
+    # Cap on chunk text per node (planning.md §5.6); longer code is truncated
+    # at a line boundary and marked.
+    embed_max_tokens: int = Field(default=1024, ge=64)
     # Qwen3-Embedding is instruction-aware: queries get a task instruction,
     # documents are embedded as-is (asymmetric retrieval, planning.md D23).
     embed_query_instruction: str = (

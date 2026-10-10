@@ -63,6 +63,11 @@ class CodeNode(IdMixin, Base):
     centrality: Mapped[float | None]
     # NULL until the embedding job runs (Phase 2).
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBED_DIM))
+    # Provenance of `embedding`: which model made it, and the sha256 of the
+    # exact text embedded. The embedding job re-embeds when either no longer
+    # matches (new model, or the chunk text changed, e.g. its header format).
+    embedding_model: Mapped[str | None]
+    embedded_hash: Mapped[str | None]
     # Written by the indexer, not a generated column: identifiers like
     # getUserById are split into sub-words in Python first, then stored with
     # to_tsvector('simple', ...), with no English stemming.

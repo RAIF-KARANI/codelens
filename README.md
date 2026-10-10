@@ -122,6 +122,20 @@ so unchanged nodes keep their IDs and embeddings. Every run is recorded in `inde
 
 Inside the stack: `docker compose exec worker python -m core.index /app/packages/core/src`.
 
+## Embedding a repository
+
+After indexing, embed the code nodes (needs Ollama; see above):
+
+```bash
+uv run python -m core.embed local/my-app            # the name core.index printed
+uv run python -m core.embed local/my-app --limit 200 # try a few first
+```
+
+Only stale nodes are embedded: new ones, ones embedded by a different model, or ones
+whose chunk text changed. A re-run on an up-to-date repo writes nothing. Each node's
+chunk is its code plus a short header (path, symbol, enclosing class); classes and
+modules are embedded as skeletons (members replaced by their signatures).
+
 ## Parser (inspect the code graph)
 
 `core.parser` turns a repo into nodes (modules, classes, functions, methods) and edges

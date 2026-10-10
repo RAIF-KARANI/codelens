@@ -26,5 +26,10 @@ class AntiPattern(IdMixin, TimestampMixin, Base):
     example_code: Mapped[str | None]
     severity: Mapped[Severity] = mapped_column(str_enum(Severity, "anti_pattern_severity"))
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBED_DIM))
+    # Provenance of `embedding`: which model made it, and the sha256 of the
+    # exact text embedded. The embedding job re-embeds when either no longer
+    # matches (new model, or the chunk text changed, e.g. its header format).
+    embedding_model: Mapped[str | None]
+    embedded_hash: Mapped[str | None]
     # How often reviews have matched this pattern; a ranking signal later.
     occurrences: Mapped[int] = mapped_column(server_default="0")

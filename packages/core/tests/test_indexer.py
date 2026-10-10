@@ -202,7 +202,7 @@ def test_editing_one_function_rewrites_only_what_changed(
         },
     )
     index(migrated_database_url, tmp_path)
-    # Pretend the embedding job ran, so we can see which embeddings survive.
+    # Pretend the embedding job ran.
     dim = get_settings().embed_dim
     query(
         migrated_database_url,
@@ -242,11 +242,10 @@ def test_editing_one_function_rewrites_only_what_changed(
     assert {name: row.id for name, row in rows.items()} == ids_before  # identities are stable
     writes = report.writes
     assert (writes.nodes_updated, writes.nodes_moved, writes.nodes_kept) == (2, 1, 1)
-    assert rows["m.f1"].has_embedding  # untouched
-    assert not rows["m.f2"].has_embedding  # code changed: embedding cleared for recompute
-    assert not rows["m"].has_embedding  # the module's code is the whole file, so it changed too
-    assert rows["m.f3"].has_embedding  # only moved down a line: embedding still valid
-    assert rows["m.f3"].start_line == 8
+    # The indexer never clears embeddings: whether a vector is stale is decided
+    # by the embedding job from the chunk-text hash (see test_embedding.py).
+    assert all(row.has_embedding for row in rows.values())
+    assert rows["m.f3"].start_line == 8  # moved down a line
 
 
 def test_deleted_target_keeps_edge_and_relinks_when_it_returns(

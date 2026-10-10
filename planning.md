@@ -5,8 +5,8 @@
 > two disagree, **this file wins**. It supersedes `idea.md` §14 (roadmap) and adds
 > decisions D18+.
 
-**Last updated:** 2026-10-10 · **Current position:** Phase 1 complete (PRs #1–#3). Phase 2 step 1
-(provider interfaces) built and awaiting review; next is step 2 (chunk text + embedding job).
+**Last updated:** 2026-10-10 · **Current position:** Phase 1 complete (PRs #1–#3); Phase 2 step 1
+done (PR #4); step 2 (chunk text + embedding job) built and awaiting review; next is step 3 (vector search).
 
 ---
 
@@ -249,7 +249,7 @@ repos ─┬─< files ─< code_nodes >─< code_edges (src_node_id, dst_node_i
 | 1 (step 4) ✅ | `files` | + `is_test BOOLEAN NOT NULL DEFAULT false`, + `size_bytes INT` | Down-weight tests in retrieval; skip-rule auditing |
 | 1 (step 4) ✅ | `repos` | + `source` (`github`/`local`), + `local_path TEXT?` | Local CLI repos |
 | 1 (step 4) ✅ | **`index_runs`** | `id, repo_id, commit_sha?, started_at, finished_at?, status, stats JSONB` (files scanned/changed, nodes/edges by kind, % resolved, durations) | Index history; the CLI summary is persisted too |
-| 2 | `code_nodes`, `anti_patterns` | + `embedding_model TEXT?`, + `embedded_hash TEXT?` | Re-embed exactly when the model or the chunk text changes |
+| 2 ✅ | `code_nodes`, `anti_patterns` | + `embedding_model TEXT?`, + `embedded_hash TEXT?` (migration `a3a340858867`) | Re-embed exactly when the model or the chunk text changes. The review/trace rows below land in Phase 2 step 5, where they're first used |
 | 2 | `reviews` | + `base_sha`, + `source` (`github`/`cli`/`eval`), + `pipeline_config JSONB`, `pr_number` nullable | CLI and eval runs are reviews too; exact config is recorded for reproducibility |
 | 2 | `findings` | + `confidence REAL`, + `fingerprint TEXT`, + `evidence_refs JSONB` (node IDs + anti-pattern IDs), + `status` (`posted`/`dropped`), + `drop_reason?` | Validation output, dedupe across pushes, a trace of dropped findings |
 | 2 | **`review_context_items`** | `review_id, chunk_index, item_type (node/anti_pattern), item_id, stage_scores JSONB (vector_rank, fts_rank, rrf, graph_depth, rerank, final), included BOOL, token_cost INT` | The "why was this context used?" trace; eval analysis |
@@ -377,12 +377,17 @@ graph expansion depends on.
   `Instruct: Given a code change, retrieve code that it depends on or that depends on it\nQuery: <query text>`.
   The `Embedder` interface has `kind="query" | "document"` for exactly this.
 - **What gets embedded:** nodes where `embedding IS NULL`, or `embedding_model` ≠
-  current model, or `embedded_hash` ≠ the hash of the current chunk text. Re-running
-  is therefore a no-op.
+  current model, or `embedded_hash` ≠ the sha256 of the current chunk text. Re-running
+  is therefore a no-op. The chunk-text hash is the *only* staleness test (D47): the
+  indexer never clears embeddings.
 - **Batching:** 32 chunks per request; one in-flight request (single GPU). Retries with
   exponential backoff on timeouts or 5xx.
-- **Throughput:** to be measured in Phase 2 and recorded here. Expect minutes, not
-  hours, for a 10k-node repo on the 4060.
+- **Throughput (measured 2026-10-10, RTX 4060, defaults, model 100% on GPU):**
+  **29 nodes/s ≈ 4.8k tokens/s** (SQLAlchemy, 3,000 nodes in 105 s, ~166 tokens per
+  chunk), so ~8 min for a 14k-node repo. 2.2% of chunks hit the 1,024-token cap.
+  That's slow for a 0.6B model; Ollama seems to process a batch's inputs
+  sequentially. Tuning (concurrent requests, `OLLAMA_NUM_PARALLEL`, batch size) is
+  part of Phase 2 step 6.
 - **Celery:** `embed_repo` fans out into `embed_batch(node_ids)` tasks of 256 nodes.
   Each is idempotent, so a crash resumes where it stopped.
 
@@ -672,8 +677,8 @@ what was built, how to run it, and what to verify. Estimates are rough
 ### Phase 2: Naive baseline, end to end (B0)
 | Step | Deliverable | Exit criteria |
 |---|---|---|
-| 1 🔍 | Provider interfaces + `OllamaEmbedder`/`OllamaLLM` + fakes; Ollama health check | Contract tests pass against fakes; a manual smoke test against real Ollama |
-| 2 | Chunk text builder (§5.6), token estimate, migration (§4.2 phase 2 rows), `core.embed` | All nodes embedded; re-run is a no-op; throughput recorded in §5.7 |
+| 1 ✅ | Provider interfaces + `OllamaEmbedder`/`OllamaLLM` + fakes; Ollama health check | Contract tests pass against fakes; a manual smoke test against real Ollama (PR #4) |
+| 2 🔍 | Chunk text builder (§5.6), token estimate, migration (embedding provenance), `core.embed` | All nodes embedded; re-run is a no-op; throughput recorded in §5.7 |
 | 3 | Vector search + `core.search --mode vector` | Sensible top-k on the fixture repo (spot check) |
 | 4 | Diff parser, head overlay, seed mapping | Unit tests on tricky diffs (renames, deletions, new files) |
 | 5 | Prompts, structured output, validation, packing (vector only), trace writer, `core.review` CLI | Reviewing a local branch prints validated findings; trace rows written |
@@ -1014,6 +1019,10 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D44 | Structured output: Ollama `format` = the Pydantic model's JSON Schema, then Pydantic validation; **one** repair turn (the model sees its output + the validation errors); truncated output (`done_reason: length`) fails immediately | Trust the grammar; unlimited retries | Ollama's grammar doesn't enforce every schema keyword, so validation is still needed; a repair turn fixes most slips; repairs can't fix a token limit, so retrying it only wastes GPU time |
 | D45 | HTTP retries only for connection errors and 5xx (backoff 0.5 s, 1 s); never for timeouts or 4xx | Retry everything | A timed-out generation would just time out again (doubling latency); a 4xx (e.g. model not pulled) never succeeds on retry |
 | D46 | Providers are built by `open_providers(settings)`, an async context manager | A plain factory | The Ollama providers own an httpx client that must be closed; the context manager makes leaking it impossible |
+| D47 | The sha256 of the chunk text is the single test of embedding staleness; the indexer no longer clears embeddings on code change | Indexer clears `embedding` when a node's code changes | Many code edits leave a chunk unchanged (a module's skeleton shows only signatures), so clearing forced pointless re-embeds. A header change, such as a class signature edit, changes its methods' chunks without touching their code; the hash catches that and a clear-on-change rule wouldn't. Trade-off: until `core.embed` runs, a changed node keeps its old vector |
+| D48 | Class and module chunks are *skeletons*: direct children replaced by `signature ...` | Embed the full class/module source | Method bodies are embedded once, in their own chunks, and a class vector represents its shape (attributes + API), not a blur of all its methods |
+| D49 | Node `code` is dedented when the node starts its own line (nested methods read like top-level code) | Raw slice from the node's first byte | A raw slice left the first line at column 0 and the body at its original indent (e.g. 8 spaces), which is wasted tokens in chunks and garbled code in review prompts |
+| D50 | A `CHUNK_FORMAT` version tag inside every chunk header | Separate config | Changing the chunk format changes every hash, so `core.embed` re-embeds everything automatically, with no migration and no manual flag |
 
 ---
 
