@@ -3,7 +3,7 @@
 import os
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pathspec
 
@@ -110,17 +110,44 @@ def _load_gitignore(root: Path) -> pathspec.PathSpec:
     return pathspec.GitIgnoreSpec.from_lines(lines)
 
 
+def source_from_content(path: str, content: bytes) -> SourceFile | SkippedFile | None:
+    """Apply the walker's rules to a file that didn't come from a disk walk,
+    e.g. a file read with `git show <rev>:<path>` when reviewing a diff.
+
+    Returns None when the path isn't source code at all (README.md, a.yaml).
+    """
+    detected = detect(path)
+    if detected is None:
+        return None
+    directories = PurePosixPath(path).parts[:-1]
+    if any(d in ALWAYS_SKIP_DIRS or d.endswith(".egg-info") for d in directories):
+        return SkippedFile(path, "vendored_or_generated")
+    reason = _name_skip_reason(path)
+    if reason is None and len(content) > MAX_FILE_BYTES:
+        reason = "too_large"
+    reason = reason or _content_skip_reason(path, content)
+    if reason is not None:
+        return SkippedFile(path, reason)
+    language, grammar = detected
+    return SourceFile(path, language, grammar, content, is_test_path(path))
+
+
 def _skip_reason(abs_path: Path, rel_path: str) -> str | None:
     # A symlink in an untrusted repo could point anywhere on the worker's disk
     # (e.g. ~/.ssh), so we never follow them.
     if abs_path.is_symlink():
         return "symlink"
+    reason = _name_skip_reason(rel_path)
+    if reason is None and abs_path.stat().st_size > MAX_FILE_BYTES:
+        reason = "too_large"
+    return reason
+
+
+def _name_skip_reason(rel_path: str) -> str | None:
     if rel_path.endswith(".d.ts"):
         return "type_declarations"  # types only; no runtime code to review
-    if ".min." in abs_path.name:
+    if ".min." in PurePosixPath(rel_path).name:
         return "minified"
-    if abs_path.stat().st_size > MAX_FILE_BYTES:
-        return "too_large"
     return None
 
 

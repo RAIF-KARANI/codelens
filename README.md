@@ -149,6 +149,18 @@ uv run python -m core.search local/my-app "compute tax" --explain   # show the P
 The query is embedded with the retrieval instruction and matched by cosine distance
 (pgvector), scoped to that one repo.
 
+## What a branch changed
+
+See which functions and classes a branch touched, the starting points of a review:
+
+```bash
+uv run python -m core.changes path/to/repo --base main --head my-feature
+```
+
+It diffs head against its merge-base with base (like a GitHub PR), reading git objects
+only (no checkout, no database), and attributes each changed line to the innermost
+function/class/module: `+` added, `~` modified, `-` deleted.
+
 ## Parser (inspect the code graph)
 
 `core.parser` turns a repo into nodes (modules, classes, functions, methods) and edges
