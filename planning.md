@@ -5,8 +5,8 @@
 > two disagree, **this file wins**. It supersedes `idea.md` §14 (roadmap) and adds
 > decisions D18+.
 
-**Last updated:** 2026-10-10 · **Current position:** Phase 1, steps 1–4 done; step 5
-(fixture repos + golden tests) built and awaiting review. That completes Phase 1; next is Phase 2 (naive baseline).
+**Last updated:** 2026-10-10 · **Current position:** Phase 1 complete (PRs #1–#3). Phase 2 step 1
+(provider interfaces) built and awaiting review; next is step 2 (chunk text + embedding job).
 
 ---
 
@@ -667,12 +667,12 @@ what was built, how to run it, and what to verify. Estimates are rough
 | 2 ✅ | Models, initial migration, `/health` (DB + Redis), migrate service | `alembic check` clean; 200/503 behaviour verified | — |
 | 3 ✅ | Parser: walker + skip rules → Python extractor → JS/TS extractor → resolver | Plain dataclasses out; resolution order per §5.4 | done (PR #1) |
 | 4 ✅ | Migration (§4.2 row 1), `core.index` CLI: incremental persist, re-link, `index_runs`, summary | 2nd run on an unchanged repo = zero writes; summary includes % resolved (all / in-repo) | done (PR #2) |
-| 5 🔍 | Fixture repos (`py_shop`, `ts_shop`) with golden `.graph` files; exact-match tests for parser output and the DB round trip, incl. unresolved/external edges and skips; re-index leaves the stored graph identical | Every node and edge asserted; CI green | built; in review |
+| 5 ✅ | Fixture repos (`py_shop`, `ts_shop`) with golden `.graph` files; exact-match tests for parser output and the DB round trip, incl. unresolved/external edges and skips; re-index leaves the stored graph identical | Every node and edge asserted; CI green | done (PR #3) |
 
 ### Phase 2: Naive baseline, end to end (B0)
 | Step | Deliverable | Exit criteria |
 |---|---|---|
-| 1 | Provider interfaces + `OllamaEmbedder`/`OllamaLLM` + fakes; Ollama health check | Contract tests pass against fakes; a manual smoke test against real Ollama |
+| 1 🔍 | Provider interfaces + `OllamaEmbedder`/`OllamaLLM` + fakes; Ollama health check | Contract tests pass against fakes; a manual smoke test against real Ollama |
 | 2 | Chunk text builder (§5.6), token estimate, migration (§4.2 phase 2 rows), `core.embed` | All nodes embedded; re-run is a no-op; throughput recorded in §5.7 |
 | 3 | Vector search + `core.search --mode vector` | Sensible top-k on the fixture repo (spot check) |
 | 4 | Diff parser, head overlay, seed mapping | Unit tests on tricky diffs (renames, deletions, new files) |
@@ -1011,6 +1011,9 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D41 | Advisory lock (`pg_try_advisory_lock(hashtext('index:' || name))`) held for the run | Redis lock; no lock | Two concurrent indexers on one repo would interleave diffs; Postgres already holds the data, so the lock lives there too. Phase 5 workers reuse it |
 | D42 | Files skipped for *transient* reasons (`parse_error`, `unreadable`) keep their previous rows; files that became unindexable (too large, minified…) are removed | Treat every skip as a deletion | A one-off read failure must not wipe a file's graph |
 | D43 | Golden `.graph` files (one fact per line, sorted) for fixture repos; regenerate only via `UPDATE_GOLDEN=1` and review the diff | Hand-written assertions per edge; JSON snapshots | Every node/edge is asserted, and any behaviour change is a readable line diff in the PR. It already caught a real bug: edge dedupe keyed on `target_name` dropped the `contains` edge to a @property setter (same name, different ordinal) |
+| D44 | Structured output: Ollama `format` = the Pydantic model's JSON Schema, then Pydantic validation; **one** repair turn (the model sees its output + the validation errors); truncated output (`done_reason: length`) fails immediately | Trust the grammar; unlimited retries | Ollama's grammar doesn't enforce every schema keyword, so validation is still needed; a repair turn fixes most slips; repairs can't fix a token limit, so retrying it only wastes GPU time |
+| D45 | HTTP retries only for connection errors and 5xx (backoff 0.5 s, 1 s); never for timeouts or 4xx | Retry everything | A timed-out generation would just time out again (doubling latency); a 4xx (e.g. model not pulled) never succeeds on retry |
+| D46 | Providers are built by `open_providers(settings)`, an async context manager | A plain factory | The Ollama providers own an httpx client that must be closed; the context manager makes leaking it impossible |
 
 ---
 
