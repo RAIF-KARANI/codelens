@@ -5,8 +5,8 @@
 > two disagree, **this file wins**. It supersedes `idea.md` §14 (roadmap) and adds
 > decisions D18+.
 
-**Last updated:** 2026-10-10 · **Current position:** Phase 1, steps 1–2 done; step 3
-(parser) built and awaiting review; next is step 4 (indexing CLI).
+**Last updated:** 2026-10-10 · **Current position:** Phase 1, steps 1–3 done; step 4
+(indexing CLI) built and awaiting review; next is step 5 (fixture repos + exact tests).
 
 ---
 
@@ -245,10 +245,10 @@ repos ─┬─< files ─< code_nodes >─< code_edges (src_node_id, dst_node_i
 
 | Phase | Table | Change | Why |
 |---|---|---|---|
-| 1 (step 4) | `code_nodes` | + `ordinal SMALLINT NOT NULL DEFAULT 0` | Identity key `(file_id, qualified_name, kind, ordinal)` for node-level diffing when names repeat in a file |
-| 1 (step 4) | `files` | + `is_test BOOLEAN NOT NULL DEFAULT false`, + `size_bytes INT` | Down-weight tests in retrieval; skip-rule auditing |
-| 1 (step 4) | `repos` | + `source` (`github`/`local`), + `local_path TEXT?` | Local CLI repos |
-| 1 (step 4) | **`index_runs`** | `id, repo_id, commit_sha?, started_at, finished_at?, status, stats JSONB` (files scanned/changed, nodes/edges by kind, % resolved, durations) | Index history; the CLI summary is persisted too |
+| 1 (step 4) ✅ | `code_nodes` | + `ordinal SMALLINT NOT NULL DEFAULT 0`; `UNIQUE(file_id, qualified_name, ordinal)` (replaces the `file_id` index) | Identity key for node-level diffing when names repeat in a file. (`kind` is not part of the key: ordinals are counted per qualified name) |
+| 1 (step 4) ✅ | `files` | + `is_test BOOLEAN NOT NULL DEFAULT false`, + `size_bytes INT` | Down-weight tests in retrieval; skip-rule auditing |
+| 1 (step 4) ✅ | `repos` | + `source` (`github`/`local`), + `local_path TEXT?` | Local CLI repos |
+| 1 (step 4) ✅ | **`index_runs`** | `id, repo_id, commit_sha?, started_at, finished_at?, status, stats JSONB` (files scanned/changed, nodes/edges by kind, % resolved, durations) | Index history; the CLI summary is persisted too |
 | 2 | `code_nodes`, `anti_patterns` | + `embedding_model TEXT?`, + `embedded_hash TEXT?` | Re-embed exactly when the model or the chunk text changes |
 | 2 | `reviews` | + `base_sha`, + `source` (`github`/`cli`/`eval`), + `pipeline_config JSONB`, `pr_number` nullable | CLI and eval runs are reviews too; exact config is recorded for reproducibility |
 | 2 | `findings` | + `confidence REAL`, + `fingerprint TEXT`, + `evidence_refs JSONB` (node IDs + anti-pattern IDs), + `status` (`posted`/`dropped`), + `drop_reason?` | Validation output, dedupe across pushes, a trace of dropped findings |
@@ -665,8 +665,8 @@ what was built, how to run it, and what to verify. Estimates are rough
 |---|---|---|---|
 | 1 ✅ | Monorepo, compose, uv workspace, ruff/pytest, CI, empty Next.js | `docker compose up` healthy; tests green | — |
 | 2 ✅ | Models, initial migration, `/health` (DB + Redis), migrate service | `alembic check` clean; 200/503 behaviour verified | — |
-| 3 🔍 | Parser: walker + skip rules → Python extractor → JS/TS extractor → resolver | Plain dataclasses out; resolution order per §5.4 | built; in review |
-| 4 | Migration (§4.2 row 1), `core.index` CLI: incremental persist, re-link, `index_runs`, summary | 2nd run on an unchanged repo = zero writes; summary includes % resolved (all / in-repo) | 3–4 d |
+| 3 ✅ | Parser: walker + skip rules → Python extractor → JS/TS extractor → resolver | Plain dataclasses out; resolution order per §5.4 | done (PR #1) |
+| 4 🔍 | Migration (§4.2 row 1), `core.index` CLI: incremental persist, re-link, `index_runs`, summary | 2nd run on an unchanged repo = zero writes; summary includes % resolved (all / in-repo) | built; in review |
 | 5 | Fixture repos (Python, JS, TS) with `expected.json`; exact-match tests for nodes and edges, incl. unresolved; idempotency test | Every node and edge asserted; CI green | 2–3 d |
 
 ### Phase 2: Naive baseline, end to end (B0)
@@ -1003,7 +1003,13 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D33 | Qualified names: Python dotted (`pkg.mod.Class.method`); JS/TS `path/without/ext:Symbol.member`; nested defs `outer.<locals>.inner` | One scheme for both | JS module paths contain `/` and `.`, so `:` separates module from member unambiguously; `<locals>` mirrors Python's `__qualname__` |
 | D34 | Calls to builtins / JS globals (`len`, `print`, `console.log`) produce **no edge** unless shadowed by a definition or import | Keep them as unresolved edges | They can never resolve, carry no review signal, and would make up a large share of all edges |
 | D35 | One edge per (source, kind, target): call sites are deduplicated | One edge per call site | The graph models relationships; call-site counts aren't needed for expansion or ranking |
-| D36 | Re-parse the whole repo on every index run (writes stay incremental) | Parse only changed files | Resolution of an unchanged file can depend on others; parsing is cheap (SQLAlchemy, 258 files: 3.7 s) |
+| D36 | Re-parse the whole repo on every index run (writes stay incremental) | Parse only changed files | Resolution of an unchanged file can depend on others; parsing is cheap (SQLAlchemy, 258 files: 3.7 s). Known gap: an unchanged file's edges are not re-resolved, so a resolved edge only changes when its own file changes or its target disappears (then `SET NULL` + re-link) |
+| D37 | One DB connection per index run, one transaction per changed file | Connection per file; one big transaction | Per-file atomicity (crash leaves each file fully old or new; re-run finishes) without paying a TCP connect + auth per file under `NullPool` |
+| D38 | `SET LOCAL synchronous_commit = off` for indexer write transactions | Durable commits | A Postgres crash can lose the last few commits but never corrupts; a lost commit means the file keeps its old hash and the next run redoes it. Avoids a WAL flush per file (costly on Docker/WSL) |
+| D39 | Re-link as a per-edge index probe, and `ANALYZE` before it after bulk writes (≥ 1,000 rows) | `UPDATE … FROM (DISTINCT ON …)` join | The join took 0.2 s or 307 s on identical data depending on whether statistics had caught up after a bulk load; the probe form plus fresh stats is fast either way (SQLAlchemy cold index: 330 s → 20 s) |
+| D40 | Parsing runs in `asyncio.to_thread` inside the async indexer | Call it directly | It is seconds of blocking I/O + CPU; on a worker's event loop it would stall everything else |
+| D41 | Advisory lock (`pg_try_advisory_lock(hashtext('index:' || name))`) held for the run | Redis lock; no lock | Two concurrent indexers on one repo would interleave diffs; Postgres already holds the data, so the lock lives there too. Phase 5 workers reuse it |
+| D42 | Files skipped for *transient* reasons (`parse_error`, `unreadable`) keep their previous rows; files that became unindexable (too large, minified…) are removed | Treat every skip as a deletion | A one-off read failure must not wipe a file's graph |
 
 ---
 

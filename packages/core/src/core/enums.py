@@ -13,6 +13,17 @@ class Language(StrEnum):
     TYPESCRIPT = "typescript"
 
 
+class RepoSource(StrEnum):
+    GITHUB = "github"
+    LOCAL = "local"  # indexed from a path by the CLI
+
+
+class IndexRunStatus(StrEnum):
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
 class RepoStatus(StrEnum):
     PENDING = "pending"
     INDEXING = "indexing"

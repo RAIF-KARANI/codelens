@@ -19,6 +19,7 @@ SCHEMA_TABLES = {
     "anti_patterns",
     "reviews",
     "findings",
+    "index_runs",
 }
 
 
@@ -65,6 +66,12 @@ def test_upgrade_creates_full_schema(empty_database_url: str) -> None:
     assert "(repo_id, qualified_name)" in indexes["ix_code_nodes_repo_id_qualified_name"]
     assert "WHERE (dst_node_id IS NULL)" in indexes["ix_code_edges_unresolved"]
     assert {"ix_code_edges_src_node_id", "ix_code_edges_dst_node_id"} <= indexes.keys()
+    # Node identity for re-indexing; its index also replaces the old file_id index.
+    assert (
+        "UNIQUE INDEX uq_code_nodes_file_id_qualified_name_ordinal"
+        in (indexes["uq_code_nodes_file_id_qualified_name_ordinal"])
+    )
+    assert "ix_code_nodes_file_id" not in indexes
 
     [embedding_type] = run_sql(
         empty_database_url,

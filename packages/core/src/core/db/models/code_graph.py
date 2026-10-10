@@ -3,7 +3,15 @@
 from typing import TYPE_CHECKING
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, text
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    SmallInteger,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,8 +26,11 @@ class CodeNode(IdMixin, Base):
     __tablename__ = "code_nodes"
     __table_args__ = (
         CheckConstraint("end_line >= start_line", name="line_range"),
-        # Not unique: Python legally redefines names, e.g. a @property getter and
-        # its @x.setter are two `def x` in the same class.
+        # A node's identity across re-indexes. qualified_name alone isn't unique:
+        # Python legally redefines names (a @property getter and its @x.setter),
+        # so `ordinal` counts repeats within the file. The index also serves
+        # "all nodes of this file" lookups (file_id is its leading column).
+        UniqueConstraint("file_id", "qualified_name", "ordinal"),
         Index("ix_code_nodes_repo_id_qualified_name", "repo_id", "qualified_name"),
         # HNSW gives approximate nearest-neighbour search. vector_cosine_ops means
         # queries must use the cosine-distance operator (<=>) to hit this index.
@@ -35,14 +46,13 @@ class CodeNode(IdMixin, Base):
     # repo_id duplicates file.repo_id on purpose: retrieval filters by repo on
     # every query, and this avoids a join on the hot path.
     repo_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("repos.id", ondelete="CASCADE"))
-    # Postgres does not index foreign keys automatically. Re-indexing a file
-    # deletes its nodes by file_id, so that lookup needs an index.
-    file_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("files.id", ondelete="CASCADE"), index=True
-    )
+    # Postgres does not index foreign keys automatically; the unique constraint
+    # above (leading column file_id) is the index for this one.
+    file_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("files.id", ondelete="CASCADE"))
     kind: Mapped[NodeKind] = mapped_column(str_enum(NodeKind, "node_kind"))
     name: Mapped[str]
     qualified_name: Mapped[str]  # e.g. "pkg.module.Class.method"
+    ordinal: Mapped[int] = mapped_column(SmallInteger, server_default="0")
     signature: Mapped[str | None]
     start_line: Mapped[int]  # 1-based, inclusive
     end_line: Mapped[int]
