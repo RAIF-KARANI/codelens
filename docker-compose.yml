@@ -12,6 +12,11 @@ x-python-env: &python-env
   environment:
     DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-codelens}:${POSTGRES_PASSWORD:-codelens}@postgres:5432/${POSTGRES_DB:-codelens}
     REDIS_URL: redis://redis:6379/0
+    # Ollama runs natively on the host (GPU); see planning.md D21.
+    OLLAMA_BASE_URL: http://host.docker.internal:11434
+  # Docker Desktop defines host.docker.internal itself; this makes it work on Linux too.
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
 
 x-api-build: &api-build
   context: .

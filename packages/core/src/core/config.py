@@ -4,6 +4,7 @@ All services import `get_settings()` from here, so config lives in exactly one p
 """
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -22,6 +23,33 @@ class Settings(BaseSettings):
     embed_dim: int = Field(default=1024, gt=0, le=2000)
 
     log_level: str = "INFO"
+
+    # --- model providers ("fake" = deterministic, offline; used by tests/CI)
+    llm_provider: Literal["ollama", "fake"] = "ollama"
+    embed_provider: Literal["ollama", "fake"] = "ollama"
+    # Containers reach a host-native Ollama at http://host.docker.internal:11434.
+    ollama_base_url: str = "http://localhost:11434"
+
+    llm_model: str = "qwen3:8b"
+    # Context window per request. 16k fits qwen3:8b + a q8_0 KV cache in 8 GB
+    # VRAM (planning.md §1.3); Ollama's own default is much smaller.
+    llm_num_ctx: int = Field(default=16384, ge=2048)
+    llm_temperature: float = Field(default=0.1, ge=0.0, le=2.0)
+    llm_seed: int = 42  # fixed for reproducible evals
+    llm_max_output_tokens: int = Field(default=2000, gt=0)
+    llm_timeout_s: float = Field(default=300.0, gt=0)
+
+    embed_model: str = "qwen3-embedding:0.6b"
+    embed_batch_size: int = Field(default=32, gt=0)
+    # Qwen3-Embedding is instruction-aware: queries get a task instruction,
+    # documents are embedded as-is (asymmetric retrieval, planning.md D23).
+    embed_query_instruction: str = (
+        "Given a code change, retrieve code that it depends on or that depends on it"
+    )
+    # Run embeddings on CPU (Ollama num_gpu=0) to keep VRAM for the LLM.
+    # Decided by measurement in Phase 2 step 6; off until then.
+    embed_on_cpu: bool = False
+    embed_timeout_s: float = Field(default=120.0, gt=0)
 
 
 @lru_cache
