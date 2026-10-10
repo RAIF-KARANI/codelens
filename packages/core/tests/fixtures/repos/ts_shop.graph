@@ -1,0 +1,81 @@
+file src/base.ts typescript
+node module src/base 1-9
+node class src/base:Model 1-9
+node method src/base:Model.constructor 2-2
+node method src/base:Model.describe 4-6
+file src/cart.test.ts typescript test
+node module src/cart.test 1-9
+file src/cart.ts typescript
+node module src/cart 1-35
+node class src/cart:Cart 12-35
+node method src/cart:Cart.constructor 15-17
+node method src/cart:Cart.add 19-22
+node method src/cart:Cart.total 24-26
+node method src/cart:Cart.validate 28-30
+node method src/cart:Cart.receipt 32-34
+file src/format.ts typescript
+node module src/format 1-6
+node function src/format:formatPrice 2-4
+node function src/format:round2 6-6
+file src/index.ts typescript
+node module src/index 1-2
+file src/legacy/pricing.js javascript
+node module src/legacy/pricing 1-7
+node function src/legacy/pricing:lineTotal 3-5
+file src/ui/CartView.tsx typescript
+node module src/ui/CartView 1-14
+node function src/ui/CartView:CartView 4-12
+node function src/ui/CartView:CartView.<locals>.toggle 6-6
+skip src/types.d.ts type_declarations
+skip vendor.min.js minified
+edge calls src/cart.test -> src/cart:Cart
+edge calls src/cart.test ?> cart.add
+edge calls src/cart.test ?> cart.total
+edge calls src/cart.test ?> describe
+edge calls src/cart.test ?> expect
+edge calls src/cart.test ?> it
+edge calls src/cart:Cart.add ?> src/cart:Cart.lines.push
+edge calls src/cart:Cart.constructor -> src/base:Model
+edge calls src/cart:Cart.receipt -> src/base:Model.describe
+edge calls src/cart:Cart.receipt -> src/cart:Cart.total
+edge calls src/cart:Cart.receipt -> src/format:formatPrice
+edge calls src/cart:Cart.receipt x> uuid:v4
+edge calls src/cart:Cart.total -> src/format:round2
+edge calls src/cart:Cart.total -> src/legacy/pricing:lineTotal
+edge calls src/cart:Cart.total ?> src/cart:Cart.lines.reduce
+edge calls src/format:formatPrice ?> amount.toFixed
+edge calls src/legacy/pricing:lineTotal -> src/format:round2
+edge calls src/ui/CartView x> react:memo
+edge calls src/ui/CartView:CartView -> src/format:formatPrice
+edge calls src/ui/CartView:CartView ?> cart.total
+edge calls src/ui/CartView:CartView x> react:useState
+edge calls src/ui/CartView:CartView.<locals>.toggle ?> setOpen
+edge contains src/base -> src/base:Model
+edge contains src/base:Model -> src/base:Model.constructor
+edge contains src/base:Model -> src/base:Model.describe
+edge contains src/cart -> src/cart:Cart
+edge contains src/cart:Cart -> src/cart:Cart.add
+edge contains src/cart:Cart -> src/cart:Cart.constructor
+edge contains src/cart:Cart -> src/cart:Cart.receipt
+edge contains src/cart:Cart -> src/cart:Cart.total
+edge contains src/cart:Cart -> src/cart:Cart.validate
+edge contains src/format -> src/format:formatPrice
+edge contains src/format -> src/format:round2
+edge contains src/legacy/pricing -> src/legacy/pricing:lineTotal
+edge contains src/ui/CartView -> src/ui/CartView:CartView
+edge contains src/ui/CartView:CartView -> src/ui/CartView:CartView.<locals>.toggle
+edge imports src/cart -> src/base:Model
+edge imports src/cart -> src/format:formatPrice
+edge imports src/cart -> src/format:round2
+edge imports src/cart -> src/legacy/pricing
+edge imports src/cart x> uuid:v4
+edge imports src/cart.test -> src/cart:Cart
+edge imports src/index -> src/cart
+edge imports src/index -> src/format:formatPrice
+edge imports src/index -> src/format:round2
+edge imports src/legacy/pricing -> src/format:round2
+edge imports src/ui/CartView -> src/cart:Cart
+edge imports src/ui/CartView -> src/format:formatPrice
+edge imports src/ui/CartView x> react:default
+edge imports src/ui/CartView x> react:useState
+edge inherits src/cart:Cart -> src/base:Model

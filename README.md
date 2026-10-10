@@ -69,6 +69,15 @@ uv run pre-commit install     # once, after `git init`
 Integration tests create and drop their own `codelens_test` database, so they never
 touch your dev data.
 
+Parser/indexer behaviour is pinned by golden files: `packages/core/tests/fixtures/repos/`
+holds two small repos (`py_shop`, `ts_shop`), and each has a sibling `.graph` file
+listing every file, node and edge. After an *intentional* change to extraction or
+resolution, regenerate them and review the diff before committing:
+
+```bash
+UPDATE_GOLDEN=1 uv run pytest packages/core/tests/test_fixture_repos.py
+```
+
 ## Database migrations
 
 Models live in `packages/core/src/core/db/models/`; migrations in

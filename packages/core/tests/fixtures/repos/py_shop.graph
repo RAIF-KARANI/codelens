@@ -1,0 +1,97 @@
+file scripts/seed.py python
+node module scripts.seed 1-6
+file shop/__init__.py python
+node module shop 1-3
+file shop/models.py python
+node module shop.models 1-43
+node class shop.models.Entity 8-13
+node method shop.models.Entity.__init__ 9-10
+node method shop.models.Entity.describe 12-13
+node class shop.models.Product 16-30
+node method shop.models.Product.gross 21-23
+node method shop.models.Product.gross#1 25-27
+node method shop.models.Product.describe 29-30
+node class shop.models.Order 33-43
+node method shop.models.Order.__init__ 34-36
+node method shop.models.Order.total 38-39
+node method shop.models.Order.summary 41-43
+file shop/plugins.py python
+node module shop.plugins 1-5
+node function shop.plugins.holiday_price 4-5
+file shop/pricing.py python
+node module shop.pricing 1-12
+node function shop.pricing.apply_discount 6-8
+node function shop.pricing.with_tax 11-12
+file shop/services.py python
+node module shop.services 1-50
+node function shop.services._load 14-16
+node function shop.services.build_order 19-22
+node function shop.services.checkout 25-34
+node function shop.services.checkout.<locals>.notify 28-30
+node class shop.services.Retrying 37-50
+node method shop.services.Retrying.__init__ 38-39
+node method shop.services.Retrying.run 41-47
+node method shop.services.Retrying.fallback 49-50
+file tests/test_services.py python test
+node module tests.test_services 1-6
+node function tests.test_services.test_gross_includes_tax 4-6
+edge calls scripts.seed -> shop.services.checkout
+edge calls shop.models.Order.__init__ -> shop.models.Entity.__init__
+edge calls shop.models.Order.summary -> shop.models.Entity.describe
+edge calls shop.models.Order.summary ?> item.describe
+edge calls shop.models.Product.describe -> shop.models.Entity.describe
+edge calls shop.models.Product.gross -> shop.pricing.with_tax
+edge calls shop.plugins.holiday_price -> shop.pricing.apply_discount
+edge calls shop.pricing.with_tax -> shop.pricing.apply_discount
+edge calls shop.services x> logging.getLogger
+edge calls shop.services.Retrying.run -> shop.services.Retrying.fallback
+edge calls shop.services.Retrying.run ?> fn
+edge calls shop.services._load x> json.load
+edge calls shop.services.build_order -> shop.models.Order
+edge calls shop.services.build_order -> shop.models.Product
+edge calls shop.services.build_order -> shop.services._load
+edge calls shop.services.checkout -> shop.pricing.apply_discount
+edge calls shop.services.checkout -> shop.services.build_order
+edge calls shop.services.checkout -> shop.services.checkout.<locals>.notify
+edge calls shop.services.checkout ?> order.total
+edge calls shop.services.checkout.<locals>.notify ?> logger.info
+edge calls shop.services.checkout.<locals>.notify x> requests.post
+edge calls tests.test_services.test_gross_includes_tax -> shop.models.Product
+edge contains shop.models -> shop.models.Entity
+edge contains shop.models -> shop.models.Order
+edge contains shop.models -> shop.models.Product
+edge contains shop.models.Entity -> shop.models.Entity.__init__
+edge contains shop.models.Entity -> shop.models.Entity.describe
+edge contains shop.models.Order -> shop.models.Order.__init__
+edge contains shop.models.Order -> shop.models.Order.summary
+edge contains shop.models.Order -> shop.models.Order.total
+edge contains shop.models.Product -> shop.models.Product.describe
+edge contains shop.models.Product -> shop.models.Product.gross
+edge contains shop.models.Product -> shop.models.Product.gross#1
+edge contains shop.plugins -> shop.plugins.holiday_price
+edge contains shop.pricing -> shop.pricing.apply_discount
+edge contains shop.pricing -> shop.pricing.with_tax
+edge contains shop.services -> shop.services.Retrying
+edge contains shop.services -> shop.services._load
+edge contains shop.services -> shop.services.build_order
+edge contains shop.services -> shop.services.checkout
+edge contains shop.services.Retrying -> shop.services.Retrying.__init__
+edge contains shop.services.Retrying -> shop.services.Retrying.fallback
+edge contains shop.services.Retrying -> shop.services.Retrying.run
+edge contains shop.services.checkout -> shop.services.checkout.<locals>.notify
+edge contains tests.test_services -> tests.test_services.test_gross_includes_tax
+edge imports scripts.seed -> shop.services.checkout
+edge imports scripts.seed x> sys
+edge imports shop -> shop.pricing.apply_discount
+edge imports shop.models -> shop.pricing.with_tax
+edge imports shop.models x> dataclasses.dataclass
+edge imports shop.plugins -> shop.pricing
+edge imports shop.services -> shop.models.Order
+edge imports shop.services -> shop.models.Product
+edge imports shop.services -> shop.pricing
+edge imports shop.services x> json
+edge imports shop.services x> logging
+edge imports shop.services x> requests
+edge imports tests.test_services -> shop.models.Product
+edge inherits shop.models.Order -> shop.models.Entity
+edge inherits shop.models.Product -> shop.models.Entity

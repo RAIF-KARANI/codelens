@@ -387,10 +387,13 @@ def _join(module: str, name: str) -> str:
 
 
 def _dedupe(edges: list[ParsedEdge]) -> list[ParsedEdge]:
-    seen: set[tuple[NodeRef, EdgeKind, str]] = set()
+    # The resolved target is part of the key: a class *contains* both its
+    # @property getter and setter, which share a qualified name and differ only
+    # by ordinal. Keying on target_name alone silently dropped the setter.
+    seen: set[tuple[NodeRef, EdgeKind, str, NodeRef | None]] = set()
     unique: list[ParsedEdge] = []
     for edge in edges:
-        key = (edge.source, edge.kind, edge.target_name)
+        key = (edge.source, edge.kind, edge.target_name, edge.target)
         if key not in seen:
             seen.add(key)
             unique.append(edge)
