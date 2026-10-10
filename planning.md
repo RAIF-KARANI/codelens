@@ -5,8 +5,8 @@
 > two disagree, **this file wins**. It supersedes `idea.md` §14 (roadmap) and adds
 > decisions D18+.
 
-**Last updated:** 2026-10-10 · **Current position:** Phase 1 complete (PRs #1–#3); Phase 2 steps 1–3
-done (PRs #4–#6); step 4 (diff parsing + seeds) built and awaiting review; next is step 5 (prompts, generation, validation, `core.review`).
+**Last updated:** 2026-10-11 · **Current position:** Phase 1 complete (PRs #1–#3); Phase 2 steps 1–4
+done (PRs #4–#7); step 5 (end-to-end review, B0) built and awaiting review; next is step 6 (measure VRAM/latency/tokens).
 
 ---
 
@@ -680,8 +680,8 @@ what was built, how to run it, and what to verify. Estimates are rough
 | 1 ✅ | Provider interfaces + `OllamaEmbedder`/`OllamaLLM` + fakes; Ollama health check | Contract tests pass against fakes; a manual smoke test against real Ollama (PR #4) |
 | 2 ✅ | Chunk text builder (§5.6), token estimate, migration (embedding provenance), `core.embed` | All nodes embedded; re-run is a no-op; throughput recorded in §5.7 (PR #5) |
 | 3 ✅ | Vector search + `core.search --mode vector` | Sensible top-k on the fixture repo (spot check) (PR #6) |
-| 4 🔍 | Diff parser, head overlay, seed mapping | Unit tests on tricky diffs (renames, deletions, new files) |
-| 5 | Prompts, structured output, validation, packing (vector only), trace writer, `core.review` CLI | Reviewing a local branch prints validated findings; trace rows written |
+| 4 ✅ | Diff parser, head overlay, seed mapping | Unit tests on tricky diffs (renames, deletions, new files) (PR #7) |
+| 5 🔍 | Prompts, structured output, validation, packing (vector only), trace writer, `core.review` CLI | Reviewing a local branch prints validated findings; trace rows written |
 | 6 | Measure VRAM / latency / tokens; fill in §1.3 and §6.4 | Numbers recorded |
 
 ### Phase 3: Evaluation harness (measure before upgrading)
@@ -1029,6 +1029,11 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D54 | Whitespace-only added/removed lines never create seeds | Count every line | A blank line between methods sits outside every method, so it would mark the whole class as changed |
 | D55 | Head/base versions of a node are matched by name *within the file* (qualified name minus module) | Full qualified name | Module names come from paths, so a renamed file would show every node as ADDED + DELETED; local names make a rename-with-edits a MODIFIED change |
 | D56 | Changes are read from git objects only (`merge-base`, `diff base...head`, `show rev:path`), both sides parsed in memory; no checkout, no DB | Check out head; parse the working tree | No side effects on the repo; the base is the merge-base exactly as GitHub computes PRs; git runs with `--no-ext-diff --no-textconv` so a repo's diff drivers can't execute, and option-like revisions (`-…`) are rejected. Known gap for step 5: the stored graph may be indexed at a different commit than the merge-base; seeds map to stored nodes by qualified name |
+| D57 | Query embeddings run on CPU (`EMBED_QUERY_ON_CPU=true`), bulk document embeddings on GPU; default `LLM_NUM_CTX=8192` | Both models on GPU; 16k context by default | Measured on the RTX 4060 (8 GB): `qwen3:8b` at 16k ctx with fp16 KV = 7.8 GB, 20% on CPU, a review timed out at 300 s. At 8k ctx with the embedder also on GPU it decoded at 8 tok/s; with query embeddings on CPU, **29 tok/s** and a 12 s review. 16k still works once `OLLAMA_FLASH_ATTENTION=1` + `OLLAMA_KV_CACHE_TYPE=q8_0` are set on the Ollama server (§11.4); supersedes D26's default |
+| D58 | Every prompt is fitted to `num_ctx − max_output_tokens − margin` before sending: context blocks dropped weakest-first, then changed blocks; recorded as `context_window` in the trace | Trust the budgets; let Ollama handle overflow | Ollama silently truncates an over-long prompt, which can cut the system instructions themselves; the guard makes budgets self-adjust to whatever window is configured |
+| D59 | Everything shown to the model carries new-file line numbers in a left column (diff, changed code, context) | Plain unified diff | Findings must cite exact lines to be postable; models are unreliable at counting lines from `@@` headers |
+| D60 | Retrieved classes/modules from a file the change edits are excluded from context (`contains_changed_code`) | Include everything retrieved | Their stored code is the *old* version of the changed code, which contradicts the diff and misleads the model |
+| D61 | Prompt-injection hardening: untrusted content only inside tagged blocks declared as data; our own closing tags neutralised inside content (`</context>` → `</ context>`); no tools; schema + validation | Trust the input | Code under review is attacker-controllable; with these layers an injection can at worst yield one bad finding, never an action |
 
 ---
 

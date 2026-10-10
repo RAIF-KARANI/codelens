@@ -51,6 +51,17 @@ class Severity(StrEnum):
     SUGGESTION = "suggestion"
 
 
+class ReviewSource(StrEnum):
+    GITHUB = "github"  # a pull request
+    CLI = "cli"  # `python -m core.review` on a local branch
+    EVAL = "eval"  # an evaluation run (Phase 3)
+
+
+class FindingStatus(StrEnum):
+    POSTED = "posted"  # passed validation
+    DROPPED = "dropped"  # failed a validation rule; kept with the reason for traces/evals
+
+
 class ReviewStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
