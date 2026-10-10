@@ -1,0 +1,101 @@
+# Local dev stack. `docker compose up --build` starts everything.
+#
+# Hostnames: inside the compose network services reach each other by service
+# name (postgres, redis) on their internal ports. `.env` uses localhost, which
+# is correct for tools run on your host machine (tests, the indexing CLI), so
+# the URLs are overridden below for containers.
+
+x-python-env: &python-env
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-codelens}:${POSTGRES_PASSWORD:-codelens}@postgres:5432/${POSTGRES_DB:-codelens}
+    REDIS_URL: redis://redis:6379/0
+
+x-api-build: &api-build
+  context: .
+  dockerfile: services/api/Dockerfile
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-codelens}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-codelens}
+      POSTGRES_DB: ${POSTGRES_DB:-codelens}
+    ports:
+      # Host port 5433 avoids clashing with a locally installed Postgres.
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot: applies migrations, then exits. api/worker wait for it to succeed,
+  # so app code never runs against an out-of-date schema. Reuses the api image
+  # (which contains core + alembic).
+  migrate:
+    <<: *python-env
+    build: *api-build
+    command: alembic -c packages/core/alembic.ini upgrade head
+    volumes:
+      - ./packages/core:/app/packages/core
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *python-env
+    build: *api-build
+    # --reload + bind mounts give hot reload during development.
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/services/api/src --reload-dir /app/packages/core/src
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./services/api/src:/app/services/api/src
+      - ./packages/core/src:/app/packages/core/src
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # The slim image has no curl; Python's stdlib does the job. urlopen raises
+      # on the 503 that /health returns when a dependency is down.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    <<: *python-env
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    # Celery has no auto-reload; run `docker compose restart worker` after edits.
+    volumes:
+      - ./services/worker/src:/app/services/worker/src
+      - ./packages/core/src:/app/packages/core/src
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:

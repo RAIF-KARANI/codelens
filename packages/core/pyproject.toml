@@ -1,0 +1,21 @@
+[project]
+name = "codelens-core"
+version = "0.1.0"
+description = "Shared CodeLens library: config, db models, parser, retrieval"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "pgvector>=0.3.6",
+    "alembic>=1.14",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Distribution name is codelens-core; import name is `core`.
+[tool.hatch.build.targets.wheel]
+packages = ["src/core"]

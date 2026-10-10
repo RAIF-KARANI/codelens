@@ -1,0 +1,61 @@
+# Workspace root. This is NOT a package itself — it only ties the Python
+# members together (one lockfile, one venv) and holds shared tool config.
+[project]
+name = "codelens"
+version = "0.1.0"
+description = "AI code review assistant with Graph RAG"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*", "services/*"]
+
+[dependency-groups]
+dev = [
+    "codelens-core",
+    "codelens-api",
+    "codelens-worker",
+    "ruff>=0.6",
+    "pytest>=8.3",
+    "httpx>=0.27",
+    "pre-commit>=3.8",
+]
+
+[tool.uv.sources]
+codelens-core = { workspace = true }
+codelens-api = { workspace = true }
+codelens-worker = { workspace = true }
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["apps", "**/tests/fixtures"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "UP",       # pyupgrade (modern syntax for 3.12)
+    "B",        # bugbear
+    "SIM",      # simplify
+    "ASYNC",    # async footguns (blocking calls in async code)
+    "RUF",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["core", "api", "worker"]
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["packages/core/tests", "services/api/tests", "services/worker/tests"]
+# importlib mode lets each package have its own tests/ dir without
+# needing __init__.py files or clashing module names.
+addopts = "-ra --import-mode=importlib"
+markers = [
+    "integration: needs Postgres + Redis running (docker compose up -d postgres redis); skip with -m 'not integration'",
+]

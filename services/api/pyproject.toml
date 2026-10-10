@@ -1,0 +1,21 @@
+[project]
+name = "codelens-api"
+version = "0.1.0"
+description = "CodeLens HTTP API: webhooks, reviews, SSE streaming"
+requires-python = ">=3.12"
+dependencies = [
+    "codelens-core",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "redis>=5.2",
+]
+
+[tool.uv.sources]
+codelens-core = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/api"]
