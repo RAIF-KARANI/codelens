@@ -161,6 +161,27 @@ It diffs head against its merge-base with base (like a GitHub PR), reading git o
 only (no checkout, no database), and attributes each changed line to the innermost
 function/class/module: `+` added, `~` modified, `-` deleted.
 
+## Reviewing a branch
+
+End to end: index + embed the base, then review a branch against it.
+
+```bash
+uv run python -m core.index path/to/repo                 # at the base (e.g. main checked out)
+uv run python -m core.embed local/repo
+uv run python -m core.review path/to/repo --base main --head my-feature
+uv run python -m core.review path/to/repo --base main --head my-feature     --config configs/pipeline/a0_diff_only.yaml            # the diff-only reference point
+```
+
+The review attributes changes to functions/classes, retrieves related code by meaning,
+packs it into prompts that fit the model's context window, asks the LLM for structured
+findings, and validates them (lines must be on changed code, evidence must have been
+shown, confidence threshold, dedupe, cap). Everything is stored: `reviews`, `findings`
+(posted *and* dropped, with the reason), `review_context_items` (what the model saw and
+why), `review_events` (timeline). Pipeline knobs live in `configs/pipeline/*.yaml`.
+
+On an 8 GB GPU keep `LLM_NUM_CTX=8192` (the default). For 16k, set
+`OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0` for the Ollama server first.
+
 ## Parser (inspect the code graph)
 
 `core.parser` turns a repo into nodes (modules, classes, functions, methods) and edges

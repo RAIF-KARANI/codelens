@@ -31,9 +31,11 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
 
     llm_model: str = "qwen3:8b"
-    # Context window per request. 16k fits qwen3:8b + a q8_0 KV cache in 8 GB
-    # VRAM (planning.md §1.3); Ollama's own default is much smaller.
-    llm_num_ctx: int = Field(default=16384, ge=2048)
+    # Context window per request. 8k keeps qwen3:8b entirely in 8 GB of VRAM
+    # with Ollama's default fp16 KV cache; with OLLAMA_FLASH_ATTENTION=1 and
+    # OLLAMA_KV_CACHE_TYPE=q8_0 on the Ollama server, 16384 fits too
+    # (planning.md §1.3, D57). The review pipeline fits each prompt to this.
+    llm_num_ctx: int = Field(default=8192, ge=2048)
     llm_temperature: float = Field(default=0.1, ge=0.0, le=2.0)
     llm_seed: int = 42  # fixed for reproducible evals
     llm_max_output_tokens: int = Field(default=2000, gt=0)
@@ -49,9 +51,11 @@ class Settings(BaseSettings):
     embed_query_instruction: str = (
         "Given a code change, retrieve code that it depends on or that depends on it"
     )
-    # Run embeddings on CPU (Ollama num_gpu=0) to keep VRAM for the LLM.
-    # Decided by measurement in Phase 2 step 6; off until then.
-    embed_on_cpu: bool = False
+    # Embed *queries* on CPU (Ollama num_gpu=0) so the LLM keeps the GPU to
+    # itself during a review. Measured: with both models on an 8 GB GPU the LLM
+    # decoded at 8 tok/s; with queries on CPU, 29 tok/s (planning.md D57). Bulk
+    # document embedding (core.embed) still uses the GPU.
+    embed_query_on_cpu: bool = True
     embed_timeout_s: float = Field(default=120.0, gt=0)
 
 

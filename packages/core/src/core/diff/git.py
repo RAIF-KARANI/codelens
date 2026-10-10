@@ -72,6 +72,13 @@ def diff(repo: Path, base_sha: str, head_sha: str) -> str:
     return out.decode("utf-8", errors="replace")
 
 
+def commit_subjects(repo: Path, base_sha: str, head_sha: str) -> list[str]:
+    """Subjects of the commits in base..head, oldest first: the CLI's stand-in
+    for a PR description."""
+    out = _git(repo, "log", "--reverse", "--format=%s", f"{_rev(base_sha)}..{_rev(head_sha)}")
+    return [line for line in out.decode("utf-8", errors="replace").splitlines() if line]
+
+
 def show(repo: Path, rev: str, path: str) -> bytes:
     """A file's bytes at a revision."""
     return _git(repo, "show", f"{_rev(rev)}:{path}")

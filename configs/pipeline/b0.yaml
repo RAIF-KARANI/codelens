@@ -1,0 +1,20 @@
+# B0: the naive baseline (planning.md §2.3).
+# AST-node chunks, vector top-k per seed, structured output + validation.
+name: b0
+retrieval:
+  enabled: true
+  vector_k: 8
+  max_seeds: 24
+packing:
+  diff_tokens: 4000
+  changed_node_tokens: 3500
+  context_tokens: 4000
+  max_chunks: 4
+  degrade_to_signature: true
+generation:
+  think: false
+  max_output_tokens: 1500
+  max_findings_per_chunk: 8
+validation:
+  min_confidence: 0.6
+  max_comments: 5

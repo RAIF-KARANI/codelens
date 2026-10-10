@@ -20,6 +20,8 @@ SCHEMA_TABLES = {
     "reviews",
     "findings",
     "index_runs",
+    "review_context_items",
+    "review_events",
 }
 
 

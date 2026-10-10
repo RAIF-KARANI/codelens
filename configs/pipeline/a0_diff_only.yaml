@@ -1,0 +1,6 @@
+# A0: diff-only reference point (planning.md §10.3).
+# Same prompt, model and validation as B0, but no retrieved context: the LLM
+# sees only the diff and the changed code. Every upgrade is measured against it.
+name: a0_diff_only
+retrieval:
+  enabled: false

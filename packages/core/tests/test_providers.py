@@ -80,7 +80,7 @@ def test_embedder_batches_prefixes_queries_and_normalizes() -> None:
     assert "options" not in requests[0]  # GPU by default
 
 
-def test_embedder_can_force_cpu() -> None:
+def test_embedder_can_run_queries_on_cpu_and_documents_on_gpu() -> None:
     seen: list[dict[str, Any]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -88,11 +88,13 @@ def test_embedder_can_force_cpu() -> None:
         return httpx.Response(200, json={"embeddings": [[1.0]]})
 
     embedder = OllamaEmbedder(
-        client(handler), model="emb", dim=1, batch_size=8, query_instruction="", on_cpu=True
+        client(handler), model="emb", dim=1, batch_size=8, query_instruction="", query_on_cpu=True
     )
+    run(embedder.embed(["x"], kind=EmbedKind.QUERY))
     run(embedder.embed(["x"], kind=EmbedKind.DOCUMENT))
 
-    assert seen[0]["options"] == {"num_gpu": 0}
+    assert seen[0]["options"] == {"num_gpu": 0}  # query: CPU
+    assert "options" not in seen[1]  # document (bulk indexing): GPU
 
 
 def test_embedder_rejects_wrong_dimension() -> None:

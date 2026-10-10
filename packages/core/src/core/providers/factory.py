@@ -36,7 +36,7 @@ async def open_providers(settings: Settings) -> AsyncIterator[Providers]:
                 dim=settings.embed_dim,
                 batch_size=settings.embed_batch_size,
                 query_instruction=settings.embed_query_instruction,
-                on_cpu=settings.embed_on_cpu,
+                query_on_cpu=settings.embed_query_on_cpu,
             )
         llm: LLM
         if settings.llm_provider == "fake":

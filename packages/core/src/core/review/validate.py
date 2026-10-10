@@ -1,0 +1,114 @@
+"""S9 validate: the hallucination guard. Every finding must pass, in order:
+
+  path_not_in_chunk      the file isn't one this chunk reviewed
+  not_on_changed_lines   its lines don't touch any line the diff added
+  unknown_evidence       it cites an id the model was never shown
+  low_confidence         below config.min_confidence
+  duplicate              same fingerprint as a higher-confidence finding
+  over_cap               beyond config.max_comments (severity, then confidence)
+
+Dropped findings are kept with their reason, for traces and evals.
+"""
+
+import hashlib
+from collections.abc import Sequence
+from dataclasses import dataclass
+
+from core.enums import FindingStatus, Severity
+from core.review.config import ValidationConfig
+from core.review.packing import ReviewChunk
+from core.review.schemas import FindingOut
+
+_SEVERITY_ORDER = {Severity.CRITICAL: 0, Severity.WARNING: 1, Severity.SUGGESTION: 2}
+
+
+@dataclass(frozen=True, slots=True)
+class CheckedFinding:
+    finding: FindingOut
+    chunk_index: int
+    status: FindingStatus
+    drop_reason: str | None
+    evidence_node_ids: tuple[int, ...]  # "N12" -> 12; "C" labels aren't stored nodes
+    fingerprint: str
+    line_start: int  # normalised (start <= end)
+    line_end: int
+
+
+def validate(
+    raw: Sequence[tuple[ReviewChunk, Sequence[FindingOut]]], config: ValidationConfig
+) -> list[CheckedFinding]:
+    checked: list[CheckedFinding] = []
+    for chunk, findings in raw:
+        for finding in findings:
+            checked.append(_check_one(chunk, finding, config))
+
+    # Duplicates: keep the most confident of each fingerprint.
+    best: dict[str, CheckedFinding] = {}
+    for item in checked:
+        if item.status is FindingStatus.POSTED:
+            current = best.get(item.fingerprint)
+            if current is None or item.finding.confidence > current.finding.confidence:
+                best[item.fingerprint] = item
+    checked = [
+        item
+        if item.status is not FindingStatus.POSTED or best[item.fingerprint] is item
+        else _drop(item, "duplicate")
+        for item in checked
+    ]
+
+    # Cap: most severe first, then most confident.
+    posted = sorted(
+        (i for i in checked if i.status is FindingStatus.POSTED),
+        key=lambda i: (_SEVERITY_ORDER[i.finding.severity], -i.finding.confidence),
+    )
+    over = {id(i) for i in posted[config.max_comments :]}
+    return [_drop(i, "over_cap") if id(i) in over else i for i in checked]
+
+
+def _check_one(chunk: ReviewChunk, finding: FindingOut, config: ValidationConfig) -> CheckedFinding:
+    start, end = sorted((finding.line_start, finding.line_end))
+    change = chunk.file(finding.file_path)
+    evidence_ids = tuple(int(e[1:]) for e in finding.evidence if e[:1] == "N" and e[1:].isdigit())
+    fingerprint = _fingerprint(chunk, finding, start, end)
+
+    def result(reason: str | None) -> CheckedFinding:
+        status = FindingStatus.DROPPED if reason else FindingStatus.POSTED
+        return CheckedFinding(
+            finding, chunk.index, status, reason, evidence_ids, fingerprint, start, end
+        )
+
+    if change is None:
+        return result("path_not_in_chunk")
+    added = change.diff.added_lines()
+    if not any(start <= line <= end for line in added):
+        return result("not_on_changed_lines")
+    if any(e not in chunk.labels for e in finding.evidence):
+        return result("unknown_evidence")
+    if finding.confidence < config.min_confidence:
+        return result("low_confidence")
+    return result(None)
+
+
+def _drop(item: CheckedFinding, reason: str) -> CheckedFinding:
+    return CheckedFinding(
+        item.finding,
+        item.chunk_index,
+        FindingStatus.DROPPED,
+        reason,
+        item.evidence_node_ids,
+        item.fingerprint,
+        item.line_start,
+        item.line_end,
+    )
+
+
+def _fingerprint(chunk: ReviewChunk, finding: FindingOut, start: int, end: int) -> str:
+    """Identity of a finding that survives line shifts: the file, category, and
+    the (whitespace-normalised) changed code it points at."""
+    code = ""
+    change = chunk.file(finding.file_path)
+    if change is not None and change.head is not None:
+        lines = change.head.module_node.code.split("\n")
+        code = " ".join(" ".join(lines[start - 1 : end]).split())
+    key = f"{finding.file_path}|{finding.category.value}|{code}"
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
