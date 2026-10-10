@@ -5,8 +5,8 @@
 > two disagree, **this file wins**. It supersedes `idea.md` §14 (roadmap) and adds
 > decisions D18+.
 
-**Last updated:** 2026-10-10 · **Current position:** Phase 1 complete (PRs #1–#3); Phase 2 steps 1–2
-done (PRs #4–#5); step 3 (vector search) built and awaiting review; next is step 4 (diff parsing + seeds).
+**Last updated:** 2026-10-10 · **Current position:** Phase 1 complete (PRs #1–#3); Phase 2 steps 1–3
+done (PRs #4–#6); step 4 (diff parsing + seeds) built and awaiting review; next is step 5 (prompts, generation, validation, `core.review`).
 
 ---
 
@@ -679,8 +679,8 @@ what was built, how to run it, and what to verify. Estimates are rough
 |---|---|---|
 | 1 ✅ | Provider interfaces + `OllamaEmbedder`/`OllamaLLM` + fakes; Ollama health check | Contract tests pass against fakes; a manual smoke test against real Ollama (PR #4) |
 | 2 ✅ | Chunk text builder (§5.6), token estimate, migration (embedding provenance), `core.embed` | All nodes embedded; re-run is a no-op; throughput recorded in §5.7 (PR #5) |
-| 3 🔍 | Vector search + `core.search --mode vector` | Sensible top-k on the fixture repo (spot check) |
-| 4 | Diff parser, head overlay, seed mapping | Unit tests on tricky diffs (renames, deletions, new files) |
+| 3 ✅ | Vector search + `core.search --mode vector` | Sensible top-k on the fixture repo (spot check) (PR #6) |
+| 4 🔍 | Diff parser, head overlay, seed mapping | Unit tests on tricky diffs (renames, deletions, new files) |
 | 5 | Prompts, structured output, validation, packing (vector only), trace writer, `core.review` CLI | Reviewing a local branch prints validated findings; trace rows written |
 | 6 | Measure VRAM / latency / tokens; fill in §1.3 and §6.4 | Numbers recorded |
 
@@ -1025,6 +1025,10 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D50 | A `CHUNK_FORMAT` version tag inside every chunk header | Separate config | Changing the chunk format changes every hash, so `core.embed` re-embeds everything automatically, with no migration and no manual flag |
 | D51 | Vector search keeps Postgres's plan choice: at our sizes that's an *exact* seq scan + top-N heapsort, not HNSW | Force the index (`SET LOCAL enable_seqscan = off`) | Measured on 17k nodes: the planner picks the exact scan (25–90 ms; pg_stat shows 0 HNSW index scans) because pgvector's cost estimate overstates the index at this size; forced, the HNSW plan takes ~7 ms. Exact results are the better default while it's this cheap; the index takes over by itself as tables grow. Revisit with real review latencies in step 6 |
 | D52 | `vector_search` sets `hnsw.iterative_scan = relaxed_order` and `ef_search = max(100, k)` per transaction, re-sorts by exact distance, and joins the caller's open transaction if there is one | pgvector defaults; always `begin()` | Iterative scans stop filtered HNSW searches returning fewer than k rows once the index is used; relaxed order needs the re-sort; joining an open transaction avoids failing on connections SQLAlchemy has already auto-begun |
+| D53 | Seeds = the *innermost* node per changed line. Added lines are mapped on the head side, removed lines on the base side; a removed line in a node that no longer exists marks its closest surviving ancestor MODIFIED and the node itself DELETED | Mark every enclosing node; anchor deletions on new-side line numbers | Innermost keeps seeds specific (a method, not its class and module). New-side anchors for deletions landed on blank lines between methods and blamed the module. Base-side mapping is exact: a class that lost a method is MODIFIED, and the method is DELETED (its callers are prime suspects) |
+| D54 | Whitespace-only added/removed lines never create seeds | Count every line | A blank line between methods sits outside every method, so it would mark the whole class as changed |
+| D55 | Head/base versions of a node are matched by name *within the file* (qualified name minus module) | Full qualified name | Module names come from paths, so a renamed file would show every node as ADDED + DELETED; local names make a rename-with-edits a MODIFIED change |
+| D56 | Changes are read from git objects only (`merge-base`, `diff base...head`, `show rev:path`), both sides parsed in memory; no checkout, no DB | Check out head; parse the working tree | No side effects on the repo; the base is the merge-base exactly as GitHub computes PRs; git runs with `--no-ext-diff --no-textconv` so a repo's diff drivers can't execute, and option-like revisions (`-…`) are rejected. Known gap for step 5: the stored graph may be indexed at a different commit than the merge-base; seeds map to stored nodes by qualified name |
 
 ---
 
