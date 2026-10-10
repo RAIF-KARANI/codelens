@@ -136,6 +136,19 @@ whose chunk text changed. A re-run on an up-to-date repo writes nothing. Each no
 chunk is its code plus a short header (path, symbol, enclosing class); classes and
 modules are embedded as skeletons (members replaced by their signatures).
 
+## Searching a repository
+
+Once a repo is indexed and embedded, search it by meaning:
+
+```bash
+uv run python -m core.search local/my-app "retry a failed HTTP request"
+uv run python -m core.search local/my-app "compute tax" --k 5 --kinds function,method
+uv run python -m core.search local/my-app "compute tax" --explain   # show the Postgres plan
+```
+
+The query is embedded with the retrieval instruction and matched by cosine distance
+(pgvector), scoped to that one repo.
+
 ## Parser (inspect the code graph)
 
 `core.parser` turns a repo into nodes (modules, classes, functions, methods) and edges
