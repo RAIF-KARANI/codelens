@@ -8,10 +8,14 @@ import asyncio
 from collections.abc import Iterator
 
 import pytest
+from alembic import command
 from sqlalchemy import make_url, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from core.config import get_settings
+from core.db.migrate import alembic_config
+
+_TEST_DB = "codelens_test"
 
 
 async def _execute_as_admin(sql: str) -> None:
@@ -29,12 +33,18 @@ async def _execute_as_admin(sql: str) -> None:
 @pytest.fixture
 def empty_database_url() -> Iterator[str]:
     """URL of a freshly created, empty database; dropped after the test."""
-    name = "codelens_test"
     # WITH (FORCE) also kills leftover connections from a crashed earlier run.
-    asyncio.run(_execute_as_admin(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
-    asyncio.run(_execute_as_admin(f'CREATE DATABASE "{name}"'))
+    asyncio.run(_execute_as_admin(f'DROP DATABASE IF EXISTS "{_TEST_DB}" WITH (FORCE)'))
+    asyncio.run(_execute_as_admin(f'CREATE DATABASE "{_TEST_DB}"'))
     try:
-        url = make_url(get_settings().database_url).set(database=name)
+        url = make_url(get_settings().database_url).set(database=_TEST_DB)
         yield url.render_as_string(hide_password=False)
     finally:
-        asyncio.run(_execute_as_admin(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+        asyncio.run(_execute_as_admin(f'DROP DATABASE IF EXISTS "{_TEST_DB}" WITH (FORCE)'))
+
+
+@pytest.fixture
+def migrated_database_url(empty_database_url: str) -> str:
+    """A fresh database at the latest migration."""
+    command.upgrade(alembic_config(empty_database_url), "head")
+    return empty_database_url
