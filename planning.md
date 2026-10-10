@@ -5,8 +5,8 @@
 > two disagree, **this file wins**. It supersedes `idea.md` §14 (roadmap) and adds
 > decisions D18+.
 
-**Last updated:** 2026-10-10 · **Current position:** Phase 1, steps 1–3 done; step 4
-(indexing CLI) built and awaiting review; next is step 5 (fixture repos + exact tests).
+**Last updated:** 2026-10-10 · **Current position:** Phase 1, steps 1–4 done; step 5
+(fixture repos + golden tests) built and awaiting review. That completes Phase 1; next is Phase 2 (naive baseline).
 
 ---
 
@@ -666,8 +666,8 @@ what was built, how to run it, and what to verify. Estimates are rough
 | 1 ✅ | Monorepo, compose, uv workspace, ruff/pytest, CI, empty Next.js | `docker compose up` healthy; tests green | — |
 | 2 ✅ | Models, initial migration, `/health` (DB + Redis), migrate service | `alembic check` clean; 200/503 behaviour verified | — |
 | 3 ✅ | Parser: walker + skip rules → Python extractor → JS/TS extractor → resolver | Plain dataclasses out; resolution order per §5.4 | done (PR #1) |
-| 4 🔍 | Migration (§4.2 row 1), `core.index` CLI: incremental persist, re-link, `index_runs`, summary | 2nd run on an unchanged repo = zero writes; summary includes % resolved (all / in-repo) | built; in review |
-| 5 | Fixture repos (Python, JS, TS) with `expected.json`; exact-match tests for nodes and edges, incl. unresolved; idempotency test | Every node and edge asserted; CI green | 2–3 d |
+| 4 ✅ | Migration (§4.2 row 1), `core.index` CLI: incremental persist, re-link, `index_runs`, summary | 2nd run on an unchanged repo = zero writes; summary includes % resolved (all / in-repo) | done (PR #2) |
+| 5 🔍 | Fixture repos (`py_shop`, `ts_shop`) with golden `.graph` files; exact-match tests for parser output and the DB round trip, incl. unresolved/external edges and skips; re-index leaves the stored graph identical | Every node and edge asserted; CI green | built; in review |
 
 ### Phase 2: Naive baseline, end to end (B0)
 | Step | Deliverable | Exit criteria |
@@ -1010,6 +1010,7 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D40 | Parsing runs in `asyncio.to_thread` inside the async indexer | Call it directly | It is seconds of blocking I/O + CPU; on a worker's event loop it would stall everything else |
 | D41 | Advisory lock (`pg_try_advisory_lock(hashtext('index:' || name))`) held for the run | Redis lock; no lock | Two concurrent indexers on one repo would interleave diffs; Postgres already holds the data, so the lock lives there too. Phase 5 workers reuse it |
 | D42 | Files skipped for *transient* reasons (`parse_error`, `unreadable`) keep their previous rows; files that became unindexable (too large, minified…) are removed | Treat every skip as a deletion | A one-off read failure must not wipe a file's graph |
+| D43 | Golden `.graph` files (one fact per line, sorted) for fixture repos; regenerate only via `UPDATE_GOLDEN=1` and review the diff | Hand-written assertions per edge; JSON snapshots | Every node/edge is asserted, and any behaviour change is a readable line diff in the PR. It already caught a real bug: edge dedupe keyed on `target_name` dropped the `contains` edge to a @property setter (same name, different ordinal) |
 
 ---
 

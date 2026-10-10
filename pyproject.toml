@@ -58,6 +58,9 @@ testpaths = ["packages/core/tests", "services/api/tests", "services/worker/tests
 # importlib mode lets each package have its own tests/ dir without
 # needing __init__.py files or clashing module names.
 addopts = "-ra --import-mode=importlib"
+# tests/fixtures holds sample repos (with their own test_*.py files) to be
+# parsed, never collected. The rest are pytest's defaults.
+norecursedirs = [".*", "*.egg", "build", "dist", "node_modules", "venv", "fixtures"]
 markers = [
     "integration: needs Postgres + Redis running (docker compose up -d postgres redis); skip with -m 'not integration'",
 ]
