@@ -33,7 +33,9 @@ codelens-worker = { workspace = true }
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["apps", "**/tests/fixtures"]
+# Markdown docs hold illustrative sketches, not code under test; ruff >= 0.17
+# would otherwise reformat their ```python blocks.
+extend-exclude = ["apps", "**/tests/fixtures", "*.md"]
 
 [tool.ruff.lint]
 select = [
