@@ -98,4 +98,4 @@ def test_skeleton_uses_the_name_when_a_child_has_no_signature() -> None:
 def test_estimate_tokens_is_conservative_for_code() -> None:
     assert estimate_tokens("") == 0
     assert estimate_tokens("abc") == 1
-    assert estimate_tokens("x" * 350) == 100
+    assert estimate_tokens("x" * 300) == 100  # 3.0 chars/token (measured, planning.md D63)

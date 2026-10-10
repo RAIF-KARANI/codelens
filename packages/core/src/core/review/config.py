@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Self
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class _Section(BaseModel):
@@ -24,13 +24,46 @@ class RetrievalConfig(_Section):
 
 
 class PackingConfig(_Section):
-    # Token budgets per LLM call (planning.md §6.2; num_ctx 16384).
+    # How the prompt space left after the fixed parts (system prompt, PR header,
+    # output reserve) is split. Measured (planning.md D64): with fixed budgets
+    # sized for 16k, an 8k window was filled by diff + changed code, and
+    # context, the point of retrieval, got 0 blocks in 3 of 4 chunks. Shares
+    # guarantee context a real slice of any window.
+    diff_share: float = Field(default=0.40, gt=0, le=1)
+    changed_share: float = Field(default=0.25, ge=0, le=1)
+    context_share: float = Field(default=0.35, ge=0, le=1)
+    # Caps per LLM call: never more than this, however large the window.
     diff_tokens: int = Field(default=4000, gt=0)
     changed_node_tokens: int = Field(default=3500, ge=0)
     context_tokens: int = Field(default=4000, ge=0)
     max_chunks: int = Field(default=4, ge=1)
     # When a context item doesn't fit whole, include just its signature line.
     degrade_to_signature: bool = True
+    # Test files' changes count this much when choosing which chunks to review
+    # under max_chunks, so large test diffs don't crowd out the code they test.
+    test_file_weight: float = Field(default=0.25, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def _shares_fit(self) -> Self:
+        if self.diff_share + self.changed_share + self.context_share > 1.0 + 1e-9:
+            raise ValueError("diff_share + changed_share + context_share must be <= 1")
+        return self
+
+    def scaled_to(self, available_tokens: int) -> Self:
+        """Budgets for a window with `available_tokens` of prompt space."""
+        return self.model_copy(
+            update={
+                "diff_tokens": max(
+                    1, min(self.diff_tokens, int(available_tokens * self.diff_share))
+                ),
+                "changed_node_tokens": min(
+                    self.changed_node_tokens, int(available_tokens * self.changed_share)
+                ),
+                "context_tokens": min(
+                    self.context_tokens, int(available_tokens * self.context_share)
+                ),
+            }
+        )
 
 
 class GenerationConfig(_Section):

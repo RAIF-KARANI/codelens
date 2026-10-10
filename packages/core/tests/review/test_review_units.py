@@ -239,3 +239,49 @@ def test_duplicates_keep_the_most_confident_and_cap_keeps_the_most_severe() -> N
         (FindingStatus.POSTED, None),  # warning
     ]
     assert checked[0].fingerprint == checked[1].fingerprint
+
+
+# ---------------------------------------------------------------- budgets (step 6)
+
+
+def test_budgets_scale_with_the_window_and_respect_caps() -> None:
+    packing = PackingConfig()  # shares 0.40 / 0.25 / 0.35, caps 4000 / 3500 / 4000
+
+    small = packing.scaled_to(5000)
+    large = packing.scaled_to(50_000)
+
+    assert (small.diff_tokens, small.changed_node_tokens, small.context_tokens) == (
+        2000,
+        1250,
+        1750,
+    )
+    assert (large.diff_tokens, large.changed_node_tokens, large.context_tokens) == (
+        4000,
+        3500,
+        4000,
+    )
+
+
+def test_shares_must_fit_in_the_window() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="must be <= 1"):
+        PackingConfig(diff_share=0.6, changed_share=0.3, context_share=0.3)
+
+
+def test_test_files_count_less_when_chunks_are_capped() -> None:
+    source = file_change("shop/pricing.py", PRICING_OLD, PRICING_NEW)  # 2 changed lines
+    six_asserts = "def test_x():\n" + "".join(f"    assert {i} == {i}\n" for i in range(6))
+    test = file_change("tests/test_pricing.py", "def test_x():\n    pass\n", six_asserts)
+    changes = ChangeSet("base", "head", (source, test))
+    assert [sum(s.change_size for s in f.seeds) for f in changes.files] == [2, 7]
+
+    def kept(weight: float) -> list[str]:
+        # diff_tokens=1 puts every file in its own chunk; only one chunk fits.
+        packing = PackingConfig(diff_tokens=1, max_chunks=1, test_file_weight=weight)
+        chunks, _ = build_chunks(changes, list(changes.seeds), {}, packing)
+        return chunks[0].paths
+
+    assert kept(0.25) == ["shop/pricing.py"]  # 2 > 7 * 0.25
+    assert kept(1.0) == ["tests/test_pricing.py"]  # unweighted, the bigger test diff wins

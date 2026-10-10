@@ -274,3 +274,20 @@ def test_fake_reranker_scores_by_overlap() -> None:
     scores = run(FakeReranker().rerank("user id lookup", ["get user by id", "render header"]))
 
     assert scores[0] > scores[1] == 0.0
+
+
+def test_embedder_sends_its_context_size_for_queries_and_documents() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(body(request))
+        return httpx.Response(200, json={"embeddings": [[1.0]]})
+
+    embedder = OllamaEmbedder(
+        client(handler), model="emb", dim=1, batch_size=8, query_instruction="", num_ctx=2048
+    )
+    run(embedder.embed(["x"], kind=EmbedKind.QUERY))
+    run(embedder.embed(["x"], kind=EmbedKind.DOCUMENT))
+
+    # Same options both ways: a difference would make Ollama reload the model.
+    assert seen[0]["options"] == seen[1]["options"] == {"num_ctx": 2048}
