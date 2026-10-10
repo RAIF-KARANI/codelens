@@ -73,9 +73,14 @@ def test_signatures_docstrings_and_code() -> None:
     assert nodes["pkg.mod.Service"].signature == "class Service(Base)"
     assert nodes["pkg.mod.Service"].docstring == "Svc."
     assert nodes["pkg.mod.Service.run"].docstring is None
-    # decorated nodes include their decorators
-    assert nodes["pkg.mod.Service.value"].code.startswith("@property\n    def value(self):")
+    # Decorated nodes include their decorators, and nested code is dedented:
+    # a method reads like top-level code, body one level in.
+    assert nodes["pkg.mod.Service.value"].code == "@property\ndef value(self):\n    return 1"
     assert nodes["pkg.mod.Service.value#1"].code.startswith("@value.setter")
+    assert nodes["pkg.mod.Service.run"].code.splitlines()[1:3] == [
+        "    def helper():",
+        "        pass",
+    ]
     # same code -> same hash; it is what lets the indexer skip unchanged nodes
     assert nodes["pkg.mod.top"].content_hash == extract(SAMPLE).nodes[1].content_hash
 

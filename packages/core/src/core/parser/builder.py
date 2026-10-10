@@ -4,6 +4,7 @@ ordinals, and collecting nodes and references."""
 import hashlib
 import inspect
 import re
+import textwrap
 from dataclasses import dataclass
 
 from tree_sitter import Node
@@ -97,6 +98,21 @@ class FileBuilder:
         raw = self.source[start_byte:end_byte].decode("utf-8", errors="replace")
         return raw.replace("\r\n", "\n")  # CRLF vs LF must not change content hashes
 
+    def block_text(self, node: Node) -> str:
+        """A definition's code, dedented to column 0.
+
+        The node starts at `def`/`class`, so a plain slice would leave the first
+        line at column 0 but every other line at its original indentation (a
+        method body 8 spaces in). When the node starts its line, include the
+        indentation before it and dedent the whole block, so nested code reads
+        exactly like top-level code.
+        """
+        line_start = self.source.rfind(b"\n", 0, node.start_byte) + 1
+        prefix = self.source[line_start : node.start_byte]
+        if prefix.strip():  # something else precedes it on the line: leave as is
+            return self.text(node)
+        return textwrap.dedent(self.text_between(line_start, node.end_byte))
+
     def add_module(self, *, name: str, docstring: str | None) -> Scope:
         code = self.text_between(0, len(self.source))
         line_count = max(1, len(code.splitlines()))
@@ -124,7 +140,7 @@ class FileBuilder:
             docstring,
             first_line(range_node),
             last_line(range_node),
-            self.text(range_node),
+            self.block_text(range_node),
         )
         return scope
 

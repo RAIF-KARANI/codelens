@@ -28,7 +28,7 @@ class FileWrite:
     """What writing one file changed."""
 
     nodes_inserted: int = 0
-    nodes_updated: int = 0  # code changed: embedding/tsv cleared for recompute
+    nodes_updated: int = 0  # code changed (the embedding job re-checks its chunk hash)
     nodes_moved: int = 0  # same code, new line numbers (code above it changed)
     nodes_kept: int = 0
     nodes_deleted: int = 0
@@ -134,12 +134,13 @@ async def write_file(
             result.nodes_kept += 1
 
     if changed:
-        # Content changed: the embedding and tsv describe the old code, so clear
-        # them; the embedding job recomputes exactly the NULL ones (Phase 2).
+        # The embedding is deliberately *not* cleared. The embedding job decides
+        # staleness from the hash of the chunk text (planning.md D47), and many
+        # code changes leave a chunk unchanged, e.g. a module whose skeleton only
+        # shows the edited function's signature. Clearing would force pointless
+        # re-embeds. tsv has no hash yet, so it is still cleared (Phase 4).
         await conn.execute(
-            update(nodes_t)
-            .where(nodes_t.c.id == bindparam("b_id"))
-            .values(embedding=None, tsv=None),
+            update(nodes_t).where(nodes_t.c.id == bindparam("b_id")).values(tsv=None),
             changed,
         )
         result.nodes_updated = len(changed)
