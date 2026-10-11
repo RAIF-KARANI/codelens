@@ -97,9 +97,10 @@ def build_chunks(
     """Returns (chunks, paths left out because of max_chunks)."""
     # Only parsed source files with seeds are reviewed. Others (docs, configs,
     # vendored or minified files) have no nodes to anchor findings to.
+    # Source files first, then tests, so related source files share chunks.
     reviewable = sorted(
         (f for f in changes.files if f.head is not None and f.seeds),
-        key=lambda f: f.diff.path,
+        key=lambda f: (f.head.is_test if f.head else False, f.diff.path),
     )
 
     groups: list[list[tuple[FileChange, str]]] = []
@@ -122,7 +123,11 @@ def build_chunks(
     # Too many chunks: keep the groups with the most changed lines.
     left_out: list[str] = []
     if len(groups) > config.max_chunks:
-        sizes = [sum(s.change_size for f, _ in g for s in f.seeds) for g in groups]
+
+        def weight(change: FileChange) -> float:
+            return config.test_file_weight if change.head and change.head.is_test else 1.0
+
+        sizes = [sum(weight(f) * s.change_size for f, _ in g for s in f.seeds) for g in groups]
         ranked = sorted(range(len(groups)), key=lambda i: -sizes[i])
         keep = set(ranked[: config.max_chunks])
         left_out = [f.diff.path for i, g in enumerate(groups) if i not in keep for f, _ in g]

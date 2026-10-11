@@ -122,6 +122,7 @@ class OllamaEmbedder:
         batch_size: int,
         query_instruction: str,
         query_on_cpu: bool = False,
+        num_ctx: int | None = None,
     ) -> None:
         self.model = model
         self.dim = dim
@@ -129,6 +130,7 @@ class OllamaEmbedder:
         self._batch_size = batch_size
         self._query_instruction = query_instruction
         self._query_on_cpu = query_on_cpu
+        self._num_ctx = num_ctx
 
     async def embed(self, texts: Sequence[str], *, kind: EmbedKind) -> Embeddings:
         prepared = [self._prepare(text, kind) for text in texts]
@@ -137,9 +139,15 @@ class OllamaEmbedder:
         for start in range(0, len(prepared), self._batch_size):
             batch = prepared[start : start + self._batch_size]
             payload: dict[str, Any] = {"model": self.model, "input": batch}
+            options: dict[str, int] = {}
+            if self._num_ctx:
+                # Same value for queries and documents: a change in options
+                # makes Ollama reload the model.
+                options["num_ctx"] = self._num_ctx
             if kind is EmbedKind.QUERY and self._query_on_cpu:
-                # 0 layers on GPU = CPU only: leaves the VRAM to the LLM.
-                payload["options"] = {"num_gpu": 0}
+                options["num_gpu"] = 0  # 0 layers on GPU = CPU only
+            if options:
+                payload["options"] = options
             data = await self._client.post("/api/embed", payload)
             got = data.get("embeddings") or []
             if len(got) != len(batch):

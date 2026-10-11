@@ -22,7 +22,7 @@ from core.providers import Message, ProviderError, Providers, Usage
 from core.review.changes import ChangeSet, collect_changes
 from core.review.config import PipelineConfig
 from core.review.packing import ReviewChunk, build_chunks, fit_to_window
-from core.review.prompts import build_messages
+from core.review.prompts import SYSTEM_PROMPT, build_messages
 from core.review.recorder import ReviewRecorder
 from core.review.retrieval import retrieve_for_seeds, select_seeds
 from core.review.schemas import FindingOut, ReviewOut
@@ -56,6 +56,9 @@ ProgressFn = Callable[[str], None]
 
 # Headroom for chat-template tokens and the estimate's error.
 _WINDOW_MARGIN_TOKENS = 300
+# The PR header, block tags/attributes and closing instruction around the
+# diff, changed code and context (measured on real prompts: ~150-350).
+_PROMPT_OVERHEAD_TOKENS = 400
 
 
 async def run_review(
@@ -121,8 +124,25 @@ async def run_review(
             await conn.commit()
             seconds["retrieve"] = time.perf_counter() - started
 
-            chunks, left_out = build_chunks(changes, seeds, candidates, config.packing)
-            await recorder.event("stage", stage="packed", chunks=len(chunks), left_out=left_out)
+            # Budgets follow the model's window: what's left after the output
+            # reserve, a safety margin, and the fixed parts of every prompt.
+            fixed = estimate_tokens(SYSTEM_PROMPT) + _PROMPT_OVERHEAD_TOKENS
+            available = (
+                context_window - config.generation.max_output_tokens - _WINDOW_MARGIN_TOKENS - fixed
+            )
+            packing = config.packing.scaled_to(max(available, 1))
+            chunks, left_out = build_chunks(changes, seeds, candidates, packing)
+            await recorder.event(
+                "stage",
+                stage="packed",
+                chunks=len(chunks),
+                left_out=left_out,
+                budgets={
+                    "diff": packing.diff_tokens,
+                    "changed": packing.changed_node_tokens,
+                    "context": packing.context_tokens,
+                },
+            )
             say(
                 f"{len(chunks)} review chunk(s)"
                 + (f", {len(left_out)} files left out" if left_out else "")
@@ -178,6 +198,15 @@ async def run_review(
                     await recorder.event("chunk_failed", chunk=chunk.index, error=str(exc))
                     continue
                 usage += result.usage
+                await recorder.event(
+                    "chunk_done",
+                    chunk=chunk.index,
+                    estimated_prompt_tokens=measure(chunk),
+                    input_tokens=result.usage.input_tokens,
+                    output_tokens=result.usage.output_tokens,
+                    llm_ms=round(result.usage.duration_ms),
+                    findings=len(result.output.findings),
+                )
                 summaries.append(result.output.summary)
                 raw.append(
                     (chunk, result.output.findings[: config.generation.max_findings_per_chunk])

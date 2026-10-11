@@ -51,11 +51,16 @@ class Settings(BaseSettings):
     embed_query_instruction: str = (
         "Given a code change, retrieve code that it depends on or that depends on it"
     )
-    # Embed *queries* on CPU (Ollama num_gpu=0) so the LLM keeps the GPU to
-    # itself during a review. Measured: with both models on an 8 GB GPU the LLM
-    # decoded at 8 tok/s; with queries on CPU, 29 tok/s (planning.md D57). Bulk
-    # document embedding (core.embed) still uses the GPU.
-    embed_query_on_cpu: bool = True
+    # The embedder's context window. Chunks are capped at embed_max_tokens, so
+    # 2048 leaves headroom while keeping the embedder at ~2 GiB. That's small
+    # enough to sit in VRAM beside qwen3:8b with no slowdown; at Ollama's
+    # default 4096 (2.4 GiB) the two overflowed 8 GB and decode fell from 31
+    # to 8 tok/s (planning.md D62).
+    embed_num_ctx: int = Field(default=2048, ge=512)
+    # Embed queries on CPU instead (Ollama num_gpu=0). Off: measured ~20x
+    # slower than GPU for review-sized queries (187 s vs 9 s for 24 queries).
+    # Only worth it on GPUs too small to hold both models.
+    embed_query_on_cpu: bool = False
     embed_timeout_s: float = Field(default=120.0, gt=0)
 
 

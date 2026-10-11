@@ -179,8 +179,10 @@ shown, confidence threshold, dedupe, cap). Everything is stored: `reviews`, `fin
 (posted *and* dropped, with the reason), `review_context_items` (what the model saw and
 why), `review_events` (timeline). Pipeline knobs live in `configs/pipeline/*.yaml`.
 
-On an 8 GB GPU keep `LLM_NUM_CTX=8192` (the default). For 16k, set
-`OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0` for the Ollama server first.
+On an 8 GB GPU, `LLM_NUM_CTX=8192` (the default) keeps the LLM entirely in VRAM. For a
+16k window, set `OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0` for the Ollama
+server first: measured on an RTX 4060, 16k then fits at full speed, while without them
+it spills to CPU at half speed (numbers in `planning.md` §1.3; tools in `scripts/`).
 
 ## Parser (inspect the code graph)
 
