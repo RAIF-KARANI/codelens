@@ -1,0 +1,25 @@
+# Q9 ablation: B0 with at most 4 findings per chunk instead of 8 (planning.md §18 Q9).
+# AST-node chunks, vector top-k per seed, structured output + validation.
+name: b0_mf4
+retrieval:
+  enabled: true
+  vector_k: 8
+  max_seeds: 24
+packing:
+  # shares of the prompt space; the token values below are caps
+  diff_share: 0.40
+  changed_share: 0.25
+  context_share: 0.35
+  diff_tokens: 4000
+  changed_node_tokens: 3500
+  context_tokens: 4000
+  max_chunks: 4
+  degrade_to_signature: true
+  test_file_weight: 0.25
+generation:
+  think: false
+  max_output_tokens: 1500
+  max_findings_per_chunk: 4
+validation:
+  min_confidence: 0.6
+  max_comments: 5

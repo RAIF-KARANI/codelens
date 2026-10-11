@@ -252,3 +252,10 @@ def test_extract_return(
 
     assert mutation.expected is None
     assert lines[first - 1 : first + 2] == lines_after
+
+
+def test_rename_local_does_not_double_a_trailing_underscore(toy_graph: CodeGraph) -> None:
+    _, lines, _ = run(toy_graph, rename_local, "pkg.api.help_text")
+
+    assert '    help_value = item.help or "_"' in lines
+    assert "    return help_value.strip()" in lines

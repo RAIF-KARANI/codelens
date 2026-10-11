@@ -5,8 +5,8 @@
 > two disagree, **this file wins**. It supersedes `idea.md` §14 (roadmap) and adds
 > decisions D18+.
 
-**Last updated:** 2026-10-11 · **Current position:** Phases 1–2 complete (PRs #1–#9); Phase 3 step 1 merged (#10).
-Step 2 (runner, matching, metrics, bootstrap CIs, scorecard) built and awaiting review; next is step 3 (A0/B0 baselines).
+**Last updated:** 2026-10-11 · **Current position:** Phases 1–2 complete (PRs #1–#9); Phase 3 steps 1–2 merged (#10, #11).
+Step 3 (A0/B0 baselines, Q9 ablation) run and awaiting review. Finding: A0 ≈ B0, so the dataset can't yet show context helping (Q10); decide that before Phase 4.
 
 ---
 
@@ -671,7 +671,7 @@ codelens/
     ├── generate_seeded.py          ✅ operators → verified cases (+ graph.py syntax.py edits.py operators.py cases.py)
     ├── run.py metrics.py report.py records.py   ✅ runner, scoring, scorecard
     ├── results/<run>/              ✅ run.json + cases.jsonl + scorecard.{json,md} (gitignored)
-    └── RESULTS.md                  📋3 the adopted/rejected upgrade log + tables
+    └── RESULTS.md                  ✅ the adopted/rejected upgrade log + tables (A0, B0, Q9)
 ```
 
 ---
@@ -706,8 +706,8 @@ what was built, how to run it, and what to verify. Estimates are rough
 | Step | Deliverable | Exit criteria |
 |---|---|---|
 | 1 ✅ | `sources.yaml` (3–4 permissively licensed OSS repos, pinned SHAs) + seeded-bug generator (§10.1) | ≥ 60 seeded cases + ≥ 20 clean cases generated reproducibly (73 + 24; D68–D71; PR #10) |
-| 2 🔍 | Runner (`evals.run`), matching + metrics, bootstrap CIs, report | One command produces a scorecard JSON + markdown (D72–D74) |
-| 3 | Run **diff-only (A0)** and **B0** | Baseline numbers committed to `evals/RESULTS.md` |
+| 2 ✅ | Runner (`evals.run`), matching + metrics, bootstrap CIs, report | One command produces a scorecard JSON + markdown (D72–D74; PR #11) |
+| 3 🔍 | Run **diff-only (A0)** and **B0** | Baseline numbers committed to `evals/RESULTS.md` (test: A0 F1 0.879, B0 0.864, no significant difference; D75–D76) |
 
 ### Phase 4: The "+" upgrades, one per step, each gated by evals
 | Step | Upgrade | Extra deliverables |
@@ -1073,6 +1073,8 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D72 | Category compatibility for matching: bug ← {bug, api-contract, error-handling}; api-contract ← {api-contract, bug}; concurrency ← {concurrency, bug}; error-handling ← {error-handling, bug, api-contract}; security ← {security} only. A second finding on the same bug is a false positive | Exact category; any category | The planted bug is what matters, not the label: a caller-breaking change called a "bug" is found. But SQL injection called anything other than security is not, and duplicate comments are noise a user would see |
 | D73 | Runner: each case is a commit built with git plumbing (`read-tree`, `apply --cached`, `commit-tree` with a fixed author/date) on the shared checkout; records are appended per case to `cases.jsonl` (resumable); each record copies its expectation and oracle; sources are indexed and embedded as `eval/<name>` (incremental). Default split is `dev` | A worktree/branch per case; scoring by joining with the dataset later | No working-tree churn, the same commit sha every run, a 65-minute run survives interruption, and a results directory scores on its own after the dataset changes. Defaulting to dev keeps test numbers for reporting only |
 | D74 | Statistics in plain Python: percentile bootstrap (1,000 resamples, seeded) per metric, and a *paired* bootstrap for deltas against a baseline (same case ids resampled for both); undefined metrics are NaN → `null`/"n/a", never 0. The scorecard checks the §10.5 gate (F1 up with CI > 0; noise up ≤ 0.1) | numpy/scipy | ~60 lines, no new dependency, every number explainable; NaN keeps "no findings" distinct from "all findings wrong" |
+| D75 | `max_findings_per_chunk` stays 8 (answers Q9) | 4 | Measured on dev (paired): F1 −0.036, precision −0.079, noise +0.375. The cap is part of the prompt, so it changes what the model writes: with 4 it posted *more* false findings. Q9's premise (always 8 findings) came from a 13-file real PR; single-function changes average ~1 |
+| D76 | Order for measuring: tuning questions on dev first, then the final configs once on test; baselines on test only after dev decisions | Run everything on test | Keeps test numbers untouched by choices made from them (§10.4). Dev also caught a dataset flaw (`help_` → `help__value`) before the test runs |
 
 ---
 
@@ -1084,7 +1086,7 @@ PR overlay, migrate service, host port 5433). New decisions:
 | Model doesn't follow the JSON schema | Medium | Medium | Ollama `format` schema-constrained decoding; one repair retry; per-chunk failure isolation |
 | VRAM pressure (LLM + embedder + desktop) | Medium | Medium | q8_0 KV, query embeddings on CPU, `gpu` queue concurrency 1, measure in Phase 2 step 6 |
 | Latency over budget on CPU rerank / big PRs | Medium | Medium | `bge-reranker-base` (not v2-m3), top-N 100, chunk cap + summary mode |
-| Seeded bugs too easy or unrealistic → misleading metrics | Medium | High | Several operators, a clean-PR noise metric, a small golden real-PR set later, a dev/test split |
+| Seeded bugs too easy or unrealistic → misleading metrics (**confirmed in Phase 3 step 3: A0 ≈ B0; Q10**) | Medium | High | Several operators, a clean-PR noise metric, a small golden real-PR set later, a dev/test split |
 | Small eval set → noisy comparisons | High | Medium | Paired bootstrap CIs; ≥ 60 cases; report uncertainty honestly |
 | Weak call resolution for `obj.method()` | High | Medium | FTS on method names (U1), report resolution rates, light type inference (stretch) |
 | Windows/Docker instability (Insider build) | Medium | Medium | Documented recovery (§1.5); everything also runs on plain Linux/CI |
@@ -1105,7 +1107,9 @@ PR overlay, migrate service, host port 5433). New decisions:
 | Q6 | Barrel-file re-export following depth for TS | Phase 1 step 3 (keep it to 1 level unless fixtures need more) |
 | Q7 | Dashboard auth for the demo: public read-only without login, or GitHub login required? | Phase 7 |
 | Q8 | Hosting providers for the demo | Phase 7 |
-| Q9 | Lower `max_findings_per_chunk` (e.g. 4)? Output length dominates latency (~140 tokens/finding, always 8 per chunk) and a tighter cap may also improve precision | Phase 3 step 3 (ablate) |
+| Q9 | ~~Lower `max_findings_per_chunk` (e.g. 4)?~~ **Answered 2026-10-11:** no, keep 8 (D75; `evals/RESULTS.md`) | Phase 3 step 3 (ablate) |
+| Q10 | The seeded dataset can't show context helping: A0 (diff only) ≈ B0 on every operator, because each mutation looks suspicious on sight. Add **counterfactual clean cases**, the same mutation where context shows it's safe (a parameter no caller passes, an `await` dropped on a non-async call, a raise no caller relies on), so diff-only reviewers lose precision and only context can tell the two apart? | Before Phase 4 step 1 |
+| Q11 | Anchor findings next to pure deletions (validation currently drops them: `remove_guard` recall is 0 although the model flags 7/8)? A candidate upgrade with evidence in `evals/RESULTS.md` | Phase 4 (first upgrade?) |
 
 ---
 

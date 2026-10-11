@@ -5,12 +5,12 @@
          # sentinel matches what ZshComplete uses for "no help text".
          if item.help:
 -            help_ = item.help.replace("\r", " ").replace("\n", " ")
-+            help__value = item.help.replace("\r", " ").replace("\n", " ")
++            help_value = item.help.replace("\r", " ").replace("\n", " ")
          else:
 -            help_ = "_"
 -        return f"{item.type}\n{item.value}\n{help_}"
-+            help__value = "_"
-+        return f"{item.type}\n{item.value}\n{help__value}"
++            help_value = "_"
++        return f"{item.type}\n{item.value}\n{help_value}"
  
  
  _available_shells: t.Final[dict[str, type[ShellComplete]]] = {

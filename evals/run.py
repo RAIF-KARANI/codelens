@@ -67,6 +67,10 @@ _COMMIT_ENV = {
 _MAX_CONSECUTIVE_ERRORS = 3  # e.g. Ollama is down: stop instead of failing 97 cases
 
 
+def _say(line: str) -> None:
+    print(line, flush=True)  # live progress even when stdout goes to a log file
+
+
 @dataclass(frozen=True, slots=True)
 class Prepared:
     """A source ready to review against: checked out, indexed, embedded."""
@@ -135,7 +139,7 @@ async def prepare_source(
     checkouts: Path,
     *,
     embed_max_tokens: int,
-    say: Callable[[str], None] = print,
+    say: Callable[[str], None] = _say,
 ) -> Prepared:
     root = checkout(source, checkouts)
     name = f"eval/{source.name}"
@@ -213,7 +217,7 @@ async def run_cases(
     config: PipelineConfig,
     context_window: int,
     out: Path,
-    say: Callable[[str], None] = print,
+    say: Callable[[str], None] = _say,
 ) -> None:
     """Review each case and append its record. Cases already in `out` are skipped."""
     done = {r.case_id for r in load_run(out)[1]}

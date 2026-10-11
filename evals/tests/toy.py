@@ -88,6 +88,11 @@ FILES = {
 
         def page(context):
             return render("<p>{body}</p>", context, escape=False)
+
+
+        def help_text(item):
+            help_ = item.help or "_"
+            return help_.strip()
         """,
     "src/store.ts": """
         export class NotFound extends Error {}
