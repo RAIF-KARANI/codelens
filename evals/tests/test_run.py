@@ -46,7 +46,9 @@ def flag_first_added_line(messages: Sequence[Message], schema: type[BaseModel]) 
     return {"summary": "A change.", "findings": [finding]}
 
 
-def test_run_records_scores_and_resumes(tmp_path: Path, migrated_database_url: str) -> None:
+def test_run_records_scores_and_resumes(
+    tmp_path: Path, migrated_database_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     source = make_toy_source(tmp_path / "upstream")
     generate(source, tmp_path / "checkouts", tmp_path / "dataset")
     cases = select_cases(tmp_path / "dataset")
@@ -65,7 +67,7 @@ def test_run_records_scores_and_resumes(tmp_path: Path, migrated_database_url: s
                     engine,
                     providers,
                     source,
-                    tmp_path / "checkouts",
+                    Path("checkouts"),  # relative, as the CLI passes it
                     embed_max_tokens=1024,
                     say=_quiet,
                 )
@@ -84,6 +86,7 @@ def test_run_records_scores_and_resumes(tmp_path: Path, migrated_database_url: s
         finally:
             await engine.dispose()
 
+    monkeypatch.chdir(tmp_path)
     asyncio.run(go())
 
     _, records = load_run(out)
@@ -105,6 +108,7 @@ def test_run_records_scores_and_resumes(tmp_path: Path, migrated_database_url: s
     assert card["cases"]["counterfactual"] > 0
     assert metrics["false_alarms_per_counterfactual"] == 1.0
     assert (tmp_path / "worktrees" / "toy" / ".git").exists()
+    assert not (tmp_path / "checkouts" / "toy" / "checkouts").exists()  # not nested in the source
     assert (out / "scorecard.md").exists()
 
 

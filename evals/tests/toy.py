@@ -1,5 +1,6 @@
 """A toy repo (Python + TypeScript) with exactly one obvious site per operator."""
 
+import os
 import subprocess
 from pathlib import Path
 from textwrap import dedent
@@ -195,8 +196,11 @@ def make_toy_source(root: Path) -> Source:
     """The toy repo committed to a git repo at `root`, as a pinned Source."""
     write_toy_repo(root)
     git(root, "init", "-q")
+    git(root, "config", "core.autocrlf", "false")  # same bytes, so the same sha, on Windows
     git(root, "add", ".")
-    git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "toy")
+    # A fixed author and clock make the sha, and so the generator's seeded
+    # shuffles, the same on every run: tests that pick cases stay deterministic.
+    git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "toy", env=_FIXED_CLOCK)
     return Source(
         name="toy",
         url=root.as_uri(),
@@ -222,6 +226,19 @@ def generate(source: Source, checkouts: Path, out: Path) -> None:
     write_dataset(out, assign_splits(cases, 0.3))
 
 
-def git(repo: Path, *args: str) -> str:
-    done = subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+_FIXED_CLOCK = {
+    "GIT_AUTHOR_DATE": "2026-01-01T00:00:00+00:00",
+    "GIT_COMMITTER_DATE": "2026-01-01T00:00:00+00:00",
+}
+
+
+def git(repo: Path, *args: str, env: dict[str, str] | None = None) -> str:
+    done = subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        env={**os.environ, **env} if env else None,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     return done.stdout.strip()
