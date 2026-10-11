@@ -1,4 +1,5 @@
-"""Fixtures for tests that need a real Postgres (marked `integration`).
+"""Fixtures for tests that need a real Postgres (marked `integration`), shared by
+every suite (core, services, evals).
 
 Each integration test gets its own throwaway database on the server from
 DATABASE_URL, so tests never touch your dev data and can't leak state.

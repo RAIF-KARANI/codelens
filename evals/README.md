@@ -3,8 +3,51 @@
 The evaluation harness (planning.md §10). Every pipeline upgrade must beat the
 baseline here before it is adopted.
 
-**Status:** step 1 is built: the sources and the seeded/clean dataset. The runner,
-metrics and baselines come in steps 2–3.
+**Status:** steps 1–2 are built: the dataset, the runner and the scorecard. The A0/B0
+baselines come in step 3 (`RESULTS.md`).
+
+## Running an eval
+
+```bash
+docker compose up -d postgres redis          # and Ollama running natively
+python -m evals.run --config configs/pipeline/b0.yaml             # dev split (default)
+python -m evals.run --config configs/pipeline/b0.yaml --split test --name b0-test
+python -m evals.run ... --operator drop_await --limit 5           # a quick slice
+python -m evals.run ... --name b0-test --resume                   # after an interruption
+python -m evals.report evals/results/b0-test --baseline evals/results/a0-test
+```
+
+The runner:
+
+1. Checks out each source it needs.
+2. Indexes and embeds the source as `eval/<source>`. The first time takes about 1 to 1.5 minutes per repo; after that it is a no-op.
+3. Turns each case into a commit with git plumbing, so nothing is checked out and the same case always gives the same SHA.
+4. Runs the review pipeline on that commit (`source=eval`).
+5. Appends one record per case to `evals/results/<run>/cases.jsonl`.
+6. At the end, writes `scorecard.json` and `scorecard.md` next to the records.
+
+**Timing.** About 15–40 s per case at an 8k window: roughly 20 min for the dev split and 45 min for test.
+
+**Use dev while iterating.** Test numbers are for reporting only.
+
+## Scoring (`metrics.py`, planning §10.2)
+
+**When a finding matches a planted bug:** same file, lines within ±3, a compatible category (D72), and a severity at most one level below the expected one. Matching is greedy and one-to-one, so a second comment on the same bug is a false positive.
+
+| Metric | Meaning |
+|---|---|
+| precision / recall / F1 | Over seeded cases; F1 is primary. Precision is `n/a` when nothing was posted |
+| critical_recall | Recall restricted to critical expectations |
+| noise_per_clean_pr | Findings posted on behaviour-preserving changes (target ≤ 0.3) |
+| oracle_recall@k, mrr | Did retrieval rank the oracle nodes in its top k (by similarity, across chunks)? |
+| oracle_packed_recall | Did the oracle nodes make it into the prompt? |
+| latency p50/p95, tokens | Per case, wall clock, including retrieval |
+
+**Confidence intervals and comparisons:**
+- Every quality metric gets a 95% bootstrap interval (1,000 resamples, seeded).
+- `--baseline` adds paired deltas (the same cases resampled for both runs) and checks the adoption gate (§10.5).
+
+**Matches lost to validation.** The scorecard also counts findings that validation dropped but that would have matched a missed bug. This is how the `remove_guard` blind spot (D70) shows up.
 
 ## The dataset
 
@@ -88,5 +131,9 @@ The split is stratified per (kind, operator), with 30% of cases in dev. Prompts 
 | `edits.py` | byte edits → new file + expected lines; `git apply`-able diffs |
 | `cases.py` | `case.yaml` model, read/write |
 | `generate_seeded.py` | the CLI: candidates → selection → checks → split → write |
+| `run.py` | the runner CLI: prepare sources, case commits, run_review, records |
+| `records.py` | `run.json` / `cases.jsonl` models |
+| `metrics.py` | matching, per-case scores, aggregates, bootstrap (plain + paired) |
+| `report.py` | scorecard JSON + markdown, baseline comparison, adoption gate |
 
-Tests are in `tests/`, run on a toy Python + TypeScript repo. CI runs them; it runs no model evals (no GPU, §10.6).
+Tests are in `tests/`, run on a toy Python + TypeScript repo (the runner test uses Postgres and fake models). CI runs them; it runs no model evals (no GPU, §10.6).

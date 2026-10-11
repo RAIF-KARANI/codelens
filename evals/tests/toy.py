@@ -1,9 +1,20 @@
 """A toy repo (Python + TypeScript) with exactly one obvious site per operator."""
 
+import subprocess
 from pathlib import Path
 from textwrap import dedent
 
+from evals.generate_seeded import (
+    assign_splits,
+    build_case,
+    find_candidates,
+    select_clean,
+    select_seeded,
+    write_dataset,
+)
 from evals.graph import CodeGraph, Target
+from evals.operators import CLEAN, SEEDED
+from evals.sources import Source, checkout
 
 FILES = {
     "pkg/__init__.py": "",
@@ -143,3 +154,34 @@ def get_target(graph: CodeGraph, qualified_name: str) -> Target:
         t for t in graph.targets(["pkg/", "src/"]) if t.node.qualified_name == qualified_name
     ]
     return target
+
+
+def make_toy_source(root: Path) -> Source:
+    """The toy repo committed to a git repo at `root`, as a pinned Source."""
+    write_toy_repo(root)
+    git(root, "init", "-q")
+    git(root, "add", ".")
+    git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "toy")
+    return Source(
+        name="toy",
+        url=root.as_uri(),
+        sha=git(root, "rev-parse", "HEAD"),
+        license="MIT",
+        language="python",
+        include=["pkg/", "src/"],
+    )
+
+
+def generate(source: Source, checkouts: Path, out: Path) -> None:
+    """A small dataset (2 cases per operator, 4 clean) from the toy source."""
+    root = checkout(source, checkouts)
+    graph = CodeGraph.from_path(root)
+    seeded = {source.name: find_candidates(source, root, graph, SEEDED, "seeded")}
+    clean = {source.name: find_candidates(source, root, graph, CLEAN, "clean")}
+    cases = select_seeded(seeded, 2, build_case) + select_clean(clean, 4, build_case)
+    write_dataset(out, assign_splits(cases, 0.3))
+
+
+def git(repo: Path, *args: str) -> str:
+    done = subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+    return done.stdout.strip()

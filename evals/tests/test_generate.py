@@ -9,48 +9,14 @@ from pydantic import ValidationError
 
 from core.diff import parse_unified_diff
 from evals.cases import load_cases
-from evals.generate_seeded import (
-    assign_splits,
-    build_case,
-    find_candidates,
-    select_clean,
-    select_seeded,
-    write_dataset,
-)
-from evals.graph import CodeGraph
 from evals.operators import CLEAN, SEEDED
 from evals.sources import Source, checkout, load_sources
-from evals.tests.toy import write_toy_repo
-
-
-def _git(repo: Path, *args: str) -> str:
-    done = subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
-    return done.stdout.strip()
+from evals.tests.toy import generate, make_toy_source
 
 
 @pytest.fixture(scope="module")
 def source(tmp_path_factory: pytest.TempPathFactory) -> Source:
-    upstream = write_toy_repo(tmp_path_factory.mktemp("upstream"))
-    _git(upstream, "init", "-q")
-    _git(upstream, "add", ".")
-    _git(upstream, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "toy")
-    return Source(
-        name="toy",
-        url=upstream.as_uri(),
-        sha=_git(upstream, "rev-parse", "HEAD"),
-        license="MIT",
-        language="python",
-        include=["pkg/", "src/"],
-    )
-
-
-def generate(source: Source, checkouts: Path, out: Path) -> None:
-    root = checkout(source, checkouts)
-    graph = CodeGraph.from_path(root)
-    seeded = {source.name: find_candidates(source, root, graph, SEEDED, "seeded")}
-    clean = {source.name: find_candidates(source, root, graph, CLEAN, "clean")}
-    cases = select_seeded(seeded, 2, build_case) + select_clean(clean, 4, build_case)
-    write_dataset(out, assign_splits(cases, 0.3))
+    return make_toy_source(tmp_path_factory.mktemp("upstream"))
 
 
 def test_generation_is_reproducible_and_sound(source: Source, tmp_path: Path) -> None:
