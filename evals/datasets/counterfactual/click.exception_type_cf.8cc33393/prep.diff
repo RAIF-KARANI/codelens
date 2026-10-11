@@ -1,0 +1,11 @@
+--- a/src/click/core.py
++++ b/src/click/core.py
+@@ -2738,7 +2738,7 @@
+         def check_iter(value: t.Any) -> cabc.Iterator[t.Any]:
+             try:
+                 return _check_iter(value)
+-            except TypeError:
++            except (TypeError, RuntimeError):
+                 # This should only happen when passing in args manually,
+                 # the parser should construct an iterable when parsing
+                 # the command line.

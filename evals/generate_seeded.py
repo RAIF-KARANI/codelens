@@ -16,22 +16,23 @@ import ast
 import hashlib
 import random
 import shutil
-import subprocess
 import sys
 import time
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
 from core.diff import parse_unified_diff
 from core.enums import Language
 from core.parser.repository import parse_source
+from core.parser.types import ParsedFile
 from core.parser.walker import SourceFile, source_from_content
-from evals.cases import Case, ExpectedFinding, Kind, OracleNode, write_case
+from evals.cases import KINDS, Case, ExpectedFinding, Kind, OracleNode, write_case
 from evals.edits import apply_edits, unified_patch
+from evals.gitops import applies
 from evals.graph import CodeGraph, Target
-from evals.operators import CLEAN, SEEDED, Mutation, Operator
+from evals.operators import CLEAN, COUNTERFACTUAL, SEEDED, Mutation, Operator
 from evals.sources import DEFAULT_CHECKOUTS, DEFAULT_SOURCES, Source, checkout, load_sources
 
 DEFAULT_OUT = Path("evals/datasets")
@@ -75,15 +76,28 @@ def find_candidates(
 
 def build_case(candidate: Candidate) -> Built | None:
     """The case and patch, or None if the mutation breaks parsing or the patch
-    doesn't apply (both would make a case that tests the wrong thing)."""
+    doesn't apply (both would make a case that tests the wrong thing).
+
+    A counterfactual also gets a prep commit (its callers made compatible):
+    patch.diff is then the mutation on top of the prepared files."""
     target, mutation = candidate.target, candidate.mutation
+    graph = target.graph
     path = target.file.path
-    content = target.content
-    new, (first, last) = apply_edits(content, mutation.edits)
-    if not _still_parses(target, content, new):
-        return None
-    patch = unified_patch(path, content, new)
-    if not patch or not _applies(candidate.checkout, patch):
+    original = target.content
+    prep_edits = dict(mutation.prep)
+    prepared = {p: apply_edits(graph.content(p), edits)[0] for p, edits in prep_edits.items()}
+    base = prepared.get(path, original)
+    # Prep and mutation edits are both in the original file's coordinates and
+    # never overlap (callers vs the function itself), so they apply together.
+    new, (first, last) = apply_edits(original, prep_edits.get(path, ()) + mutation.edits)
+    changes = [(p, graph.content(p), after) for p, after in prepared.items() if p != path]
+    for changed, before, after in [*changes, (path, original, new)]:
+        if not _still_parses(graph, graph.file(changed), before, after):
+            return None
+    prep = "".join(unified_patch(p, graph.content(p), prepared[p]) for p in sorted(prepared))
+    patch = unified_patch(path, base, new)
+    patches = [prep, patch] if prep else [patch]
+    if not patch or not applies(candidate.checkout, candidate.source.sha, *patches):
         return None
     # The reviewer can only comment on added lines (validation rule
     # not_on_changed_lines). If the patch adds any, the expectation must touch
@@ -119,16 +133,20 @@ def build_case(candidate: Candidate) -> Built | None:
             OracleNode(qualified_name=r.qualified_name, ordinal=r.ordinal, role=role)
             for r, role in mutation.oracle
         ],
+        prep=prep or None,
     )
     return case, patch
 
 
-def select_seeded(
-    pools: Pools, per_operator: int, build: Callable[[Candidate], Built | None]
+def select_per_operator(
+    pools: Pools,
+    operators: Iterable[str],
+    per_operator: int,
+    build: Callable[[Candidate], Built | None],
 ) -> list[Built]:
     """Up to `per_operator` cases per operator, taking from the sources in turn."""
     chosen: list[Built] = []
-    for operator in SEEDED:
+    for operator in operators:
         queues = [iter(pools[name][operator]) for name in sorted(pools)]
         chosen += _round_robin(queues, per_operator, build)
     return chosen
@@ -182,7 +200,7 @@ def assign_splits(cases: list[Built], dev_share: float) -> list[Built]:
 
 
 def write_dataset(out: Path, cases: list[Built]) -> None:
-    for kind in ("seeded", "clean"):
+    for kind in KINDS:
         shutil.rmtree(out / kind, ignore_errors=True)
     for case, patch in cases:
         write_case(out, case, patch)
@@ -193,7 +211,11 @@ def summarize(cases: list[Built]) -> str:
     counts = Counter((c.kind, c.operator, c.source) for c, _ in cases)
     splits = Counter((c.kind, c.split) for c, _ in cases)
     sources = sorted({c.source for c, _ in cases})
-    operators = [*SEEDED, *CLEAN]
+    kinds = {
+        **dict.fromkeys(SEEDED, "seeded"),
+        **dict.fromkeys(COUNTERFACTUAL, "counterfactual"),
+        **dict.fromkeys(CLEAN, "clean"),
+    }
     lines = [
         "# Dataset summary",
         "",
@@ -202,23 +224,22 @@ def summarize(cases: list[Built]) -> str:
         "| kind | operator | " + " | ".join(sources) + " | total |",
         "|---|---|" + "---|" * len(sources) + "---|",
     ]
-    for operator in operators:
-        kind = "seeded" if operator in SEEDED else "clean"
+    for operator, kind in kinds.items():
         row = [counts[(kind, operator, s)] for s in sources]
         lines.append(f"| {kind} | {operator} | " + " | ".join(map(str, row)) + f" | {sum(row)} |")
-    for kind in ("seeded", "clean"):
+    for kind in KINDS:
         lines.append("")
         lines.append(f"{kind}: {splits[(kind, 'dev')]} dev / {splits[(kind, 'test')]} test")
     return "\n".join(lines) + "\n"
 
 
-def _still_parses(target: Target, old: bytes, new: bytes) -> bool:
-    source = source_from_content(target.file.path, new)
+def _still_parses(graph: CodeGraph, file: ParsedFile, old: bytes, new: bytes) -> bool:
+    source = source_from_content(file.path, new)
     if not isinstance(source, SourceFile):
         return False
-    if parse_source(source, target.graph.package_dirs).syntax_errors > target.file.syntax_errors:
+    if parse_source(source, graph.package_dirs).syntax_errors > file.syntax_errors:
         return False
-    if target.file.language is Language.PYTHON:
+    if file.language is Language.PYTHON:
         # tree-sitter is lenient; the real compiler isn't (e.g. `return` with a
         # value in an async generator).
         try:
@@ -232,17 +253,6 @@ def _still_parses(target: Target, old: bytes, new: bytes) -> bool:
     return True
 
 
-def _applies(repo: Path, patch: str) -> bool:
-    done = subprocess.run(
-        ["git", "apply", "--check", "-"],
-        cwd=repo,
-        input=patch.encode("utf-8"),
-        capture_output=True,
-        check=False,
-    )
-    return done.returncode == 0
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="python -m evals.generate_seeded", description=__doc__.split("\n")[0]
@@ -251,24 +261,33 @@ def main() -> None:
     parser.add_argument("--checkouts", type=Path, default=DEFAULT_CHECKOUTS)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--per-operator", type=int, default=12, help="seeded cases per operator")
+    parser.add_argument(
+        "--counterfactual-per-operator", type=int, default=12, help="counterfactuals per operator"
+    )
     parser.add_argument("--clean-per-source", type=int, default=6)
     parser.add_argument("--dev-share", type=float, default=0.3)
     args = parser.parse_args()
 
     seeded: Pools = {}
+    counterfactual: Pools = {}
     clean: Pools = {}
     for source in load_sources(args.sources):
         started = time.perf_counter()
         root = checkout(source, args.checkouts)
         graph = CodeGraph.from_path(root)
         seeded[source.name] = find_candidates(source, root, graph, SEEDED, "seeded")
-        clean[source.name] = find_candidates(source, root, graph, CLEAN, "clean")
-        sizes = ", ".join(
-            f"{op} {len(c)}" for op, c in {**seeded[source.name], **clean[source.name]}.items()
+        counterfactual[source.name] = find_candidates(
+            source, root, graph, COUNTERFACTUAL, "counterfactual"
         )
+        clean[source.name] = find_candidates(source, root, graph, CLEAN, "clean")
+        pools = {**seeded[source.name], **counterfactual[source.name], **clean[source.name]}
+        sizes = ", ".join(f"{op} {len(c)}" for op, c in pools.items())
         print(f"{source.name} @ {source.sha[:10]} ({time.perf_counter() - started:.1f}s): {sizes}")
 
-    cases = select_seeded(seeded, args.per_operator, build_case)
+    cases = select_per_operator(seeded, SEEDED, args.per_operator, build_case)
+    cases += select_per_operator(
+        counterfactual, COUNTERFACTUAL, args.counterfactual_per_operator, build_case
+    )
     cases += select_clean(clean, args.clean_per_source, build_case)
     cases = assign_splits(cases, args.dev_share)
     write_dataset(args.out, cases)

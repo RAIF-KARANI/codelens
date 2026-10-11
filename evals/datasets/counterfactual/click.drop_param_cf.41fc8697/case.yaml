@@ -1,0 +1,15 @@
+id: click.drop_param_cf.41fc8697
+kind: counterfactual
+split: test
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: drop_param_cf
+file: src/click/_termui_impl.py
+function: click._termui_impl._pager_contextmanager
+description: Dropped parameter `color`; no call passes it any more
+expected: []
+oracle:
+- qualified_name: click._termui_impl.get_pager_file
+  ordinal: 0
+  role: caller

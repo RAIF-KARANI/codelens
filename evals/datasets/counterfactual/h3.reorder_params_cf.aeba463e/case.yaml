@@ -1,0 +1,15 @@
+id: h3.reorder_params_cf.aeba463e
+kind: counterfactual
+split: test
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: reorder_params_cf
+file: src/utils/internal/iron-crypto.ts
+function: src/utils/internal/iron-crypto:pbkdf2
+description: Swapped parameters `password` and `salt`; every call already swapped
+expected: []
+oracle:
+- qualified_name: src/utils/internal/iron-crypto:generateKey
+  ordinal: 0
+  role: caller

@@ -1,0 +1,11 @@
+--- a/src/utils/cookie.ts
++++ b/src/utils/cookie.ts
+@@ -311,7 +311,7 @@
+ ): string[] | undefined {
+   const chars = Array.from(value);
+   const slice = (start: number, end: number) => chars.slice(start, end).join("");
+-  const fits = (start: number, end: number) => encode(slice(start, end)).length <= maxLength;
++  const fits = (end: number, start: number) => encode(slice(start, end)).length <= maxLength;
+   const chunks: string[] = [];
+   let start = 0;
+   while (start < chars.length) {

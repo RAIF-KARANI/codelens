@@ -1,0 +1,11 @@
+--- a/sqlite_utils/cli.py
++++ b/sqlite_utils/cli.py
+@@ -3068,7 +3068,7 @@
+     db = sqlite_utils.Database(path)
+     _register_db_for_cleanup(db)
+     _load_extensions(db, load_extension)
+-    _analyze(db, tables, columns, save, common_limit, no_most, no_least)
++    _analyze(tables, db, columns, save, common_limit, no_most, no_least)
+ 
+ 
+ def _analyze(db, tables, columns, save, common_limit=10, no_most=False, no_least=False):

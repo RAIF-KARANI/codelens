@@ -1,0 +1,18 @@
+id: click.reorder_params_cf.9a50a691
+kind: counterfactual
+split: test
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: reorder_params_cf
+file: src/click/_compat.py
+function: click._compat._force_correct_text_writer
+description: Swapped parameters `encoding` and `errors`; every call already swapped
+expected: []
+oracle:
+- qualified_name: click._compat.get_text_stderr
+  ordinal: 0
+  role: caller
+- qualified_name: click._compat.get_text_stdout
+  ordinal: 0
+  role: caller

@@ -1,0 +1,11 @@
+--- a/src/click/core.py
++++ b/src/click/core.py
+@@ -3201,7 +3201,7 @@
+ 
+         # Phase 3: type inference. Override the type set by :meth:`Parameter.__init__`
+         # when this option is a flag or a count.
+-        self.type = self._pick_type(type, flag_value, count, self.is_flag)
++        self.type = self._pick_type(flag_value, type, count, self.is_flag)
+ 
+         # Phase 4: store the raw ``flag_value`` and ``count`` settings.
+         # ``self.flag_value`` and ``self.default`` deliberately keep the :data:`UNSET`

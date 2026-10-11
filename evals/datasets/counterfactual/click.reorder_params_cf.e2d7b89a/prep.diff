@@ -1,0 +1,11 @@
+--- a/src/click/_textwrap.py
++++ b/src/click/_textwrap.py
+@@ -116,7 +116,7 @@
+                     break
+ 
+             if chunks and term_len(chunks[-1]) > width:
+-                self._handle_long_word(chunks, cur_line, cur_len, width)
++                self._handle_long_word(cur_line, chunks, cur_len, width)
+                 cur_len = sum(map(term_len, cur_line))
+ 
+             if self.drop_whitespace and cur_line and cur_line[-1].strip() == "":

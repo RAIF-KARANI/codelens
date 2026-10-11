@@ -10,6 +10,10 @@ Each case's patch becomes a commit on top of the pinned one, built with git
 plumbing: no checkout, and a fixed author/date, so the same case is always the
 same commit. run_review reviews it like any branch (source=eval).
 
+A counterfactual case is based on its prep commit instead, and with retrieval
+on, that commit is indexed (in a worktree, as `eval-cf/<source>`) before the
+review: the context must show the callers as prepared.
+
 Results are appended per case to evals/results/<name>/cases.jsonl, so an
 interrupted run continues with --resume. A scorecard is written at the end.
 """
@@ -17,10 +21,8 @@ interrupted run continues with --resume. A scorecard is written at the end.
 import argparse
 import asyncio
 import hashlib
-import os
 import subprocess
 import sys
-import tempfile
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -40,6 +42,7 @@ from core.providers import ProviderError, Providers, open_providers
 from core.review.config import PipelineConfig
 from core.review.pipeline import ReviewError, ReviewResult, run_review
 from evals.cases import Case, load_cases
+from evals.gitops import commit_patch
 from evals.metrics import score_case
 from evals.records import (
     CaseRecord,
@@ -55,15 +58,6 @@ from evals.sources import DEFAULT_CHECKOUTS, DEFAULT_SOURCES, Source, checkout, 
 
 DEFAULT_DATASET = Path("evals/datasets")
 DEFAULT_RESULTS = Path("evals/results")
-# Fixed identity and clock for case commits: same patch -> same commit sha.
-_COMMIT_ENV = {
-    "GIT_AUTHOR_NAME": "codelens-eval",
-    "GIT_AUTHOR_EMAIL": "eval@codelens.invalid",
-    "GIT_AUTHOR_DATE": "2026-01-01T00:00:00+00:00",
-    "GIT_COMMITTER_NAME": "codelens-eval",
-    "GIT_COMMITTER_EMAIL": "eval@codelens.invalid",
-    "GIT_COMMITTER_DATE": "2026-01-01T00:00:00+00:00",
-}
 _MAX_CONSECUTIVE_ERRORS = 3  # e.g. Ollama is down: stop instead of failing 97 cases
 
 
@@ -75,8 +69,10 @@ def _say(line: str) -> None:
 class Prepared:
     """A source ready to review against: checked out, indexed, embedded."""
 
+    name: str
     root: Path
     repo_name: str
+    worktree: Path  # where counterfactual bases are checked out for indexing
 
 
 Selected = list[tuple[Case, str]]
@@ -104,32 +100,22 @@ def dataset_hash(cases: Selected) -> str:
     digest = hashlib.sha256()
     for case, patch in cases:
         digest.update(case.model_dump_json().encode())
+        digest.update((case.prep or "").encode())
         digest.update(patch.encode())
     return digest.hexdigest()
 
 
-def case_commit(repo: Path, case: Case, patch: str) -> str:
-    """A commit = the pinned commit + the case's patch, made without touching
-    the working tree: a throwaway index file, `git apply --cached`, then
-    write-tree and commit-tree."""
-    with tempfile.TemporaryDirectory() as scratch:
-        env = {**os.environ, **_COMMIT_ENV, "GIT_INDEX_FILE": str(Path(scratch) / "index")}
+def case_commits(repo: Path, case: Case, patch: str) -> tuple[str, str]:
+    """(base, head) commits for a case: base is the pinned commit, or for a
+    counterfactual the pinned commit plus its prep.
 
-        def git(*args: str, stdin: str | None = None) -> str:
-            done = subprocess.run(
-                ["git", *args],
-                cwd=repo,
-                env=env,
-                input=stdin.encode("utf-8") if stdin is not None else None,
-                capture_output=True,
-                check=True,
-            )
-            return done.stdout.decode().strip()
-
-        git("read-tree", case.sha)
-        git("apply", "--cached", "-", stdin=patch)
-        tree = git("write-tree")
-        return git("commit-tree", tree, "-p", case.sha, "-m", f"eval case {case.id}")
+    The head's message names only the file. It reaches the prompt's commit
+    list, and an id such as `x.raise_to_none.1a2b` would tell the model which
+    bug to look for (it did, until D77)."""
+    base = case.sha
+    if case.prep is not None:
+        base = commit_patch(repo, case.sha, case.prep, "Update call sites")
+    return base, commit_patch(repo, base, patch, f"Update {case.file}")
 
 
 async def prepare_source(
@@ -150,7 +136,33 @@ async def prepare_source(
         f"{name} @ {source.sha[:10]}: indexed, {report.embedded} embedded "
         f"({report.up_to_date} up to date) in {time.perf_counter() - started:.0f}s"
     )
-    return Prepared(root, name)
+    return Prepared(source.name, root, name, checkouts.parent / "worktrees" / source.name)
+
+
+async def index_at(
+    engine: AsyncEngine,
+    providers: Providers,
+    source: Prepared,
+    commit: str,
+    *,
+    embed_max_tokens: int,
+) -> str:
+    """Index `commit` (a counterfactual's prep commit) as `eval-cf/<source>`,
+    from a worktree, so retrieval sees the callers as prepared. Incremental:
+    only what differs from the previous counterfactual is re-indexed."""
+    if (source.worktree / ".git").exists():
+        _git(source.worktree, "checkout", "--quiet", "--force", "--detach", commit)
+    else:
+        _git(source.root, "worktree", "prune")
+        _git(source.root, "worktree", "add", "--force", "--detach", str(source.worktree), commit)
+    name = f"eval-cf/{source.name}"
+    await index_repository(engine, source.worktree, name=name)
+    await embed_repository(engine, providers.embedder, name, max_tokens=embed_max_tokens)
+    return name
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
 
 
 def to_record(case: Case, result: ReviewResult, seconds: float) -> CaseRecord:
@@ -217,6 +229,7 @@ async def run_cases(
     config: PipelineConfig,
     context_window: int,
     out: Path,
+    embed_max_tokens: int = 1024,
     say: Callable[[str], None] = _say,
 ) -> None:
     """Review each case and append its record. Cases already in `out` are skipped."""
@@ -227,14 +240,20 @@ async def run_cases(
         source = prepared[case.source]
         started = time.perf_counter()
         try:
-            head = await asyncio.to_thread(case_commit, source.root, case, patch)
+            base, head = await asyncio.to_thread(case_commits, source.root, case, patch)
+            repo_name = source.repo_name
+            if case.prep is not None and config.retrieval.enabled:
+                repo_name = await index_at(
+                    engine, providers, source, base, embed_max_tokens=embed_max_tokens
+                )
+            started = time.perf_counter()  # latency is the review's, not the indexing's
             result = await run_review(
                 engine,
                 providers,
                 repo_path=source.root,
-                base=case.sha,
+                base=base,
                 head=head,
-                repo_name=source.repo_name,
+                repo_name=repo_name,
                 config=config,
                 context_window=context_window,
                 source=ReviewSource.EVAL,
@@ -251,7 +270,9 @@ async def run_cases(
             errors_in_a_row += 1
         append_case(out, record)
         score = score_case(record)
-        verdict = f"tp {score.tp} fp {score.fp}" if score.seeded else f"noise {score.posted}"
+        verdict = (
+            f"tp {score.tp} fp {score.fp}" if score.kind == "seeded" else f"posted {score.posted}"
+        )
         say(
             f"[{len(done) + n}/{len(cases)}] {case.id:<44} {record.status:<9} "
             f"{record.seconds:5.1f}s  {verdict}" + (f"  {record.error}" if record.error else "")
@@ -343,6 +364,7 @@ async def _main(args: argparse.Namespace) -> Path:
                 config=config,
                 context_window=settings.llm_num_ctx,
                 out=out,
+                embed_max_tokens=settings.embed_max_tokens,
             )
     finally:
         await engine.dispose()

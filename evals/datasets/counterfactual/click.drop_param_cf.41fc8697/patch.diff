@@ -1,0 +1,13 @@
+--- a/src/click/_termui_impl.py
++++ b/src/click/_termui_impl.py
+@@ -449,9 +449,9 @@
+ 
+ 
+ def _pager_contextmanager(
+-    color: bool | None = None,
+ ) -> t.ContextManager[tuple[t.TextIO, bool | None]]:
+     """Decide what method to use for paging through text."""
++    color: bool | None = None
+     stdout = _default_text_stdout()
+ 
+     # There are no standard streams attached to write to. For example,

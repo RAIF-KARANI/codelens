@@ -257,6 +257,24 @@ def caught_around(fn: FunctionSyntax, call: Node) -> frozenset[str]:
     """Exception class names that try/except (Python) or `catch` + `instanceof`
     (JS/TS) handle around this call, within the function."""
     names: set[str] = set()
+    for try_node in _enclosing_trys(fn, call):
+        names |= _handled(try_node, fn.python)
+    return frozenset(names)
+
+
+def handler_classes(fn: FunctionSyntax, call: Node, name: str) -> list[Node]:
+    """Python: the expressions naming class `name` in the `except` clauses that
+    protect this call (`X` in `except X:` or `except (X, Y) as e:`)."""
+    found = []
+    for try_node in _enclosing_trys(fn, call):
+        for clause in (c for c in try_node.children if c.type == "except_clause"):
+            value = _except_value(clause)
+            items = value.named_children if value is not None and value.type == "tuple" else [value]
+            found += [n for n in items if n is not None and last_name(n) == name]
+    return found
+
+
+def _enclosing_trys(fn: FunctionSyntax, call: Node) -> Iterator[Node]:
     node = call
     while node is not None and node != fn.node:
         parent = node.parent
@@ -266,21 +284,25 @@ def caught_around(fn: FunctionSyntax, call: Node) -> frozenset[str]:
             and parent.type == "try_statement"
             and parent.child_by_field_name("body") == node
         ):
-            names |= _handled(parent, fn.python)
+            yield parent
         node = parent
-    return frozenset(names)
+
+
+def _except_value(clause: Node) -> Node | None:
+    """`X` / `(X, Y)` in `except X as e:`, without the `as e`."""
+    value = clause.child_by_field_name("value")
+    if value is None:
+        value = next((c for c in clause.named_children if c.type != "block"), None)
+    if value is not None and value.type == "as_pattern" and value.named_children:
+        value = value.named_children[0]
+    return value
 
 
 def _handled(try_node: Node, python: bool) -> set[str]:
     names: set[str] = set()
     if python:
         for clause in (c for c in try_node.children if c.type == "except_clause"):
-            value = clause.child_by_field_name("value")
-            if value is None:
-                value = next((c for c in clause.named_children if c.type != "block"), None)
-            if value is not None and value.type == "as_pattern" and value.named_children:
-                value = value.named_children[0]
-            names |= _class_names(value)
+            names |= _class_names(_except_value(clause))
         return names
     handler = try_node.child_by_field_name("handler")
     stack = [handler] if handler is not None else []

@@ -1,7 +1,6 @@
 """The generator end to end on the toy repo, checked out through git like a
 real source: reproducible output, patches that apply, sound expectations."""
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -9,7 +8,8 @@ from pydantic import ValidationError
 
 from core.diff import parse_unified_diff
 from evals.cases import load_cases
-from evals.operators import CLEAN, SEEDED
+from evals.gitops import applies
+from evals.operators import CLEAN, COUNTERFACTUAL, SEEDED
 from evals.sources import Source, checkout, load_sources
 from evals.tests.toy import generate, make_toy_source
 
@@ -38,19 +38,21 @@ def test_generation_is_reproducible_and_sound(source: Source, tmp_path: Path) ->
     for case, _ in cases:
         by_operator.setdefault(case.operator, []).append(case)
     # Every operator has a site in the toy repo, in both languages where it applies.
-    assert set(by_operator) == set(SEEDED) | set(CLEAN)
+    assert set(by_operator) == set(SEEDED) | set(COUNTERFACTUAL) | set(CLEAN)
     assert {c.language for c in by_operator["raise_to_none"]} == {"python", "typescript"}
 
     checkout_dir = tmp_path / "checkouts" / "toy"
     for case, patch in cases:
         assert case.sha == source.sha and not case.file.startswith("tests/")
-        done = subprocess.run(
-            ["git", "apply", "--check", "-"], cwd=checkout_dir, input=patch.encode()
-        )
-        assert done.returncode == 0, case.id
+        assert applies(checkout_dir, case.sha, *([case.prep] if case.prep else []), patch), case.id
         if case.kind == "clean":
-            assert case.expected == [] and case.oracle == []
+            assert case.expected == [] and case.oracle == [] and case.prep is None
             continue
+        if case.kind == "counterfactual":
+            # No bug to find; the callers (as prepared) are the context that shows it.
+            assert case.expected == [] and case.oracle and case.prep, case.id
+            continue
+        assert case.prep is None
         [expected] = case.expected
         [diff] = parse_unified_diff(patch)
         touched = set(range(expected.line_start, expected.line_end + 1))

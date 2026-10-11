@@ -1,0 +1,29 @@
+--- a/src/utils/cookie.ts
++++ b/src/utils/cookie.ts
+@@ -315,7 +315,7 @@
+   const chunks: string[] = [];
+   let start = 0;
+   while (start < chars.length) {
+-    if (!fits(start, start + 1)) {
++    if (!fits(start + 1, start)) {
+       return undefined;
+     }
+     // Largest `end` whose chunk still fits: `lo` fits, `hi` does not (or is
+@@ -324,7 +324,7 @@
+     let hi = chars.length + 1;
+     let probe = Math.min(start + maxLength, chars.length);
+     while (probe > lo) {
+-      if (!fits(start, probe)) {
++      if (!fits(probe, start)) {
+         hi = probe;
+         break;
+       }
+@@ -333,7 +333,7 @@
+     }
+     while (hi - lo > 1) {
+       const mid = (lo + hi) >>> 1;
+-      if (fits(start, mid)) {
++      if (fits(mid, start)) {
+         lo = mid;
+       } else {
+         hi = mid;

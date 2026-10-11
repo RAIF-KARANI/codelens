@@ -1,0 +1,12 @@
+--- a/sqlite_utils/cli.py
++++ b/sqlite_utils/cli.py
+@@ -1102,7 +1102,8 @@
+     _maybe_register_functions(db, functions)
+     column_type_overrides = {column: ctype.upper() for column, ctype in (types or [])}
+ 
+-    def _insert_docs(docs, tracker=None):
++    def _insert_docs(docs):
++        tracker = None
+         extra_kwargs: dict[str, Any] = {
+             "ignore": ignore,
+             "replace": replace,

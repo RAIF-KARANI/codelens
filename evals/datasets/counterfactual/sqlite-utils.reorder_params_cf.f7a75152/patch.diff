@@ -1,0 +1,11 @@
+--- a/sqlite_utils/cli.py
++++ b/sqlite_utils/cli.py
+@@ -3505,7 +3505,7 @@
+         click.echo()
+ 
+ 
+-def _stop_before_for_migration_set(stop_before, migration_set_name):
++def _stop_before_for_migration_set(migration_set_name, stop_before):
+     matches = []
+     for value in stop_before:
+         set_name, separator, migration_name = value.partition(":")

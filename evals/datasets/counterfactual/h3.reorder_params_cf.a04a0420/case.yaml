@@ -1,0 +1,15 @@
+id: h3.reorder_params_cf.a04a0420
+kind: counterfactual
+split: test
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: reorder_params_cf
+file: src/utils/cookie.ts
+function: src/utils/cookie:splitCookieValue.<locals>.fits
+description: Swapped parameters `start` and `end`; every call already swapped
+expected: []
+oracle:
+- qualified_name: src/utils/cookie:splitCookieValue
+  ordinal: 0
+  role: caller

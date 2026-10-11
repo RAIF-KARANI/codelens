@@ -1,0 +1,18 @@
+--- a/starlette/config.py
++++ b/starlette/config.py
+@@ -100,12 +100,12 @@
+         key = self.env_prefix + key
+         if key in self.environ:
+             value = self.environ[key]
+-            return self._perform_cast(key, value, cast)
++            return self._perform_cast(key, value)
+         if key in self.file_values:
+             value = self.file_values[key]
+-            return self._perform_cast(key, value, cast)
++            return self._perform_cast(key, value)
+         if default is not undefined:
+-            return self._perform_cast(key, default, cast)
++            return self._perform_cast(key, default)
+         raise KeyError(f"Config '{key}' is missing, and has no default.")
+ 
+     def _read_file(self, file_name: str | Path, encoding: str) -> dict[str, str]:

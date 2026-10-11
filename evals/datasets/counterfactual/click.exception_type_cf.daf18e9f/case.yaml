@@ -1,0 +1,15 @@
+id: click.exception_type_cf.daf18e9f
+kind: counterfactual
+split: dev
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: exception_type_cf
+file: src/click/parser.py
+function: click.parser._OptionParser._match_long_opt
+description: Raises `RuntimeError` instead of `NoSuchOption`; callers catch both
+expected: []
+oracle:
+- qualified_name: click.parser._OptionParser._process_opts
+  ordinal: 0
+  role: caller

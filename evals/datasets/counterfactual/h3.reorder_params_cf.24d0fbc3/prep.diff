@@ -1,0 +1,11 @@
+--- a/src/rules/handlers/_utils.ts
++++ b/src/rules/handlers/_utils.ts
+@@ -176,7 +176,7 @@
+  * interpolated tail lands inside the target rather than after it.
+  */
+ function assertTargetInScope(resolved: string, baseTargetPath: string): void {
+-  if (!isFinalTargetInScope(getURLPathname(resolved), baseTargetPath)) {
++  if (!isFinalTargetInScope(baseTargetPath, getURLPathname(resolved))) {
+     throw new HTTPError({ status: 400 });
+   }
+ }

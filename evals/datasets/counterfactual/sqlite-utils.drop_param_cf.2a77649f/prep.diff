@@ -1,0 +1,11 @@
+--- a/sqlite_utils/cli.py
++++ b/sqlite_utils/cli.py
+@@ -1314,7 +1314,7 @@
+             else:
+                 docs = (fn(doc) or doc for doc in docs)
+ 
+-        _insert_docs(docs, tracker=tracker)
++        _insert_docs(docs)
+ 
+         # Clean up open file-like objects
+         if sniff_buffer:

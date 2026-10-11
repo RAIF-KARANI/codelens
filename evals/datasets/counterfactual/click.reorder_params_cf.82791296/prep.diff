@@ -1,0 +1,11 @@
+--- a/src/click/_compat.py
++++ b/src/click/_compat.py
+@@ -253,7 +253,7 @@
+         text_stream = t.cast(t.TextIO, text_stream)
+         # If the stream looks compatible, and won't default to a
+         # misconfigured ascii encoding, return it as-is.
+-        if _is_compatible_text_stream(text_stream, encoding, errors) and not (
++        if _is_compatible_text_stream(text_stream, errors, encoding) and not (
+             encoding is None and _stream_is_misconfigured(text_stream)
+         ):
+             return text_stream

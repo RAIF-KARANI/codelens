@@ -10,12 +10,15 @@ from evals.operators import (
     Operator,
     drop_await,
     drop_param,
+    drop_param_cf,
     exception_type,
+    exception_type_cf,
     extract_return,
     raise_to_none,
     remove_guard,
     rename_local,
     reorder_params,
+    reorder_params_cf,
     sql_format,
 )
 from evals.tests.toy import get_target
@@ -259,3 +262,47 @@ def test_rename_local_does_not_double_a_trailing_underscore(toy_graph: CodeGraph
 
     assert '    help_value = item.help or "_"' in lines
     assert "    return help_value.strip()" in lines
+
+
+# ---------------------------------------------------------------- counterfactuals
+
+
+@pytest.mark.parametrize(
+    ("name", "seeded_op", "cf_op", "prepared"),
+    [
+        ("pkg.store._slug", drop_param, drop_param_cf, "    return _slug(title)"),
+        (
+            "pkg.store._span",
+            reorder_params,
+            reorder_params_cf,
+            "    return _span(box.right, box.left)",
+        ),
+        (
+            "pkg.store._lookup",
+            exception_type,
+            exception_type_cf,
+            "    except (KeyError, RuntimeError):",
+        ),
+    ],
+)
+def test_counterfactual_is_the_seeded_diff_on_a_prepared_base(
+    toy_graph: CodeGraph, name: str, seeded_op: Operator, cf_op: Operator, prepared: str
+) -> None:
+    target = get_target(toy_graph, name)
+    seeded, cf = seeded_op(target), cf_op(target)
+
+    assert seeded is not None and cf is not None
+    assert cf.edits == seeded.edits  # a diff-only reviewer can't tell them apart
+    assert cf.expected is None  # ...but there is nothing to find
+    assert cf.oracle == seeded.oracle  # the callers are what shows it
+    [(path, edits)] = cf.prep
+    new, _ = apply_edits(toy_graph.content(path), edits)
+    assert path == "pkg/api.py" and prepared in new.decode().split("\n")
+
+
+def test_counterfactuals_skip_public_functions(toy_graph: CodeGraph) -> None:
+    # Outside users of a public function could still pass the old arguments.
+    target = get_target(toy_graph, "pkg.store.find")
+
+    assert drop_param(target) is not None
+    assert drop_param_cf(target) is None

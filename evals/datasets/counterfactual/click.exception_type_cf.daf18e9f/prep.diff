@@ -1,0 +1,11 @@
+--- a/src/click/parser.py
++++ b/src/click/parser.py
+@@ -483,7 +483,7 @@
+         # like "-foo" to be matched as long options.
+         try:
+             self._match_long_opt(norm_long_opt, explicit_value, state)
+-        except NoSuchOption:
++        except (NoSuchOption, RuntimeError):
+             # At this point the long option matching failed, and we need
+             # to try with short options.  However there is a special rule
+             # which says, that if we have a two character options prefix

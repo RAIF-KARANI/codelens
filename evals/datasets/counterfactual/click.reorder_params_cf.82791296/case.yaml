@@ -1,0 +1,15 @@
+id: click.reorder_params_cf.82791296
+kind: counterfactual
+split: test
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: reorder_params_cf
+file: src/click/_compat.py
+function: click._compat._is_compatible_text_stream
+description: Swapped parameters `encoding` and `errors`; every call already swapped
+expected: []
+oracle:
+- qualified_name: click._compat._force_correct_text_stream
+  ordinal: 0
+  role: caller

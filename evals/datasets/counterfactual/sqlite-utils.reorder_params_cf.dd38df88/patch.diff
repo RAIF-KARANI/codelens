@@ -1,0 +1,11 @@
+--- a/sqlite_utils/cli.py
++++ b/sqlite_utils/cli.py
+@@ -3071,7 +3071,7 @@
+     _analyze(tables, db, columns, save, common_limit, no_most, no_least)
+ 
+ 
+-def _analyze(db, tables, columns, save, common_limit=10, no_most=False, no_least=False):
++def _analyze(tables, db, columns, save, common_limit=10, no_most=False, no_least=False):
+     if not tables:
+         tables = db.table_names()
+     todo = []

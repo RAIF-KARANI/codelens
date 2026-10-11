@@ -1,0 +1,15 @@
+id: click.exception_type_cf.8cc33393
+kind: counterfactual
+split: test
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: exception_type_cf
+file: src/click/core.py
+function: click.core._check_iter
+description: Raises `RuntimeError` instead of `TypeError`; callers catch both
+expected: []
+oracle:
+- qualified_name: click.core.Parameter.type_cast_value.<locals>.check_iter
+  ordinal: 0
+  role: caller

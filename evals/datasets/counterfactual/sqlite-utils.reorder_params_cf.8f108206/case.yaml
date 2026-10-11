@@ -1,0 +1,15 @@
+id: sqlite-utils.reorder_params_cf.8f108206
+kind: counterfactual
+split: dev
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: reorder_params_cf
+file: sqlite_utils/db.py
+function: sqlite_utils.db.Table._convert_multi
+description: Swapped parameters `column` and `fn`; every call already swapped
+expected: []
+oracle:
+- qualified_name: sqlite_utils.db.Table.convert
+  ordinal: 0
+  role: caller

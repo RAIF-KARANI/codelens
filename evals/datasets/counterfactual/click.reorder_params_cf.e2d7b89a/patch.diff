@@ -1,0 +1,12 @@
+--- a/src/click/_textwrap.py
++++ b/src/click/_textwrap.py
+@@ -47,8 +47,8 @@
+ 
+     def _handle_long_word(
+         self,
++        cur_line: list[str],
+         reversed_chunks: list[str],
+-        cur_line: list[str],
+         cur_len: int,
+         width: int,
+     ) -> None:

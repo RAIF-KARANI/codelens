@@ -9,11 +9,11 @@ from evals.generate_seeded import (
     build_case,
     find_candidates,
     select_clean,
-    select_seeded,
+    select_per_operator,
     write_dataset,
 )
 from evals.graph import CodeGraph, Target
-from evals.operators import CLEAN, SEEDED
+from evals.operators import CLEAN, COUNTERFACTUAL, SEEDED
 from evals.sources import Source, checkout
 
 FILES = {
@@ -60,9 +60,24 @@ FILES = {
         ):
             """Fill the template."""
             return template.format(**context)
+
+
+        def _slug(text, sep="-", lower=True):
+            out = text.replace(" ", sep)
+            return out.lower() if lower else out
+
+
+        def _span(start, end):
+            return end - start
+
+
+        def _lookup(table, key):
+            if key not in table:
+                raise KeyError(key)
+            return table[key]
         ''',
     "pkg/api.py": """
-        from pkg.store import NotFound, check, find, label, render
+        from pkg.store import NotFound, _lookup, _slug, _span, check, find, label, render
 
 
         def show(items, key):
@@ -93,6 +108,21 @@ FILES = {
         def help_text(item):
             help_ = item.help or "_"
             return help_.strip()
+
+
+        def slug_page(title):
+            return _slug(title, "_")
+
+
+        def width(box):
+            return _span(box.left, box.right)
+
+
+        def safe_get(table, key):
+            try:
+                return _lookup(table, key)
+            except KeyError:
+                return None
         """,
     "src/store.ts": """
         export class NotFound extends Error {}
@@ -178,12 +208,17 @@ def make_toy_source(root: Path) -> Source:
 
 
 def generate(source: Source, checkouts: Path, out: Path) -> None:
-    """A small dataset (2 cases per operator, 4 clean) from the toy source."""
+    """A small dataset (2 cases per operator, counterfactuals included; 4 clean)."""
     root = checkout(source, checkouts)
     graph = CodeGraph.from_path(root)
     seeded = {source.name: find_candidates(source, root, graph, SEEDED, "seeded")}
+    counterfactual = {
+        source.name: find_candidates(source, root, graph, COUNTERFACTUAL, "counterfactual")
+    }
     clean = {source.name: find_candidates(source, root, graph, CLEAN, "clean")}
-    cases = select_seeded(seeded, 2, build_case) + select_clean(clean, 4, build_case)
+    cases = select_per_operator(seeded, SEEDED, 2, build_case)
+    cases += select_per_operator(counterfactual, COUNTERFACTUAL, 2, build_case)
+    cases += select_clean(clean, 4, build_case)
     write_dataset(out, assign_splits(cases, 0.3))
 
 

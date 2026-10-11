@@ -1,0 +1,16 @@
+id: click.reorder_params_cf.e2d7b89a
+kind: counterfactual
+split: test
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: reorder_params_cf
+file: src/click/_textwrap.py
+function: click._textwrap.TextWrapper._handle_long_word
+description: Swapped parameters `reversed_chunks` and `cur_line`; every call already
+  swapped
+expected: []
+oracle:
+- qualified_name: click._textwrap.TextWrapper._wrap_chunks
+  ordinal: 0
+  role: caller

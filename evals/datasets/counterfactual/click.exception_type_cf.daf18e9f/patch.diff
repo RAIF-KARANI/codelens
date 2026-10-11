@@ -1,0 +1,11 @@
+--- a/src/click/parser.py
++++ b/src/click/parser.py
+@@ -364,7 +364,7 @@
+         self, opt: str, explicit_value: str | None, state: _ParsingState
+     ) -> None:
+         if opt not in self._long_opt:
+-            raise NoSuchOption(opt, possibilities=self._long_opt, ctx=self.ctx)
++            raise RuntimeError(opt, possibilities=self._long_opt, ctx=self.ctx)
+ 
+         option = self._long_opt[opt]
+         if option.takes_value:

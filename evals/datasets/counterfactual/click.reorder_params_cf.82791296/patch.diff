@@ -1,0 +1,11 @@
+--- a/src/click/_compat.py
++++ b/src/click/_compat.py
+@@ -228,7 +228,7 @@
+ 
+ 
+ def _is_compatible_text_stream(
+-    stream: t.TextIO, encoding: str | None, errors: str | None
++    stream: t.TextIO, errors: str | None, encoding: str | None
+ ) -> bool:
+     """Check if a stream's encoding and errors attributes are
+     compatible with the desired values.

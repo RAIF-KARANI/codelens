@@ -49,6 +49,7 @@ def build_scorecard(
         "context_window": info.context_window,
         "cases": {
             "seeded": sum(r.kind == "seeded" for r in records),
+            "counterfactual": sum(r.kind == "counterfactual" for r in records),
             "clean": sum(r.kind == "clean" for r in records),
             "planned": info.cases,
             "errors": sum(r.status == "error" for r in records),
@@ -90,15 +91,19 @@ def _by_operator(records: list[CaseRecord], scores: dict[str, CaseScore]) -> dic
     table = {}
     for operator, group in sorted(groups.items()):
         m = aggregate(group)
-        seeded = group[0].seeded
+        kind = group[0].kind
+        seeded = kind == "seeded"
+        alarms = (
+            m["noise_per_clean_pr"] if kind == "clean" else m["false_alarms_per_counterfactual"]
+        )
         table[operator] = {
-            "kind": "seeded" if seeded else "clean",
+            "kind": kind,
             "cases": len(group),
             "tp": sum(s.tp for s in group),
             "posted": sum(s.posted for s in group),
             "recall": _num(m["recall"]) if seeded else None,
-            "noise_per_pr": None if seeded else _num(m["noise_per_clean_pr"]),
-            "oracle_recall@10": _num(m["oracle_recall@10"]) if seeded else None,
+            "noise_per_pr": None if seeded else _num(alarms),
+            "oracle_recall@10": None if kind == "clean" else _num(m["oracle_recall@10"]),
         }
     return table
 
@@ -109,7 +114,8 @@ def render_markdown(card: dict[str, Any]) -> str:
         f"# Scorecard: {card['run']}",
         "",
         f"config **{card['config']}**, model `{card['llm_model']}`, "
-        f"window {card['context_window']}, {cases['seeded']} seeded + {cases['clean']} clean "
+        f"window {card['context_window']}, {cases['seeded']} seeded + "
+        f"{cases.get('counterfactual', 0)} counterfactual + {cases['clean']} clean "
         f"cases (of {cases['planned']} planned; {cases['errors']} errors, "
         f"{cases['failed_reviews']} failed reviews)",
         "",

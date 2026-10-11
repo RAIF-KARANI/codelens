@@ -1,0 +1,21 @@
+id: sqlite-utils.reorder_params_cf.7d3bc2d4
+kind: counterfactual
+split: test
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: reorder_params_cf
+file: sqlite_utils/cli.py
+function: sqlite_utils.cli._maybe_register_functions
+description: Swapped parameters `db` and `functions_list`; every call already swapped
+expected: []
+oracle:
+- qualified_name: sqlite_utils.cli.insert_upsert_implementation
+  ordinal: 0
+  role: caller
+- qualified_name: sqlite_utils.cli.memory
+  ordinal: 0
+  role: caller
+- qualified_name: sqlite_utils.cli.query
+  ordinal: 0
+  role: caller

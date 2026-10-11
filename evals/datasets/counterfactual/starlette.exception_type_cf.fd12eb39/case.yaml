@@ -1,0 +1,16 @@
+id: starlette.exception_type_cf.fd12eb39
+kind: counterfactual
+split: test
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: exception_type_cf
+file: starlette/responses.py
+function: starlette.responses.FileResponse._parse_range_header
+description: Raises `RuntimeError` instead of `MalformedRangeHeader`; callers catch
+  both
+expected: []
+oracle:
+- qualified_name: starlette.responses.FileResponse.__call__
+  ordinal: 0
+  role: caller

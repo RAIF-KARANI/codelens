@@ -1,0 +1,11 @@
+--- a/src/click/core.py
++++ b/src/click/core.py
+@@ -2400,7 +2400,7 @@
+                 " longer reads that property. Override 'spec' instead. Click"
+                 " will remove 'human_readable_name' in 9.0.",
+                 DeprecationWarning,
+-                stacklevel=_outside_click_stacklevel(skip=("abc",)),
++                stacklevel=_outside_click_stacklevel(),
+             )
+ 
+     def __init__(

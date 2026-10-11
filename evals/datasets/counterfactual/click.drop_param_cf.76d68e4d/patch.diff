@@ -1,0 +1,19 @@
+--- a/src/click/core.py
++++ b/src/click/core.py
+@@ -105,7 +105,7 @@
+     echo(_("Aborted!"), file=sys.stderr)
+ 
+ 
+-def _outside_click_stacklevel(skip: cabc.Container[str] = ()) -> int:
++def _outside_click_stacklevel() -> int:
+     """Depth of the first stack frame outside Click.
+ 
+     :param skip: Other module names to walk past. ``abc`` is one: it sits
+@@ -114,6 +114,7 @@
+ 
+     .. versionadded:: 8.6.0
+     """
++    skip: cabc.Container[str] = ()
+     frame: FrameType | None = sys._getframe(1)
+     level = 1
+ 

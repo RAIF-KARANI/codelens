@@ -1,0 +1,16 @@
+id: sqlite-utils.reorder_params_cf.f7a75152
+kind: counterfactual
+split: test
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: reorder_params_cf
+file: sqlite_utils/cli.py
+function: sqlite_utils.cli._stop_before_for_migration_set
+description: Swapped parameters `stop_before` and `migration_set_name`; every call
+  already swapped
+expected: []
+oracle:
+- qualified_name: sqlite_utils.cli.migrate
+  ordinal: 0
+  role: caller

@@ -1,5 +1,10 @@
 # Eval results
 
+> **⚠ The numbers below are contaminated and pending a rerun (D77).**
+> - **What leaked:** until Phase 3 step 4, the runner committed each case as `eval case <id>`. The id names the operator (for example `click.raise_to_none.1acf4f8e`), and commit subjects are part of the prompt. So the model was told which bug to look for, in both A0 and B0.
+> - **Why the numbers can't be trusted:** recall is inflated, and the A0 ≈ B0 conclusion may not hold.
+> - **Status:** the runner is fixed (commits now say `Update <file>`). A0 and B0 have not yet been rerun, on the extended dataset that now includes counterfactuals.
+
 The log of measured pipeline configs. Each upgrade in Phase 4 is adopted or rejected here, through the adoption gate (planning.md §10.5).
 
 The gate has three conditions:

@@ -1,0 +1,24 @@
+id: click.drop_param_cf.4647825e
+kind: counterfactual
+split: dev
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: drop_param_cf
+file: src/click/types.py
+function: click.types.Choice._normalized_mapping
+description: Dropped parameter `ctx`; no call passes it any more
+expected: []
+oracle:
+- qualified_name: click.types.Choice.convert
+  ordinal: 0
+  role: caller
+- qualified_name: click.types.Choice.get_invalid_choice_message
+  ordinal: 0
+  role: caller
+- qualified_name: click.types.Choice.get_metavar
+  ordinal: 0
+  role: caller
+- qualified_name: click.types.Choice.get_missing_message
+  ordinal: 0
+  role: caller

@@ -1,0 +1,11 @@
+--- a/src/click/_termui_impl.py
++++ b/src/click/_termui_impl.py
+@@ -504,7 +504,7 @@
+     :param color: controls if the pager supports ANSI colors or not.  The
+                   default is autodetection.
+     """
+-    with _pager_contextmanager(color=color) as (stream, color):
++    with _pager_contextmanager() as (stream, color):
+         # Every pager strategy yields a text stream, so the only thing left to
+         # do is strip ANSI styling when colors are disabled. A strategy yields
+         # None when it has no opinion on colors, which settles as off here. The

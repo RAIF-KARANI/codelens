@@ -1,0 +1,15 @@
+id: starlette.drop_param_cf.296a2764
+kind: counterfactual
+split: dev
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: drop_param_cf
+file: starlette/requests.py
+function: starlette.requests.Request._get_form
+description: Dropped parameter `max_files`; no call passes it any more
+expected: []
+oracle:
+- qualified_name: starlette.requests.Request.form
+  ordinal: 0
+  role: caller

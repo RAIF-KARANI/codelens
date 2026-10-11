@@ -1,0 +1,14 @@
+--- a/starlette/requests.py
++++ b/starlette/requests.py
+@@ -270,10 +270,10 @@
+     async def _get_form(
+         self,
+         *,
+-        max_files: int | float = 1000,
+         max_fields: int | float = 1000,
+         max_part_size: int = 1024 * 1024,
+     ) -> FormData:
++        max_files: int | float = 1000
+         if self._form is None:  # pragma: no branch
+             assert parse_options_header is not None, (
+                 "The `python-multipart` library must be installed to use form parsing."

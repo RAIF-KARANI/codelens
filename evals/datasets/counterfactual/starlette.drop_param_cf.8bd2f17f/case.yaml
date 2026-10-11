@@ -1,0 +1,15 @@
+id: starlette.drop_param_cf.8bd2f17f
+kind: counterfactual
+split: test
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: drop_param_cf
+file: starlette/config.py
+function: starlette.config.Config._perform_cast
+description: Dropped parameter `cast`; no call passes it any more
+expected: []
+oracle:
+- qualified_name: starlette.config.Config.get
+  ordinal: 0
+  role: caller

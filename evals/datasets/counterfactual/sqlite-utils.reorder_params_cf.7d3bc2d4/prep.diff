@@ -1,0 +1,29 @@
+--- a/sqlite_utils/cli.py
++++ b/sqlite_utils/cli.py
+@@ -1099,7 +1099,7 @@
+     db = sqlite_utils.Database(path)
+     _register_db_for_cleanup(db)
+     _load_extensions(db, load_extension)
+-    _maybe_register_functions(db, functions)
++    _maybe_register_functions(functions, db)
+     column_type_overrides = {column: ctype.upper() for column, ctype in (types or [])}
+ 
+     def _insert_docs(docs, tracker=None):
+@@ -2029,7 +2029,7 @@
+     _load_extensions(db, load_extension)
+     db.register_fts4_bm25()
+ 
+-    _maybe_register_functions(db, functions)
++    _maybe_register_functions(functions, db)
+ 
+     _execute_query(
+         db,
+@@ -2237,7 +2237,7 @@
+     _load_extensions(db, load_extension)
+     db.register_fts4_bm25()
+ 
+-    _maybe_register_functions(db, functions)
++    _maybe_register_functions(functions, db)
+ 
+     if return_db:
+         return db
