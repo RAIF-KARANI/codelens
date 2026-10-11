@@ -19,6 +19,7 @@ from evals.metrics import (
     CaseScore,
     aggregate,
     bootstrap,
+    match,
     paired_bootstrap,
     score_case,
 )
@@ -61,6 +62,7 @@ def build_scorecard(
         },
         "by_operator": _by_operator(records, scores),
         "lost_to_validation": dict(sorted(lost.items())),
+        "anchored": _anchored(records),
     }
     if baseline is not None:
         base_info, base_records = baseline
@@ -82,6 +84,20 @@ def build_scorecard(
             },
         }
     return card
+
+
+def _anchored(records: list[CaseRecord]) -> dict[str, int]:
+    """Posted findings validation moved onto an anchor, and how many of those
+    matched a planted bug (the rest are false positives it let through)."""
+    posted = matched = 0
+    for record in records:
+        found = record.posted
+        hits = {j for _, j in match(record.expected, found)}
+        for j, prediction in enumerate(found):
+            if prediction.anchored_from is not None:
+                posted += 1
+                matched += j in hits
+    return {"posted": posted, "matched": matched}
 
 
 def _by_operator(records: list[CaseRecord], scores: dict[str, CaseScore]) -> dict[str, Any]:
@@ -162,6 +178,12 @@ def render_markdown(card: dict[str, Any]) -> str:
         "Matches lost to validation (dropped findings that would have matched a miss): "
         + (", ".join(f"{k} {v}" for k, v in lost.items()) or "none"),
     ]
+    anchored = card.get("anchored", {})
+    if anchored.get("posted"):
+        lines.append(
+            f"Findings moved by anchoring: {anchored['posted']} posted, "
+            f"{anchored['matched']} of them matched a planted bug."
+        )
     if baseline:
         gate = baseline["gate"]
         lines += [

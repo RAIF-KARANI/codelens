@@ -89,6 +89,30 @@ class FileDiff:
             and not (ignore_blank and not line.text.strip())
         )
 
+    def deletion_borders(self) -> frozenset[int]:
+        """New-side lines of the context lines just before and just after each
+        pure deletion (a run of removed lines with no added line in it).
+
+        A pure deletion has no new line of its own, so a comment about it has
+        to sit next to it; GitHub accepts comments on any line of a hunk."""
+        borders: set[int] = set()
+        for hunk in self.hunks:
+            lines = hunk.lines
+            i = 0
+            while i < len(lines):
+                if lines[i].kind == "context":
+                    i += 1
+                    continue
+                end = i  # [i, end) is a run of changed lines
+                while end < len(lines) and lines[end].kind != "context":
+                    end += 1
+                if all(line.kind == "removed" for line in lines[i:end]):
+                    for j in (i - 1, end):
+                        if 0 <= j < len(lines) and lines[j].new_line is not None:
+                            borders.add(lines[j].new_line)
+                i = end
+        return frozenset(borders)
+
 
 def parse_unified_diff(text: str) -> list[FileDiff]:
     """Parse a (possibly multi-file) unified diff. Unknown lines are ignored,

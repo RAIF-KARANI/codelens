@@ -5,8 +5,8 @@
 > two disagree, **this file wins**. It supersedes `idea.md` §14 (roadmap) and adds
 > decisions D18+.
 
-**Last updated:** 2026-10-11 · **Current position:** Phases 1–3 complete (PRs #1–#13; step 5 baselines in review).
-Valid baselines on test: A0 F1 0.741, B0 0.654 (B0 significantly worse; it mis-anchors findings and ignores retrieved callers). Next: Phase 4, starting with finding anchoring (Q11).
+**Last updated:** 2026-10-11 · **Current position:** Phases 1–3 complete (PRs #1–#14). Phase 4 step 1 (A1 anchoring) built,
+measured and adopted pending review: test F1 0.654 → 0.767 (+0.113 [+0.040, +0.194]). B0+A1 still trails A0+A1 (−0.054); next is step 2 (Q12/Q13: diff rendering, context use).
 
 ---
 
@@ -709,17 +709,26 @@ what was built, how to run it, and what to verify. Estimates are rough
 | 2 ✅ | Runner (`evals.run`), matching + metrics, bootstrap CIs, report | One command produces a scorecard JSON + markdown (D72–D74; PR #11) |
 | 3 ✅ | Run **diff-only (A0)** and **B0** | Baseline numbers committed to `evals/RESULTS.md` (PR #12; **contaminated by the commit-subject leak, D77**) |
 | 4 ✅ | Counterfactual cases (Q10) + leak fix | 27 counterfactuals (`drop_param_cf` 12, `reorder_params_cf` 12, `exception_type_cf` 3); runner indexes each prep commit; precision counts counterfactual findings (D77–D79; PR #13) |
-| 5 🔍 | Rerun A0/B0 on test (valid numbers) | `evals/RESULTS.md`: A0 F1 0.741, B0 0.654, paired Δ −0.086 [−0.163, −0.026] (D80) |
+| 5 ✅ | Rerun A0/B0 on test (valid numbers) | `evals/RESULTS.md`: A0 F1 0.741, B0 0.654, paired Δ −0.086 [−0.163, −0.026] (D80) |
 
 ### Phase 4: The "+" upgrades, one per step, each gated by evals
+
+**Re-planned 2026-10-11 (D81):** the baselines showed the bottleneck is not
+retrieval. B0 packs the callers it needs 56% of the time and ignores them,
+and it loses bugs by anchoring findings 1–3 lines off. So the steps that fix
+how the model's output is anchored and how it reads the diff and context
+come first; the retrieval upgrades follow, once better context can pay off.
+
 | Step | Upgrade | Extra deliverables |
 |---|---|---|
-| 1 | U1 FTS + RRF | `identifiers.py`, tsv builder, fusion SQL, `--mode fts/hybrid` |
-| 2 | U2 graph expansion | Recursive CTE, hub control, graph-based fused list |
-| 3 | U3 reranker | `services/reranker`, compose service, HTTP client, blend weights |
-| 4 | U4 centrality prior | PageRank job, score term |
-| 5 | U5 anti-patterns | YAML library + sync + retrieval + `[AP]` citations |
-| 6 | U6 thinking mode | `think: true` ablation + latency/token cost |
+| 1 🔍 | A1 anchoring (Q11): snap near-miss findings to the nearest changed line; lines bordering a pure deletion are anchors | `validation.anchor_window`, `anchor_deletions`; `b0_anchor.yaml`, `a0_anchor.yaml`, `default.yaml`. **Adopted:** test F1 +0.113 [+0.040, +0.194] (D82) |
+| 2 | Diff rendering (Q12) and context use (Q13): render hunks so moved lines aren't read as duplicates; prompt the model to check callers before claiming an API break | prompt/packing toggles, ablation configs |
+| 3 | U1 FTS + RRF | `identifiers.py`, tsv builder, fusion SQL, `--mode fts/hybrid` |
+| 4 | U2 graph expansion | Recursive CTE, hub control, graph-based fused list |
+| 5 | U3 reranker | `services/reranker`, compose service, HTTP client, blend weights |
+| 6 | U4 centrality prior | PageRank job, score term |
+| 7 | U5 anti-patterns | YAML library + sync + retrieval + `[AP]` citations |
+| 8 | U6 thinking mode | `think: true` ablation + latency/token cost |
 
 Every step ends by running the eval, writing a `RESULTS.md` entry (adopt or reject,
 with numbers), and updating `configs/pipeline/default.yaml`.
@@ -1081,6 +1090,8 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D78 | Counterfactuals are built as two-commit refactors: a *prep* commit makes every caller compatible (drop the argument, swap the arguments, catch the new class too), then the case's diff is byte-identical to the seeded operator's. Only for private functions whose every `name(` in the repo is a resolved call site. With retrieval on, the runner indexes the prep commit (worktree, `eval-cf/<source>`) before reviewing | Mine naturally safe sites; mutate public functions | A survey found ~0 natural sites (real code has no dead parameters). Identical diffs mean a diff-only reviewer cannot tell bug from non-bug; only context can. Public functions are excluded because outside users could still pass the old arguments, which would make "safe" a lie. `raise_to_none` has no unambiguously safe prep (a swallowed error), so it has no counterfactual |
 | D79 | Findings posted on counterfactual cases are false positives in **precision** (so in F1, the gate metric); also reported as `false_alarms_per_counterfactual`; their callers count as oracle for retrieval metrics | Report them only as a separate noise number | If they only fed a side metric, F1 could never reward a reviewer for using context, which is the very thing Phase 4 upgrades must show |
 | D80 | The valid baselines (test, 83 cases): A0 F1 0.741, B0 0.654; B0 is the baseline Phase 4 improves, and A0 stays the reference upgrades must also beat | Treat A0 as the baseline | B0 is the pipeline we ship; its deficit has a measured mechanism (mis-anchored findings, unused context) that Phase 4 targets. An upgrade that only gets B0 back to A0 has not yet shown retrieval is worth its cost |
+| D81 | Phase 4 re-ordered: anchoring (Q11), then diff rendering and context use (Q12, Q13), then the retrieval upgrades U1–U6 (user's choice, 2026-10-11) | The original U1-first order | Measured: B0 already retrieves the oracle half the time without using it, and mis-anchoring costs it most of its gap to A0. Better retrieval would raise oracle recall without moving F1 until the model can use and place what it gets |
+| D82 | Adopt A1 anchoring (`anchor_window: 3`, `anchor_deletions: true`) into `configs/pipeline/default.yaml`, the new default of `core.review` | Keep B0's strict on-added-line rule | Test, paired vs B0: F1 +0.113 [+0.040, +0.194], recall +0.225, noise unchanged, 0 matches lost to validation (was 11); `remove_guard` 0 → 7/8. Window 3 = the offsets measured on B0's misses; checked on dev first (+0.110). Snapping is product behaviour, not eval gaming: a comment must sit on a diff line, and moving a near miss there is what a human would do. 3 of 8 moved findings were false positives, reported |
 
 ---
 
@@ -1115,7 +1126,7 @@ PR overlay, migrate service, host port 5433). New decisions:
 | Q8 | Hosting providers for the demo | Phase 7 |
 | Q9 | ~~Lower `max_findings_per_chunk` (e.g. 4)?~~ **Answered 2026-10-11:** no, keep 8 (D75; `evals/RESULTS.md`) | Phase 3 step 3 (ablate) |
 | Q10 | ~~The seeded dataset can't show context helping?~~ **Answered 2026-10-11: counterfactual cases** (D78), built in Phase 3 step 4 | Before Phase 4 step 1 |
-| Q11 | **Anchoring:** snap a finding to the nearest added line within a few lines, and let a finding sit next to a pure deletion? Validation drops both today: `remove_guard` 7/8 flagged but 0 posted, and 4 of B0's 6 lost bugs were 1–3 lines off. Upper bound from the test runs: recall A0 0.816 → 0.959, B0 0.714 → 0.939 | Phase 4 step 1 |
+| Q11 | ~~Anchoring?~~ **Answered 2026-10-12: yes, adopted (D82).** Was: snap a finding to the nearest added line within a few lines, and let a finding sit next to a pure deletion? Validation drops both today: `remove_guard` 7/8 flagged but 0 posted, and 4 of B0's 6 lost bugs were 1–3 lines off. Upper bound from the test runs: recall A0 0.816 → 0.959, B0 0.714 → 0.939 | Phase 4 step 1 |
 | Q12 | Diff rendering: the model reads moved lines as duplicates ("Duplicate parameter `type_arg`" when a parameter only moved). Render hunks differently (old/new side by side, or the new function whole with changed lines marked)? | Phase 4 |
 | Q13 | B0 flags 17/18 counterfactuals even with the safe callers in the prompt (56% of the time). Does a prompt that asks the model to check callers before claiming an API break, or a stronger model (Q2), use the context? | Phase 4 |
 

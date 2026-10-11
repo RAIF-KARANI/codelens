@@ -76,6 +76,15 @@ class GenerationConfig(_Section):
 class ValidationConfig(_Section):
     min_confidence: float = Field(default=0.6, ge=0, le=1)
     max_comments: int = Field(default=5, ge=0)
+    # Anchoring (planning Q11). A finding must sit on a line the diff added;
+    # these rescue findings that are about the change but slightly off it.
+    # 0 / False reproduce B0 exactly.
+    anchor_window: int = Field(
+        default=0, ge=0, description="snap a finding this many lines off onto the nearest anchor"
+    )
+    anchor_deletions: bool = Field(
+        default=False, description="lines bordering a pure deletion are anchors too"
+    )
 
 
 class PipelineConfig(_Section):

@@ -1,0 +1,29 @@
+# Phase 4 step 1 (planning Q11): B0 + anchoring. Identical prompts and model
+# calls; only validation changes. A finding up to 3 lines off a changed line is
+# moved onto the nearest one (B0 dropped 4 test-split bugs found 1-3 lines off),
+# and lines bordering a pure deletion count as changed (a deleted guard has no
+# added line to comment on). Measured against b0 in evals/RESULTS.md.
+name: b0_anchor
+retrieval:
+  enabled: true
+  vector_k: 8
+  max_seeds: 24
+packing:
+  diff_share: 0.40
+  changed_share: 0.25
+  context_share: 0.35
+  diff_tokens: 4000
+  changed_node_tokens: 3500
+  context_tokens: 4000
+  max_chunks: 4
+  degrade_to_signature: true
+  test_file_weight: 0.25
+generation:
+  think: false
+  max_output_tokens: 1500
+  max_findings_per_chunk: 8
+validation:
+  min_confidence: 0.6
+  max_comments: 5
+  anchor_window: 3
+  anchor_deletions: true
