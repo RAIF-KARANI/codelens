@@ -1,0 +1,15 @@
+--- a/src/click/testing.py
++++ b/src/click/testing.py
+@@ -108,10 +108,10 @@
+         os.close(self.saved_fd)
+         self.saved_fd = -1
+         self._tmpfile.seek(0)
+-        data = self._tmpfile.read()
++        payload = self._tmpfile.read()
+         self._tmpfile.close()
+         self._tmpfile = None
+-        return data
++        return payload
+ 
+ 
+ class BytesIOCopy(io.BytesIO):

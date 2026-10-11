@@ -1,0 +1,18 @@
+--- a/sqlite_utils/db.py
++++ b/sqlite_utils/db.py
+@@ -792,7 +792,6 @@
+ 
+     def register_function(
+         self,
+-        fn: Callable | None = None,
+         deterministic: bool = False,
+         replace: bool = False,
+         name: str | None = None,
+@@ -819,6 +818,7 @@
+         :param name: name of the SQLite function - if not specified, the Python function name will be used
+         """
+ 
++        fn: Callable | None = None
+         def register(fn: Callable) -> Callable:
+             fn_name = name or fn.__name__  # type: ignore
+             arity = len(inspect.signature(fn).parameters)

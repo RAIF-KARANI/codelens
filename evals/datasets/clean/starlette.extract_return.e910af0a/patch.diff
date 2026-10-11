@@ -1,0 +1,12 @@
+--- a/starlette/datastructures.py
++++ b/starlette/datastructures.py
+@@ -697,7 +697,8 @@
+         del self._state[key]
+ 
+     def __getitem__(self, key: str) -> Any:
+-        return self._state[key]
++        result = self._state[key]
++        return result
+ 
+     def __setitem__(self, key: str, value: Any) -> None:
+         self._state[key] = value

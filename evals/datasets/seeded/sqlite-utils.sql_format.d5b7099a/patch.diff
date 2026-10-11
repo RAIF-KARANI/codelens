@@ -1,0 +1,11 @@
+--- a/sqlite_utils/cli.py
++++ b/sqlite_utils/cli.py
+@@ -3750,7 +3750,7 @@
+                 ext = found
+             if ":" in ext:
+                 path, _, entrypoint = ext.partition(":")
+-                db.conn.execute("SELECT load_extension(?, ?)", [path, entrypoint])
++                db.conn.execute(f"SELECT load_extension('{path}', '{entrypoint}')")
+             else:
+                 db.conn.load_extension(ext)
+ 

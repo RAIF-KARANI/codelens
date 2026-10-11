@@ -1,2 +1,5 @@
 # Normalise to LF so files copied into Linux containers behave the same on Windows.
 * text=auto eol=lf
+# Eval patches must stay byte-exact against their source commit (CRLF, missing
+# final newlines and all), so git must not normalise them.
+evals/datasets/**/*.diff -text

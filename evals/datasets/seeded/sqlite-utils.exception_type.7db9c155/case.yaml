@@ -1,0 +1,20 @@
+id: sqlite-utils.exception_type.7db9c155
+kind: seeded
+split: test
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: exception_type
+file: sqlite_utils/create_table_parser.py
+function: sqlite_utils.create_table_parser.parse_uniques
+description: Raises `RuntimeError` instead of `ParseError`, which callers catch
+expected:
+- file: sqlite_utils/create_table_parser.py
+  line_start: 743
+  line_end: 743
+  category: error-handling
+  severity: warning
+oracle:
+- qualified_name: sqlite_utils.db.Table.transform_sql
+  ordinal: 0
+  role: caller

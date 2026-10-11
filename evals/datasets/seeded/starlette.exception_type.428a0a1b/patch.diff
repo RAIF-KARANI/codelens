@@ -1,0 +1,11 @@
+--- a/starlette/requests.py
++++ b/starlette/requests.py
+@@ -249,7 +249,7 @@
+                     yield body
+             elif message["type"] == "http.disconnect":  # pragma: no branch
+                 self._is_disconnected = True
+-                raise ClientDisconnect()
++                raise RuntimeError()
+         yield b""
+ 
+     async def body(self) -> bytes:

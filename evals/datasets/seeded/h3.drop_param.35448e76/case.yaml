@@ -1,0 +1,27 @@
+id: h3.drop_param.35448e76
+kind: seeded
+split: test
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: drop_param
+file: src/utils/sanitize.ts
+function: src/utils/sanitize:sanitizeStatusMessage
+description: Dropped parameter `statusMessage` (its default became a local); callers
+  still pass it
+expected:
+- file: src/utils/sanitize.ts
+  line_start: 10
+  line_end: 10
+  category: api-contract
+  severity: critical
+oracle:
+- qualified_name: src/_deprecated:setResponseStatus
+  ordinal: 0
+  role: caller
+- qualified_name: src/error:HTTPError.constructor
+  ordinal: 0
+  role: caller
+- qualified_name: src/response:prepareResponse
+  ordinal: 0
+  role: caller

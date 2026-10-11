@@ -1,0 +1,12 @@
+id: starlette.rename_local.ec104fcb
+kind: clean
+split: dev
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: rename_local
+file: starlette/endpoints.py
+function: starlette.endpoints.HTTPEndpoint.dispatch
+description: Renamed local `request` to `request_value`
+expected: []
+oracle: []

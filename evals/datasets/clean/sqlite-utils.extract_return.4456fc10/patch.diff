@@ -1,0 +1,12 @@
+--- a/sqlite_utils/db.py
++++ b/sqlite_utils/db.py
+@@ -4340,7 +4340,8 @@
+                 f"INSERT{or_clause} INTO {quote_identifier(self.name)} "
+                 "DEFAULT VALUES"
+             )
+-            return [(sql, []) for _ in chunk]
++            result = [(sql, []) for _ in chunk]
++            return result
+ 
+         if hash_id_columns and hash_id is None:
+             hash_id = "id"

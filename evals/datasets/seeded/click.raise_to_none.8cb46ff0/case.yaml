@@ -1,0 +1,21 @@
+id: click.raise_to_none.8cb46ff0
+kind: seeded
+split: test
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: raise_to_none
+file: src/click/parser.py
+function: click.parser._unpack_args
+description: '`raise TypeError("Cannot have two nargs < 0")` became `return None`;
+  callers use the result'
+expected:
+- file: src/click/parser.py
+  line_start: 96
+  line_end: 96
+  category: bug
+  severity: critical
+oracle:
+- qualified_name: click.parser._OptionParser._process_args_for_args
+  ordinal: 0
+  role: caller

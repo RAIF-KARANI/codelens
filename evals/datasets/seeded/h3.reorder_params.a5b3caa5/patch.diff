@@ -1,0 +1,11 @@
+--- a/src/utils/internal/iron-crypto.ts
++++ b/src/utils/internal/iron-crypto.ts
+@@ -293,7 +293,7 @@
+ // --- other utils ---
+ 
+ /** Returns true if `a` is equal to `b`, without leaking timing information that would allow an attacker to guess one of the values. */
+-function fixedTimeComparison(a: string, b: string): boolean {
++function fixedTimeComparison(b: string, a: string): boolean {
+   let mismatch = a.length === b.length ? 0 : 1;
+   if (mismatch) b = a;
+   for (let i = 0; i < a.length; i += 1) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);

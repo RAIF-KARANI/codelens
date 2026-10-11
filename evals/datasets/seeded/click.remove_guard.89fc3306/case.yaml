@@ -1,0 +1,20 @@
+id: click.remove_guard.89fc3306
+kind: seeded
+split: dev
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: remove_guard
+file: src/click/_termui_impl.py
+function: click._termui_impl._resolve_pager_command
+description: Deleted the guard `if not cmd_parts:` before `cmd_parts` is used
+expected:
+- file: src/click/_termui_impl.py
+  line_start: 432
+  line_end: 433
+  category: bug
+  severity: warning
+oracle:
+- qualified_name: click._termui_impl._pager_contextmanager
+  ordinal: 0
+  role: caller

@@ -1,0 +1,23 @@
+id: sqlite-utils.reorder_params.1713bcc7
+kind: seeded
+split: dev
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: reorder_params
+file: sqlite_utils/cli.py
+function: sqlite_utils.cli._execute_query
+description: Swapped parameters `db` and `sql`; callers pass both by position
+expected:
+- file: sqlite_utils/cli.py
+  line_start: 2264
+  line_end: 2265
+  category: api-contract
+  severity: warning
+oracle:
+- qualified_name: sqlite_utils.cli.memory
+  ordinal: 0
+  role: caller
+- qualified_name: sqlite_utils.cli.query
+  ordinal: 0
+  role: caller

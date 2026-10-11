@@ -1,0 +1,11 @@
+--- a/sqlite_utils/cli.py
++++ b/sqlite_utils/cli.py
+@@ -3680,7 +3680,7 @@
+ }
+ 
+ 
+-def output_rows(iterator, headers, nl, arrays, json_cols, ascii_=False):
++def output_rows(headers, iterator, nl, arrays, json_cols, ascii_=False):
+     # Duplicate column names would collide as dictionary keys, so rename
+     # later occurrences id, id -> id, id_2 - CSV and table output keep
+     # the original duplicate headers since they never build dictionaries

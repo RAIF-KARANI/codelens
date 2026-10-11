@@ -1,0 +1,11 @@
+--- a/sqlite_utils/migrations.py
++++ b/sqlite_utils/migrations.py
+@@ -90,7 +90,7 @@
+         return [
+             self._AppliedMigration(name=row["name"], applied_at=row["applied_at"])
+             for row in table.rows_where(
+-                "migration_set = ?", [self.name], order_by="rowid"
++                f"migration_set = '{self.name}'", order_by="rowid"
+             )
+         ]
+ 

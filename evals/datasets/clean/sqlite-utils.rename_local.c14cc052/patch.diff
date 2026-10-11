@@ -1,0 +1,17 @@
+--- a/sqlite_utils/cli.py
++++ b/sqlite_utils/cli.py
+@@ -806,10 +806,10 @@
+     \b
+         sqlite-utils populate-fts chickens.db chickens name
+     """
+-    db = sqlite_utils.Database(path)
+-    _register_db_for_cleanup(db)
+-    _load_extensions(db, load_extension)
+-    db.table(table).populate_fts(column)
++    db_value = sqlite_utils.Database(path)
++    _register_db_for_cleanup(db_value)
++    _load_extensions(db_value, load_extension)
++    db_value.table(table).populate_fts(column)
+ 
+ 
+ @cli.command(name="disable-fts")

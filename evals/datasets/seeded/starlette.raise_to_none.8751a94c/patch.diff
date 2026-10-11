@@ -1,0 +1,11 @@
+--- a/starlette/websockets.py
++++ b/starlette/websockets.py
+@@ -46,7 +46,7 @@
+             message = await self._receive()
+             message_type = message["type"]
+             if message_type != "websocket.connect":
+-                raise RuntimeError(f'Expected ASGI message "websocket.connect", but got {message_type!r}')
++                return None
+             self.client_state = WebSocketState.CONNECTED
+             return message
+         elif self.client_state == WebSocketState.CONNECTED:

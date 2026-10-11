@@ -1,0 +1,11 @@
+--- a/sqlite_utils/utils.py
++++ b/sqlite_utils/utils.py
+@@ -568,7 +568,7 @@
+             continue
+ 
+     if code_o is None:
+-        raise SyntaxError("Could not compile code")
++        raise RuntimeError("Could not compile code")
+ 
+     exec(code_o, globals_dict)  # noqa: S102
+     return cast(Callable[..., object], globals_dict["fn"])

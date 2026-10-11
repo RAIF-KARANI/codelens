@@ -1,0 +1,20 @@
+id: starlette.drop_await.c80a6db4
+kind: seeded
+split: dev
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: drop_await
+file: starlette/websockets.py
+function: starlette.websockets.WebSocket.receive_bytes
+description: Removed `await` before `self.receive()`, an async function
+expected:
+- file: starlette/websockets.py
+  line_start: 132
+  line_end: 132
+  category: concurrency
+  severity: critical
+oracle:
+- qualified_name: starlette.websockets.WebSocket.receive
+  ordinal: 0
+  role: callee

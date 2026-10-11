@@ -1,0 +1,12 @@
+--- a/src/utils/request.ts
++++ b/src/utils/request.ts
+@@ -440,7 +440,8 @@
+  *   const host = getRequestHost(event); // "example.com"
+  * });
+  */
+-export function getRequestHost(event: HTTPEvent, opts: { xForwardedHost?: boolean } = {}): string {
++export function getRequestHost(event: HTTPEvent): string {
++  const opts: { xForwardedHost?: boolean } = {};
+   if (opts.xForwardedHost) {
+     const _header = event.req.headers.get("x-forwarded-host");
+     const xForwardedHost = (_header || "").split(",").shift()?.trim();

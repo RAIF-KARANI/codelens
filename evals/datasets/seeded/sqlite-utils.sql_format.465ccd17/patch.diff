@@ -1,0 +1,11 @@
+--- a/sqlite_utils/db.py
++++ b/sqlite_utils/db.py
+@@ -2246,7 +2246,7 @@
+     def schema(self) -> str:
+         "SQL schema for this table or view."
+         return self.db.execute(
+-            "select sql from sqlite_master where name = ?", (self.name,)
++            f"select sql from sqlite_master where name = '{self.name}'"
+         ).fetchone()[0]
+ 
+ 

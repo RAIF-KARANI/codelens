@@ -1,0 +1,20 @@
+id: starlette.remove_guard.feaf14b1
+kind: seeded
+split: test
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: remove_guard
+file: starlette/_exception_handler.py
+function: starlette._exception_handler.wrap_app_handling_exceptions.<locals>.wrapped_app
+description: Deleted the guard `if handler is None:` before `handler` is used
+expected:
+- file: starlette/_exception_handler.py
+  line_start: 51
+  line_end: 52
+  category: bug
+  severity: warning
+oracle:
+- qualified_name: starlette._exception_handler._lookup_exception_handler
+  ordinal: 0
+  role: callee

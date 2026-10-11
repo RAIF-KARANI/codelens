@@ -1,0 +1,21 @@
+id: sqlite-utils.raise_to_none.54d49a24
+kind: seeded
+split: test
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: raise_to_none
+file: sqlite_utils/create_table_parser.py
+function: sqlite_utils.create_table_parser.parse_checks
+description: '`raise ParseError("CONSTRAINT is missing its name")` became `return
+  None`; callers use the result'
+expected:
+- file: sqlite_utils/create_table_parser.py
+  line_start: 557
+  line_end: 557
+  category: bug
+  severity: critical
+oracle:
+- qualified_name: sqlite_utils.db.Table.checks
+  ordinal: 0
+  role: caller

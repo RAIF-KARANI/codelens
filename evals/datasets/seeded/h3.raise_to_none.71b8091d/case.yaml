@@ -1,0 +1,21 @@
+id: h3.raise_to_none.71b8091d
+kind: seeded
+split: test
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: raise_to_none
+file: src/utils/session.ts
+function: src/utils/session:unsealSession
+description: '`throw new Error("Session expired!");` became `return undefined;`; callers
+  use the result'
+expected:
+- file: src/utils/session.ts
+  line_start: 353
+  line_end: 353
+  category: bug
+  severity: critical
+oracle:
+- qualified_name: src/utils/session:getSession
+  ordinal: 0
+  role: caller

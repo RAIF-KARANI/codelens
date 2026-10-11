@@ -1,0 +1,11 @@
+--- a/src/utils/auth.ts
++++ b/src/utils/auth.ts
+@@ -57,7 +57,7 @@
+ 
+   const authHeader = event.req.headers.get("authorization");
+   if (!authHeader) {
+-    throw await authFailed(event, realm);
++    throw authFailed(event, realm);
+   }
+   // RFC 9110: credentials = auth-scheme [ 1*SP token68 ]; allow one or more spaces.
+   const b64auth = /^basic +(.+)$/i.exec(authHeader)?.[1];

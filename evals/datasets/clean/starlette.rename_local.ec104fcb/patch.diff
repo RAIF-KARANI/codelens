@@ -1,0 +1,27 @@
+--- a/starlette/endpoints.py
++++ b/starlette/endpoints.py
+@@ -30,19 +30,19 @@
+         return self.dispatch().__await__()
+ 
+     async def dispatch(self) -> None:
+-        request = Request(self.scope, receive=self.receive, send=self.send)
+-        handler_name = "get" if request.method == "HEAD" and not hasattr(self, "head") else request.method.lower()
++        request_value = Request(self.scope, receive=self.receive, send=self.send)
++        handler_name = "get" if request_value.method == "HEAD" and not hasattr(self, "head") else request_value.method.lower()
+ 
+         handler: Callable[[Request], Any]
+-        if request.method in self._allowed_methods or (request.method == "HEAD" and "GET" in self._allowed_methods):
++        if request_value.method in self._allowed_methods or (request_value.method == "HEAD" and "GET" in self._allowed_methods):
+             handler = getattr(self, handler_name)
+         else:
+             handler = self.method_not_allowed
+         is_async = is_async_callable(handler)
+         if is_async:
+-            response = await handler(request)
++            response = await handler(request_value)
+         else:
+-            response = await run_in_threadpool(handler, request)
++            response = await run_in_threadpool(handler, request_value)
+         await response(self.scope, self.receive, self.send)
+ 
+     async def method_not_allowed(self, request: Request) -> Response:

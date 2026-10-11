@@ -1,0 +1,18 @@
+--- a/sqlite_utils/db.py
++++ b/sqlite_utils/db.py
+@@ -1430,7 +1430,6 @@
+         self,
+         name: str,
+         columns: dict[str, Any],
+-        pk: Any | None = None,
+         foreign_keys: ForeignKeysType | None = None,
+         column_order: list[str] | None = None,
+         not_null: Iterable[str] | None = None,
+@@ -1461,6 +1460,7 @@
+         :param if_not_exists: Use ``CREATE TABLE IF NOT EXISTS``
+         :param strict: Apply STRICT mode to table
+         """
++        pk: Any | None = None
+         if hash_id_columns and (hash_id is None):
+             hash_id = "id"
+         resolved_fks: list[ForeignKey] = [

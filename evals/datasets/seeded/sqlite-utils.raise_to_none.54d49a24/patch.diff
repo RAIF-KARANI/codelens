@@ -1,0 +1,11 @@
+--- a/sqlite_utils/create_table_parser.py
++++ b/sqlite_utils/create_table_parser.py
+@@ -554,7 +554,7 @@
+         constraint_name = ""
+         if item_tokens[item_index].is_keyword("CONSTRAINT"):
+             if len(item_tokens) < 2:
+-                raise ParseError("CONSTRAINT is missing its name")
++                return None
+             constraint_name = _unquote(item_tokens[1].text)
+             item_index = 2
+         head = item_tokens[item_index] if item_index < len(item_tokens) else None

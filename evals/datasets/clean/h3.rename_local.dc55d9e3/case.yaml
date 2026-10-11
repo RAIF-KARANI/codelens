@@ -1,0 +1,12 @@
+id: h3.rename_local.dc55d9e3
+kind: clean
+split: test
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: rename_local
+file: src/utils/internal/cors.ts
+function: src/utils/internal/cors:createAllowHeaderHeaders
+description: Renamed local `header` to `headerValue`
+expected: []
+oracle: []

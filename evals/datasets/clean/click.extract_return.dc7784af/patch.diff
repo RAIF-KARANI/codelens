@@ -1,0 +1,9 @@
+--- a/src/click/decorators.py
++++ b/src/click/decorators.py
+@@ -624,4 +624,5 @@
+     kwargs.setdefault("help", _("Show this message and exit."))
+     kwargs.setdefault("callback", show_help)
+ 
+-    return option(*param_decls, **kwargs)
++    result = option(*param_decls, **kwargs)
++    return result

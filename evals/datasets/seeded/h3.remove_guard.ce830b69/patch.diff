@@ -1,0 +1,12 @@
+--- a/src/rules/merge.ts
++++ b/src/rules/merge.ts
+@@ -34,9 +34,6 @@
+   altLayers?: readonly (RouteRuleLayer[] | undefined)[],
+   canOverride?: RouteOverridePredicate,
+ ): MatchedRouteRules {
+-  if (!altLayers) {
+-    return resolveLayers(rawLayers); // No other reading for a reset to constrain.
+-  }
+   // Every route that reset each rule name, from every reading — all of them are
+   // resolved before any is unioned, so a reading cannot reinstate a rule ahead
+   // of another reading's narrower reset (the result never depends on order).

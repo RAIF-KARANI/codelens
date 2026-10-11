@@ -1,0 +1,11 @@
+--- a/starlette/responses.py
++++ b/starlette/responses.py
+@@ -260,7 +260,7 @@
+     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+         if scope["type"] == "websocket":
+             send = self._wrap_websocket_denial_send(send)
+-            await self.stream_response(send)
++            self.stream_response(send)
+             if self.background is not None:
+                 await self.background()
+             return

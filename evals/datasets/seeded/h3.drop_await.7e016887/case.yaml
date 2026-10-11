@@ -1,0 +1,20 @@
+id: h3.drop_await.7e016887
+kind: seeded
+split: test
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: drop_await
+file: src/utils/internal/iron-crypto.ts
+function: src/utils/internal/iron-crypto:decrypt
+description: Removed `await` before `generateKey(password, options)`, an async function
+expected:
+- file: src/utils/internal/iron-crypto.ts
+  line_start: 270
+  line_end: 270
+  category: concurrency
+  severity: critical
+oracle:
+- qualified_name: src/utils/internal/iron-crypto:generateKey
+  ordinal: 0
+  role: callee

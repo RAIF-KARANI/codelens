@@ -1,0 +1,11 @@
+--- a/starlette/routing.py
++++ b/starlette/routing.py
+@@ -193,7 +193,7 @@
+             return
+ 
+         scope.update(child_scope)
+-        await self.handle(scope, receive, send)
++        self.handle(scope, receive, send)
+ 
+ 
+ class Route(BaseRoute):

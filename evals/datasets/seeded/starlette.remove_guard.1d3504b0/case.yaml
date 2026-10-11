@@ -1,0 +1,20 @@
+id: starlette.remove_guard.1d3504b0
+kind: seeded
+split: test
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: remove_guard
+file: starlette/responses.py
+function: starlette.responses.Response.render
+description: Deleted the guard `if content is None:` before `content` is used
+expected:
+- file: starlette/responses.py
+  line_start: 49
+  line_end: 50
+  category: bug
+  severity: warning
+oracle:
+- qualified_name: starlette.responses.Response.__init__
+  ordinal: 0
+  role: caller

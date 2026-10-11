@@ -1,0 +1,18 @@
+--- a/sqlite_utils/db.py
++++ b/sqlite_utils/db.py
+@@ -4604,7 +4604,6 @@
+     def insert(
+         self,
+         record: dict[str, Any],
+-        pk: PrimaryKey | Default | None = DEFAULT,
+         foreign_keys: ForeignKeysType | Default | None = DEFAULT,
+         column_order: list[str] | Default | None = DEFAULT,
+         not_null: Iterable[str] | Default | None = DEFAULT,
+@@ -4652,6 +4651,7 @@
+           ``{"age": int, "weight": float}``.
+         :param strict: Boolean, apply STRICT mode if creating the table.
+         """
++        pk: PrimaryKey | Default | None = DEFAULT
+         return self.insert_all(
+             [record],
+             pk=pk,

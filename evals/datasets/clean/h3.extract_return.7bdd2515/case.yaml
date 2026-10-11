@@ -1,0 +1,12 @@
+id: h3.extract_return.7bdd2515
+kind: clean
+split: test
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: extract_return
+file: src/rules/match.ts
+function: src/rules/match:toRouteRules
+description: Moved the returned expression into a local `result`
+expected: []
+oracle: []

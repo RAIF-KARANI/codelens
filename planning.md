@@ -5,8 +5,8 @@
 > two disagree, **this file wins**. It supersedes `idea.md` §14 (roadmap) and adds
 > decisions D18+.
 
-**Last updated:** 2026-10-11 · **Current position:** Phase 1 complete (PRs #1–#3); Phase 2 steps 1–5
-done (PRs #4–#8); step 6 (measurements) built and awaiting review. That completes Phase 2; next is Phase 3 (evaluation harness).
+**Last updated:** 2026-10-11 · **Current position:** Phases 1–2 complete (PRs #1–#9). Phase 3 step 1
+(eval sources + seeded/clean dataset: 73 + 24 cases) built and awaiting review; next is step 2 (runner + metrics).
 
 ---
 
@@ -666,9 +666,9 @@ codelens/
 │   │   └── tasks/{index,embed,review,graph}.py   📋5
 │   └── reranker/                   📋4 FastAPI + sentence-transformers CrossEncoder (CPU)
 └── evals/
-    ├── datasets/{seeded,clean,golden}/<case_id>/{case.yaml, patch.diff}   📋3
-    ├── sources.yaml                📋3 pinned OSS repos (name, url, sha, license)
-    ├── generate_seeded.py          📋3 mutation operators → cases
+    ├── datasets/{seeded,clean}/<case_id>/{case.yaml, patch.diff}   ✅ (golden/ later)
+    ├── sources.yaml sources.py     ✅ pinned OSS repos (name, url, sha, license) + checkouts
+    ├── generate_seeded.py          ✅ operators → verified cases (+ graph.py syntax.py edits.py operators.py cases.py)
     ├── run.py metrics.py report.py 📋3
     ├── results/                    📋3 JSON per run (gitignored except summaries)
     └── RESULTS.md                  📋3 the adopted/rejected upgrade log + tables
@@ -700,12 +700,12 @@ what was built, how to run it, and what to verify. Estimates are rough
 | 3 ✅ | Vector search + `core.search --mode vector` | Sensible top-k on the fixture repo (spot check) (PR #6) |
 | 4 ✅ | Diff parser, head overlay, seed mapping | Unit tests on tricky diffs (renames, deletions, new files) (PR #7) |
 | 5 ✅ | Prompts, structured output, validation, packing (vector only), trace writer, `core.review` CLI | Reviewing a local branch prints validated findings; trace rows written (PR #8) |
-| 6 🔍 | Measure VRAM / latency / tokens; fill in §1.3 and §6.4 | Numbers recorded |
+| 6 ✅ | Measure VRAM / latency / tokens; fill in §1.3 and §6.4 | Numbers recorded (PR #9) |
 
 ### Phase 3: Evaluation harness (measure before upgrading)
 | Step | Deliverable | Exit criteria |
 |---|---|---|
-| 1 | `sources.yaml` (3–4 permissively licensed OSS repos, pinned SHAs) + seeded-bug generator (§10.1) | ≥ 60 seeded cases + ≥ 20 clean cases generated reproducibly |
+| 1 🔍 | `sources.yaml` (3–4 permissively licensed OSS repos, pinned SHAs) + seeded-bug generator (§10.1) | ≥ 60 seeded cases + ≥ 20 clean cases generated reproducibly (73 + 24; D68–D71) |
 | 2 | Runner (`evals.run`), matching + metrics, bootstrap CIs, report | One command produces a scorecard JSON + markdown |
 | 3 | Run **diff-only (A0)** and **B0** | Baseline numbers committed to `evals/RESULTS.md` |
 
@@ -783,7 +783,13 @@ comments or follow-up fix commits reveal a bug. Hand-labelled.
 
 **Source repos:** 3–4 small-to-medium, permissively licensed (MIT/BSD/Apache) Python
 and JS/TS projects with decent internal call depth. Chosen in Phase 3 step 1 and
-pinned by SHA in `evals/sources.yaml`.
+pinned by SHA in `evals/sources.yaml`: sqlite-utils, starlette, click, h3 (D68).
+
+**As built (Phase 3 step 1):** `python -m evals.generate_seeded` produces 73 seeded
+cases (12 per operator; `sql_format` 7 and `exception_type` 6, limited by supply) and
+24 clean ones (`rename_local`, `extract_return`), split 32 dev / 65 test. Clean edits
+follow each language's naming convention so they aren't style findings. See
+`evals/README.md` and `evals/datasets/summary.md`.
 
 ### 10.2 Metrics
 
@@ -1060,6 +1066,10 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D65 | When `max_chunks` binds, test files' changes count ×0.25, and source files are grouped before tests | Raw change size | On a real PR, two of four chunks were spent on large test diffs while the core source files they test were left out |
 | D66 | 16k context is recommended once the Ollama server has flash attention + q8_0 KV; the default stays 8k (works with no server changes) | Make 16k the default | Measured: 16k + q8_0 + flash attention = 5.8 GiB, 100% in VRAM, same speed as 8k; 16k with fp16 KV spills (80% VRAM, half speed). A default must work without system changes |
 | D67 | Methodology: benchmark one Ollama setting per *fresh* server, and verify no `llama-server` runners survive between runs | Kill and restart servers ad hoc | Killing `ollama serve` leaves its runner processes holding VRAM. That contaminated a first round of measurements and briefly suggested q8_0 was 2–30× slower; clean runs showed no slowdown |
+| D68 | Eval sources: sqlite-utils (Apache-2.0), starlette (BSD-3), click (BSD-3), h3 (MIT, TS), pinned by commit (answers Q1) | requests, httpx, marshmallow, ky, hono, zod | Chosen from a measured survey of 10 candidates (mutation sites per operator, in-repo call resolution). sqlite-utils is the only one with real parameterised SQL; starlette and h3 bring async; click has the best call resolution (60%); h3 is ESM TypeScript, which our resolver follows (it does not follow CommonJS `require`) |
+| D69 | Cases are generated from `core.parser`'s graph, not the DB: operators mutate a function only where the bug needs context (a caller that uses the result, passes the argument or catches the exception; an async callee), and those nodes become the oracle. Each case is verified: the file still parses (tree-sitter, plus `ast` for Python), the patch applies (`git apply --check`), and if the patch adds lines the expectation touches one | Hand-written cases; mutate anything | Automatic ground truth including the *necessary* context, reproducible byte for byte. The same parser builds the indexed graph, so oracle names match what retrieval returns. The added-line rule exists because validation only posts findings on added lines |
+| D70 | `remove_guard` stays a pure deletion even though B0 cannot post on it (validation drops findings on unchanged lines: `not_on_changed_lines`) | Rewrite the guard so the diff adds a line | Deleting a guard is a real and common bug shape. Keeping it measures a known blind spot of B0 (12 cases) instead of hiding it; the fix (anchor a finding at the line after a deletion) becomes a candidate upgrade with a number attached |
+| D71 | Dataset shape: up to 12 cases per operator, taken round-robin across sources; 6 clean per source; stratified 30/70 dev/test split per (kind, operator) by id hash; patches stored byte-exact (`.gitattributes`: `-text`) | One flat random sample | Round-robin keeps any one repo from dominating an operator; stratifying keeps every operator in both splits; byte-exact patches survive the repo's `eol=lf` normalisation |
 
 ---
 
@@ -1084,7 +1094,7 @@ PR overlay, migrate service, host port 5433). New decisions:
 
 | # | Question | Decide by |
 |---|---|---|
-| Q1 | Which 3–4 OSS repos (and licenses) for eval sources? | Phase 3 step 1 |
+| Q1 | ~~Which 3–4 OSS repos (and licenses) for eval sources?~~ **Answered 2026-10-11:** sqlite-utils, starlette, click, h3 (D68) | Phase 3 step 1 |
 | Q2 | Is `qwen3:14b` (partial CPU offload) worth it for offline eval runs, given the slowdown? | Phase 3 step 3 (measure) |
 | Q3 | Do module chunks help or add noise in retrieval? | Phase 4 step 1 (ablate) |
 | Q4 | Test files: include with a lower prior, or exclude from context? | Phase 4 step 2 |

@@ -1,0 +1,11 @@
+--- a/src/utils/event-stream.ts
++++ b/src/utils/event-stream.ts
+@@ -117,7 +117,7 @@
+   async push(message: EventStreamMessage[]): Promise<void>;
+   async push(message: EventStreamMessage | EventStreamMessage[] | string | string[]) {
+     if (typeof message === "string") {
+-      await this._sendEvent({ data: message });
++      this._sendEvent({ data: message });
+       return;
+     }
+     if (Array.isArray(message)) {

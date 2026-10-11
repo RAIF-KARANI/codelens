@@ -1,0 +1,12 @@
+--- a/sqlite_utils/db.py
++++ b/sqlite_utils/db.py
+@@ -1101,7 +1101,8 @@
+         if fts5:
+             where.append("sql like '%USING FTS5%'")
+         sql = "select name from sqlite_master where {}".format(" AND ".join(where))
+-        return [r[0] for r in self.execute(sql).fetchall()]
++        result = [r[0] for r in self.execute(sql).fetchall()]
++        return result
+ 
+     def view_names(self) -> list[str]:
+         "List of string view names in this database."

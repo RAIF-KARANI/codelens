@@ -1,0 +1,12 @@
+id: h3.rename_local.2498ee4d
+kind: clean
+split: test
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: rename_local
+file: src/rules/internal/key.ts
+function: src/rules/internal/key:parseRouteKey
+description: Renamed local `match` to `matchValue`
+expected: []
+oracle: []

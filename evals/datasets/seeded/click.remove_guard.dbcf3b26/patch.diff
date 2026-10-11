@@ -1,0 +1,11 @@
+--- a/src/click/types.py
++++ b/src/click/types.py
+@@ -1321,8 +1321,6 @@
+     if ty is not None:
+         return ty
+ 
+-    if default is None:
+-        return None
+ 
+     if not isinstance(default, (tuple, list)):
+         return type(default)

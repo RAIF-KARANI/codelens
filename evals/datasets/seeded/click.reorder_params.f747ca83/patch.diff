@@ -1,0 +1,11 @@
+--- a/src/click/core.py
++++ b/src/click/core.py
+@@ -3342,7 +3342,7 @@
+             return self.flag_activation_value
+         return value
+ 
+-    def _validate(self, prompt: bool | str, deprecated: bool | str) -> None:
++    def _validate(self, deprecated: bool | str, prompt: bool | str) -> None:
+         """Raise :class:`TypeError` / :class:`ValueError` on illegal kwarg combinations.
+ 
+         Called once, after every other attribute has been assigned, so each check can

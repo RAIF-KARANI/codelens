@@ -1,0 +1,12 @@
+--- a/src/click/core.py
++++ b/src/click/core.py
+@@ -170,8 +170,8 @@
+ 
+ 
+ def iter_params_for_processing(
++    declaration_order: cabc.Sequence[Parameter],
+     invocation_order: cabc.Sequence[Parameter],
+-    declaration_order: cabc.Sequence[Parameter],
+ ) -> list[Parameter]:
+     """Returns all declared parameters in the order they should be processed.
+ 

@@ -1,0 +1,13 @@
+--- a/starlette/staticfiles.py
++++ b/starlette/staticfiles.py
+@@ -217,8 +217,8 @@
+             if if_none_match.strip() == "*":
+                 return True
+             # The "etag" header is added by FileResponse, so it's always present.
+-            etag = response_headers["etag"]
+-            return etag in [tag.strip().removeprefix("W/") for tag in if_none_match.split(",")]
++            etag_value = response_headers["etag"]
++            return etag_value in [tag.strip().removeprefix("W/") for tag in if_none_match.split(",")]
+ 
+         try:
+             if_modified_since = parsedate(request_headers["if-modified-since"])

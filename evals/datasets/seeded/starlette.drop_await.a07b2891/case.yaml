@@ -1,0 +1,21 @@
+id: starlette.drop_await.a07b2891
+kind: seeded
+split: test
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: drop_await
+file: starlette/routing.py
+function: starlette.routing.BaseRoute.__call__
+description: Removed `await` before `self.handle(scope, receive, send)`, an async
+  function
+expected:
+- file: starlette/routing.py
+  line_start: 196
+  line_end: 196
+  category: concurrency
+  severity: critical
+oracle:
+- qualified_name: starlette.routing.BaseRoute.handle
+  ordinal: 0
+  role: callee

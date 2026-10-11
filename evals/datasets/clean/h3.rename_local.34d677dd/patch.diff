@@ -1,0 +1,15 @@
+--- a/src/utils/route.ts
++++ b/src/utils/route.ts
+@@ -124,9 +124,9 @@
+   const _method = (method ? method.toUpperCase() : "") as HTTPMethod;
+   route = normalizeRoute(route);
+ 
+-  const routes = app["~routes"];
+-  const kept = routes.filter((r) => !(r.route === route && (r.method || "") === _method));
+-  if (kept.length === routes.length) {
++  const routesValue = app["~routes"];
++  const kept = routesValue.filter((r) => !(r.route === route && (r.method || "") === _method));
++  if (kept.length === routesValue.length) {
+     // Nothing mirrored in `~routes`: only the router may have it (e.g. a route
+     // added straight to `~rou3`).
+     _removeRoute(app["~rou3"], _method, route);

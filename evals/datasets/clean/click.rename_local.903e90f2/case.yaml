@@ -1,0 +1,12 @@
+id: click.rename_local.903e90f2
+kind: clean
+split: test
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: rename_local
+file: src/click/core.py
+function: click.core._complete_visible_commands
+description: Renamed local `multi` to `multi_value`
+expected: []
+oracle: []

@@ -1,0 +1,11 @@
+--- a/src/utils/session.ts
++++ b/src/utils/session.ts
+@@ -350,7 +350,7 @@
+   if (config.maxAge) {
+     const age = Date.now() - (unsealed.createdAt || Number.NEGATIVE_INFINITY);
+     if (age > config.maxAge * 1000) {
+-      throw new Error("Session expired!");
++      return undefined;
+     }
+   }
+   // Idle window, counted from the last reseal. Sessions sealed before

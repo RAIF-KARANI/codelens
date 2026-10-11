@@ -1,0 +1,11 @@
+--- a/starlette/_exception_handler.py
++++ b/starlette/_exception_handler.py
+@@ -49,8 +49,6 @@
+             if handler is None:
+                 handler = _lookup_exception_handler(exception_handlers, exc)
+ 
+-            if handler is None:
+-                raise exc
+ 
+             if response_started:
+                 raise RuntimeError("Caught handled exception, but response already started.") from exc

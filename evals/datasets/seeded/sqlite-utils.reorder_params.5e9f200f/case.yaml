@@ -1,0 +1,23 @@
+id: sqlite-utils.reorder_params.5e9f200f
+kind: seeded
+split: test
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: reorder_params
+file: sqlite_utils/cli.py
+function: sqlite_utils.cli.output_rows
+description: Swapped parameters `iterator` and `headers`; callers pass both by position
+expected:
+- file: sqlite_utils/cli.py
+  line_start: 3683
+  line_end: 3683
+  category: api-contract
+  severity: warning
+oracle:
+- qualified_name: sqlite_utils.cli._execute_query
+  ordinal: 0
+  role: caller
+- qualified_name: sqlite_utils.cli.tables
+  ordinal: 0
+  role: caller

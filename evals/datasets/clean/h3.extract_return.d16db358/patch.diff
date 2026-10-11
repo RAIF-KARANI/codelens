@@ -1,0 +1,12 @@
+--- a/src/utils/internal/proxy.ts
++++ b/src/utils/internal/proxy.ts
+@@ -204,7 +204,8 @@
+   // inject phantom rewrite rules.
+   for (const prefix of Object.keys(map)) {
+     if (value.startsWith(prefix)) {
+-      return map[prefix] + value.slice(prefix.length);
++      const result = map[prefix] + value.slice(prefix.length);
++      return result;
+     }
+   }
+   return undefined;

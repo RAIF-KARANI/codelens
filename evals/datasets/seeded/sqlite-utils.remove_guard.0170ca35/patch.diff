@@ -1,0 +1,11 @@
+--- a/sqlite_utils/create_table_parser.py
++++ b/sqlite_utils/create_table_parser.py
+@@ -842,8 +842,6 @@
+ def sql_ends_in_line_comment(sql: str) -> bool:
+     """Return True if appended SQL would be swallowed by a ``--`` comment."""
+     tokens = _lex(sql)
+-    if not tokens:
+-        return False
+     final = tokens[-1]
+     return (
+         final.kind == "comment"

@@ -1,0 +1,12 @@
+--- a/src/utils/body.ts
++++ b/src/utils/body.ts
+@@ -179,7 +179,8 @@
+   },
+ ): Promise<any> {
+   const _body = await readBody(event, options);
+-  return validateData(_body, validate, options);
++  const result = validateData(_body, validate, options);
++  return result;
+ }
+ 
+ /**

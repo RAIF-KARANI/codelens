@@ -1,0 +1,27 @@
+id: starlette.raise_to_none.8751a94c
+kind: seeded
+split: dev
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: raise_to_none
+file: starlette/websockets.py
+function: starlette.websockets.WebSocket.receive
+description: '`raise RuntimeError(f''Expected ASGI message "websocket.connect", but
+  got {message` became `return None`; callers use the result'
+expected:
+- file: starlette/websockets.py
+  line_start: 49
+  line_end: 49
+  category: bug
+  severity: critical
+oracle:
+- qualified_name: starlette.websockets.WebSocket.receive_bytes
+  ordinal: 0
+  role: caller
+- qualified_name: starlette.websockets.WebSocket.receive_json
+  ordinal: 0
+  role: caller
+- qualified_name: starlette.websockets.WebSocket.receive_text
+  ordinal: 0
+  role: caller

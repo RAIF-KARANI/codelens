@@ -1,0 +1,19 @@
+--- a/src/utils/internal/cors.ts
++++ b/src/utils/internal/cors.ts
+@@ -167,13 +167,13 @@
+   const { allowHeaders } = options;
+ 
+   if (!allowHeaders || allowHeaders === "*" || allowHeaders.length === 0) {
+-    const header = event.req.headers.get("access-control-request-headers");
++    const headerValue = event.req.headers.get("access-control-request-headers");
+ 
+     // The response reflects the request header, so declare the variance
+     // even when the header is absent.
+-    return header
++    return headerValue
+       ? {
+-          "access-control-allow-headers": header,
++          "access-control-allow-headers": headerValue,
+           vary: "access-control-request-headers",
+         }
+       : { vary: "access-control-request-headers" };

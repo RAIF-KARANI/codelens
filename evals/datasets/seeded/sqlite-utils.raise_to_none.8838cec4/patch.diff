@@ -1,0 +1,11 @@
+--- a/sqlite_utils/create_table_parser.py
++++ b/sqlite_utils/create_table_parser.py
+@@ -307,7 +307,7 @@
+ 
+ def _matching_paren(tokens: list[_Token], open_index: int) -> int:
+     if tokens[open_index].text != "(":
+-        raise ParseError("Expected an opening parenthesis")
++        return None
+     depth = 0
+     for index in range(open_index, len(tokens)):
+         if tokens[index].text == "(":

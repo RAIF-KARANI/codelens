@@ -1,0 +1,21 @@
+id: starlette.drop_param.825d25ae
+kind: seeded
+split: test
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: drop_param
+file: starlette/responses.py
+function: starlette.responses.Response.set_cookie
+description: Dropped parameter `max_age` (its default became a local); callers still
+  pass it
+expected:
+- file: starlette/responses.py
+  line_start: 94
+  line_end: 102
+  category: api-contract
+  severity: critical
+oracle:
+- qualified_name: starlette.responses.Response.delete_cookie
+  ordinal: 0
+  role: caller

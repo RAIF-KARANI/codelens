@@ -1,0 +1,11 @@
+--- a/src/utils/internal/path.ts
++++ b/src/utils/internal/path.ts
+@@ -208,7 +208,7 @@
+  */
+ export function normalizeRoute(route: string): string {
+   if (ABSOLUTE_URL_RE.test(route)) {
+-    throw new Error(`Route patterns are pathnames, received URL: ${route}`);
++    return undefined;
+   }
+   if (route.charCodeAt(0) !== 47 /* / */) {
+     route = `/${route}`;

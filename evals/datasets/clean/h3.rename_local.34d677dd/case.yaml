@@ -1,0 +1,12 @@
+id: h3.rename_local.34d677dd
+kind: clean
+split: test
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: rename_local
+file: src/utils/route.ts
+function: src/utils/route:removeRoute
+description: Renamed local `routes` to `routesValue`
+expected: []
+oracle: []

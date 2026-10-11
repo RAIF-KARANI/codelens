@@ -1,0 +1,13 @@
+--- a/src/rules/internal/premerge.ts
++++ b/src/rules/internal/premerge.ts
+@@ -114,9 +114,7 @@
+           break;
+         }
+         case "equal": {
+-          throw new Error(
+-            `[h3] rules: preMerge: \`${a}\` and \`${b}\` match the same paths — merge them into one rule`,
+-          );
++          return undefined;
+         }
+         case "superset": {
+           subsumers.get(b)!.push(a);

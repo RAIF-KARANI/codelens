@@ -1,0 +1,11 @@
+--- a/sqlite_utils/cli.py
++++ b/sqlite_utils/cli.py
+@@ -3487,7 +3487,7 @@
+     return migration_sets
+ 
+ 
+-def _display_migration_list(db, migration_sets):
++def _display_migration_list(migration_sets, db):
+     for migration_set in migration_sets:
+         click.echo(f"Migrations for: {migration_set.name}")
+         click.echo()

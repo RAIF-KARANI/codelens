@@ -1,0 +1,19 @@
+--- a/src/click/core.py
++++ b/src/click/core.py
+@@ -3387,7 +3387,7 @@
+         return info_dict
+ 
+     def get_default(
+-        self, ctx: Context, call: bool = True
++        self, ctx: Context
+     ) -> t.Any | t.Callable[[], t.Any] | None:
+         """Return the default value for this option.
+ 
+@@ -3409,6 +3409,7 @@
+             flags, fixing negative boolean flags like
+             ``flag_value=False, default=True``.
+         """
++        call: bool = True
+         raw = super().get_default(ctx, call=False)
+         value = self._resolve_lazy_default(raw)
+         # Only invoke the value as a callable when the lazy resolver passed it through

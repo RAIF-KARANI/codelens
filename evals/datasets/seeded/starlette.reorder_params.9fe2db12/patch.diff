@@ -1,0 +1,11 @@
+--- a/starlette/middleware/errors.py
++++ b/starlette/middleware/errors.py
+@@ -185,7 +185,7 @@
+             # to optionally raise the error within the test case.
+             raise exc
+ 
+-    def format_line(self, index: int, line: str, frame_lineno: int, frame_index: int) -> str:
++    def format_line(self, index: int, line: str, frame_index: int, frame_lineno: int) -> str:
+         values = {
+             # HTML escape - line could contain < or >
+             "line": html.escape(line).replace(" ", "&nbsp"),

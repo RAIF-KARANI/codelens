@@ -1,0 +1,20 @@
+id: sqlite-utils.remove_guard.4a584ce9
+kind: seeded
+split: test
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: remove_guard
+file: sqlite_utils/create_table_parser.py
+function: sqlite_utils.create_table_parser.parse_autoincrement
+description: Deleted the guard `if not item_tokens:` before `item_tokens` is used
+expected:
+- file: sqlite_utils/create_table_parser.py
+  line_start: 592
+  line_end: 593
+  category: bug
+  severity: warning
+oracle:
+- qualified_name: sqlite_utils.create_table_parser._meaningful
+  ordinal: 0
+  role: callee

@@ -1,0 +1,11 @@
+--- a/src/click/shell_completion.py
++++ b/src/click/shell_completion.py
+@@ -661,8 +661,6 @@
+ 
+ def _start_of_option(ctx: Context, value: str) -> bool:
+     """Check if the value looks like the start of an option."""
+-    if not value:
+-        return False
+ 
+     c = value[0]
+     return c in ctx._opt_prefixes

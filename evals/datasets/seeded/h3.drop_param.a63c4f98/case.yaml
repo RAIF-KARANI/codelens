@@ -1,0 +1,21 @@
+id: h3.drop_param.a63c4f98
+kind: seeded
+split: dev
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: drop_param
+file: src/utils/request.ts
+function: src/utils/request:getRequestHost
+description: Dropped parameter `opts` (its default became a local); callers still
+  pass it
+expected:
+- file: src/utils/request.ts
+  line_start: 443
+  line_end: 443
+  category: api-contract
+  severity: critical
+oracle:
+- qualified_name: src/utils/request:getRequestURL
+  ordinal: 0
+  role: caller

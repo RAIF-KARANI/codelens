@@ -1,0 +1,21 @@
+id: starlette.drop_await.cd4d7137
+kind: seeded
+split: dev
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: drop_await
+file: starlette/templating.py
+function: starlette.templating._TemplateResponse.__call__
+description: Removed `await` before `super().__call__(scope, receive, send)`, an async
+  function
+expected:
+- file: starlette/templating.py
+  line_start: 51
+  line_end: 51
+  category: concurrency
+  severity: critical
+oracle:
+- qualified_name: starlette.responses.Response.__call__
+  ordinal: 0
+  role: callee

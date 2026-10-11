@@ -1,0 +1,11 @@
+--- a/sqlite_utils/create_table_parser.py
++++ b/sqlite_utils/create_table_parser.py
+@@ -590,8 +590,6 @@
+     body, _ = body_info
+     for item, _, _ in _split_spans(body, _lex(body)):
+         item_tokens = _meaningful(_lex(item))
+-        if not item_tokens:
+-            continue
+         head = item_tokens[0]
+         if (
+             head.kind == "word" and head.text.upper() in _TABLE_CONSTRAINT_KEYWORDS

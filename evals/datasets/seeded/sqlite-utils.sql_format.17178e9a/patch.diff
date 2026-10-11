@@ -1,0 +1,11 @@
+--- a/sqlite_utils/db.py
++++ b/sqlite_utils/db.py
+@@ -5469,7 +5469,7 @@
+             return False
+ 
+         cursor = self.db.execute(
+-            "select CreateSpatialIndex(?, ?)", [self.name, column_name]
++            f"select CreateSpatialIndex('{self.name}', '{column_name}')"
+         )
+         result = cursor.fetchone()
+         return result and bool(result[0])

@@ -1,0 +1,12 @@
+--- a/src/utils/internal/path.ts
++++ b/src/utils/internal/path.ts
+@@ -26,9 +26,6 @@
+ export function joinURL(base: string | undefined, path: string | undefined): string {
+   if (!path || path === "/") {
+     return base || "/";
+-  }
+-  if (!base) {
+-    return path;
+   }
+   // Only the boundary separator is absorbed: `//evil.com` keeps its extra
+   // slash so a caller's scope check still sees the empty segment.

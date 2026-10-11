@@ -1,0 +1,12 @@
+id: click.extract_return.d3a474c7
+kind: clean
+split: test
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: extract_return
+file: src/click/_winconsole.py
+function: click._winconsole._get_windows_console_stream
+description: Moved the returned expression into a local `result`
+expected: []
+oracle: []

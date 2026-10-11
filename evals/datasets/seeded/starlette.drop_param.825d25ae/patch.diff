@@ -1,0 +1,18 @@
+--- a/starlette/responses.py
++++ b/starlette/responses.py
+@@ -91,7 +91,6 @@
+         self,
+         key: str,
+         value: str = "",
+-        max_age: int | None = None,
+         expires: datetime | str | int | None = None,
+         path: str | None = "/",
+         domain: str | None = None,
+@@ -100,6 +99,7 @@
+         samesite: Literal["lax", "strict", "none"] | None = "lax",
+         partitioned: bool = False,
+     ) -> None:
++        max_age: int | None = None
+         cookie: http.cookies.BaseCookie[str] = http.cookies.SimpleCookie()
+         cookie[key] = value
+         if max_age is not None:

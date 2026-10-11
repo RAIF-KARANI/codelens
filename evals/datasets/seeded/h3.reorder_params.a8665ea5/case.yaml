@@ -1,0 +1,20 @@
+id: h3.reorder_params.a8665ea5
+kind: seeded
+split: dev
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: reorder_params
+file: src/utils/query.ts
+function: src/utils/query:splitOutsideQuotes
+description: Swapped parameters `input` and `sep`; callers pass both by position
+expected:
+- file: src/utils/query.ts
+  line_start: 145
+  line_end: 145
+  category: api-contract
+  severity: warning
+oracle:
+- qualified_name: src/utils/query:serializeMediaType
+  ordinal: 0
+  role: caller

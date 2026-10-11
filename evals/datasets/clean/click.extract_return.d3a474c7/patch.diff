@@ -1,0 +1,9 @@
+--- a/src/click/_winconsole.py
++++ b/src/click/_winconsole.py
+@@ -289,4 +289,5 @@
+     if b is None:
+         return None
+ 
+-    return func(b)
++    result = func(b)
++    return result

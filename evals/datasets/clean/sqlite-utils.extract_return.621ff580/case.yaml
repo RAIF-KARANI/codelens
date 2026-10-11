@@ -1,0 +1,12 @@
+id: sqlite-utils.extract_return.621ff580
+kind: clean
+split: test
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: extract_return
+file: sqlite_utils/utils.py
+function: sqlite_utils.utils._CloseableIterator.__next__
+description: Moved the returned expression into a local `result`
+expected: []
+oracle: []
