@@ -5,8 +5,8 @@
 > two disagree, **this file wins**. It supersedes `idea.md` §14 (roadmap) and adds
 > decisions D18+.
 
-**Last updated:** 2026-10-11 · **Current position:** Phases 1–2 complete (PRs #1–#9). Phase 3 step 1
-(eval sources + seeded/clean dataset: 73 + 24 cases) built and awaiting review; next is step 2 (runner + metrics).
+**Last updated:** 2026-10-11 · **Current position:** Phases 1–2 complete (PRs #1–#9); Phase 3 step 1 merged (#10).
+Step 2 (runner, matching, metrics, bootstrap CIs, scorecard) built and awaiting review; next is step 3 (A0/B0 baselines).
 
 ---
 
@@ -669,8 +669,8 @@ codelens/
     ├── datasets/{seeded,clean}/<case_id>/{case.yaml, patch.diff}   ✅ (golden/ later)
     ├── sources.yaml sources.py     ✅ pinned OSS repos (name, url, sha, license) + checkouts
     ├── generate_seeded.py          ✅ operators → verified cases (+ graph.py syntax.py edits.py operators.py cases.py)
-    ├── run.py metrics.py report.py 📋3
-    ├── results/                    📋3 JSON per run (gitignored except summaries)
+    ├── run.py metrics.py report.py records.py   ✅ runner, scoring, scorecard
+    ├── results/<run>/              ✅ run.json + cases.jsonl + scorecard.{json,md} (gitignored)
     └── RESULTS.md                  📋3 the adopted/rejected upgrade log + tables
 ```
 
@@ -705,8 +705,8 @@ what was built, how to run it, and what to verify. Estimates are rough
 ### Phase 3: Evaluation harness (measure before upgrading)
 | Step | Deliverable | Exit criteria |
 |---|---|---|
-| 1 🔍 | `sources.yaml` (3–4 permissively licensed OSS repos, pinned SHAs) + seeded-bug generator (§10.1) | ≥ 60 seeded cases + ≥ 20 clean cases generated reproducibly (73 + 24; D68–D71) |
-| 2 | Runner (`evals.run`), matching + metrics, bootstrap CIs, report | One command produces a scorecard JSON + markdown |
+| 1 ✅ | `sources.yaml` (3–4 permissively licensed OSS repos, pinned SHAs) + seeded-bug generator (§10.1) | ≥ 60 seeded cases + ≥ 20 clean cases generated reproducibly (73 + 24; D68–D71; PR #10) |
+| 2 🔍 | Runner (`evals.run`), matching + metrics, bootstrap CIs, report | One command produces a scorecard JSON + markdown (D72–D74) |
 | 3 | Run **diff-only (A0)** and **B0** | Baseline numbers committed to `evals/RESULTS.md` |
 
 ### Phase 4: The "+" upgrades, one per step, each gated by evals
@@ -797,7 +797,7 @@ follow each language's naming convention so they aren't style findings. See
 |---|---|---|
 | Retrieval | **Oracle recall@k** (k = 5, 10, 20) | Share of oracle nodes present in the packed context (and in top-k before packing) |
 | Retrieval | MRR | 1 / rank of the first oracle node |
-| Findings | **Precision, recall, F1** (primary = F1) | A prediction matches an expectation if: same file, line ranges overlap within ±3, compatible category, severity ≥ expected − 1 level. One-to-one greedy matching |
+| Findings | **Precision, recall, F1** (primary = F1) | A prediction matches an expectation if: same file, line ranges overlap within ±3, compatible category (D72), severity ≥ expected − 1 level. One-to-one greedy matching. Precision counts posted findings on seeded cases; clean cases feed the noise metric |
 | Findings | Critical recall | Recall restricted to `critical` expectations |
 | Noise | **Findings per clean PR** | Mean posted findings on clean cases (target ≤ 0.3) |
 | Ops | p50 / p95 latency, prompt + completion tokens per case | Wall-clock, from the trace |
@@ -1070,6 +1070,9 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D69 | Cases are generated from `core.parser`'s graph, not the DB: operators mutate a function only where the bug needs context (a caller that uses the result, passes the argument or catches the exception; an async callee), and those nodes become the oracle. Each case is verified: the file still parses (tree-sitter, plus `ast` for Python), the patch applies (`git apply --check`), and if the patch adds lines the expectation touches one | Hand-written cases; mutate anything | Automatic ground truth including the *necessary* context, reproducible byte for byte. The same parser builds the indexed graph, so oracle names match what retrieval returns. The added-line rule exists because validation only posts findings on added lines |
 | D70 | `remove_guard` stays a pure deletion even though B0 cannot post on it (validation drops findings on unchanged lines: `not_on_changed_lines`) | Rewrite the guard so the diff adds a line | Deleting a guard is a real and common bug shape. Keeping it measures a known blind spot of B0 (12 cases) instead of hiding it; the fix (anchor a finding at the line after a deletion) becomes a candidate upgrade with a number attached |
 | D71 | Dataset shape: up to 12 cases per operator, taken round-robin across sources; 6 clean per source; stratified 30/70 dev/test split per (kind, operator) by id hash; patches stored byte-exact (`.gitattributes`: `-text`) | One flat random sample | Round-robin keeps any one repo from dominating an operator; stratifying keeps every operator in both splits; byte-exact patches survive the repo's `eol=lf` normalisation |
+| D72 | Category compatibility for matching: bug ← {bug, api-contract, error-handling}; api-contract ← {api-contract, bug}; concurrency ← {concurrency, bug}; error-handling ← {error-handling, bug, api-contract}; security ← {security} only. A second finding on the same bug is a false positive | Exact category; any category | The planted bug is what matters, not the label: a caller-breaking change called a "bug" is found. But SQL injection called anything other than security is not, and duplicate comments are noise a user would see |
+| D73 | Runner: each case is a commit built with git plumbing (`read-tree`, `apply --cached`, `commit-tree` with a fixed author/date) on the shared checkout; records are appended per case to `cases.jsonl` (resumable); each record copies its expectation and oracle; sources are indexed and embedded as `eval/<name>` (incremental). Default split is `dev` | A worktree/branch per case; scoring by joining with the dataset later | No working-tree churn, the same commit sha every run, a 65-minute run survives interruption, and a results directory scores on its own after the dataset changes. Defaulting to dev keeps test numbers for reporting only |
+| D74 | Statistics in plain Python: percentile bootstrap (1,000 resamples, seeded) per metric, and a *paired* bootstrap for deltas against a baseline (same case ids resampled for both); undefined metrics are NaN → `null`/"n/a", never 0. The scorecard checks the §10.5 gate (F1 up with CI > 0; noise up ≤ 0.1) | numpy/scipy | ~60 lines, no new dependency, every number explainable; NaN keeps "no findings" distinct from "all findings wrong" |
 
 ---
 
