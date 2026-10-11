@@ -6,7 +6,7 @@ ablation is just a different file over the same code path (planning.md §2.2).
 """
 
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -21,6 +21,9 @@ class RetrievalConfig(_Section):
     enabled: bool = True  # False = diff-only (the A0 ablation)
     vector_k: int = Field(default=8, ge=0)  # neighbours per seed
     max_seeds: int = Field(default=24, ge=1)  # biggest changes first beyond this
+    # Q13: mark retrieved blocks that call, or are called by, the changed code
+    # (one query on the graph's edges), so the model knows which are callers.
+    tag_relations: bool = False
 
 
 class PackingConfig(_Section):
@@ -29,6 +32,10 @@ class PackingConfig(_Section):
     # sized for 16k, an 8k window was filled by diff + changed code, and
     # context, the point of retrieval, got 0 blocks in 3 of 4 chunks. Shares
     # guarantee context a real slice of any window.
+    # Q12: "unified" interleaves removed and added lines; "split" shows each
+    # hunk before (unnumbered, for reference) and after (numbered, + = added),
+    # so a moved or rewritten line isn't read as a duplicate.
+    diff_style: Literal["unified", "split"] = "unified"
     diff_share: float = Field(default=0.40, gt=0, le=1)
     changed_share: float = Field(default=0.25, ge=0, le=1)
     context_share: float = Field(default=0.35, ge=0, le=1)
@@ -71,6 +78,9 @@ class GenerationConfig(_Section):
     # Eight findings in JSON come to ~1,200 tokens; the rest of the window is prompt.
     max_output_tokens: int = Field(default=1500, gt=0)
     max_findings_per_chunk: int = Field(default=8, ge=1)
+    # Q13: a prompt rule to check the tagged callers before claiming an API
+    # break (pairs with retrieval.tag_relations).
+    check_callers: bool = False
 
 
 class ValidationConfig(_Section):

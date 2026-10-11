@@ -5,8 +5,8 @@
 > two disagree, **this file wins**. It supersedes `idea.md` §14 (roadmap) and adds
 > decisions D18+.
 
-**Last updated:** 2026-10-11 · **Current position:** Phases 1–3 complete (PRs #1–#14). Phase 4 step 1 (A1 anchoring) built,
-measured and adopted pending review: test F1 0.654 → 0.767 (+0.113 [+0.040, +0.194]). B0+A1 still trails A0+A1 (−0.054); next is step 2 (Q12/Q13: diff rendering, context use).
+**Last updated:** 2026-10-11 · **Current position:** Phases 1–3 complete; Phase 4 step 1 (A1 anchoring) adopted (#15).
+Step 2 (split diff Q12, caller-aware context Q13) measured and **rejected** (D83): the 8B model ignores tagged callers even when told to use them. Next: decide Q14 (thinking mode, a stronger model, or a verification pass).
 
 ---
 
@@ -721,8 +721,8 @@ come first; the retrieval upgrades follow, once better context can pay off.
 
 | Step | Upgrade | Extra deliverables |
 |---|---|---|
-| 1 🔍 | A1 anchoring (Q11): snap near-miss findings to the nearest changed line; lines bordering a pure deletion are anchors | `validation.anchor_window`, `anchor_deletions`; `b0_anchor.yaml`, `a0_anchor.yaml`, `default.yaml`. **Adopted:** test F1 +0.113 [+0.040, +0.194] (D82) |
-| 2 | Diff rendering (Q12) and context use (Q13): render hunks so moved lines aren't read as duplicates; prompt the model to check callers before claiming an API break | prompt/packing toggles, ablation configs |
+| 1 ✅ | A1 anchoring (Q11): snap near-miss findings to the nearest changed line; lines bordering a pure deletion are anchors | `validation.anchor_window`, `anchor_deletions`; `b0_anchor.yaml`, `a0_anchor.yaml`, `default.yaml`. **Adopted:** test F1 +0.113 [+0.040, +0.194] (D82) |
+| 2 🔍 | Diff rendering (Q12) and context use (Q13): render hunks so moved lines aren't read as duplicates; prompt the model to check callers before claiming an API break | `packing.diff_style`, `retrieval.tag_relations`, `generation.check_callers` (all default off). **Both rejected** (D83) |
 | 3 | U1 FTS + RRF | `identifiers.py`, tsv builder, fusion SQL, `--mode fts/hybrid` |
 | 4 | U2 graph expansion | Recursive CTE, hub control, graph-based fused list |
 | 5 | U3 reranker | `services/reranker`, compose service, HTTP client, blend weights |
@@ -1092,6 +1092,7 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D80 | The valid baselines (test, 83 cases): A0 F1 0.741, B0 0.654; B0 is the baseline Phase 4 improves, and A0 stays the reference upgrades must also beat | Treat A0 as the baseline | B0 is the pipeline we ship; its deficit has a measured mechanism (mis-anchored findings, unused context) that Phase 4 targets. An upgrade that only gets B0 back to A0 has not yet shown retrieval is worth its cost |
 | D81 | Phase 4 re-ordered: anchoring (Q11), then diff rendering and context use (Q12, Q13), then the retrieval upgrades U1–U6 (user's choice, 2026-10-11) | The original U1-first order | Measured: B0 already retrieves the oracle half the time without using it, and mis-anchoring costs it most of its gap to A0. Better retrieval would raise oracle recall without moving F1 until the model can use and place what it gets |
 | D82 | Adopt A1 anchoring (`anchor_window: 3`, `anchor_deletions: true`) into `configs/pipeline/default.yaml`, the new default of `core.review` | Keep B0's strict on-added-line rule | Test, paired vs B0: F1 +0.113 [+0.040, +0.194], recall +0.225, noise unchanged, 0 matches lost to validation (was 11); `remove_guard` 0 → 7/8. Window 3 = the offsets measured on B0's misses; checked on dev first (+0.110). Snapping is product behaviour, not eval gaming: a comment must sit on a diff line, and moving a near miss there is what a human would do. 3 of 8 moved findings were false positives, reported |
+| D83 | Reject split diff rendering (Q12) and caller-aware context (Q13); keep both as off-by-default toggles | Adopt caller tags on the dev result | Dev: split −0.006 with noise +0.50; callers +0.029 [0.000, +0.072]; both 0.000. Test, callers: +0.006 [−0.056, +0.069], so the dev gain was noise. Counterfactual false alarms stayed at 1.0 throughout: the 8B model does not use tagged callers even when the prompt tells it to |
 
 ---
 
@@ -1127,8 +1128,9 @@ PR overlay, migrate service, host port 5433). New decisions:
 | Q9 | ~~Lower `max_findings_per_chunk` (e.g. 4)?~~ **Answered 2026-10-11:** no, keep 8 (D75; `evals/RESULTS.md`) | Phase 3 step 3 (ablate) |
 | Q10 | ~~The seeded dataset can't show context helping?~~ **Answered 2026-10-11: counterfactual cases** (D78), built in Phase 3 step 4 | Before Phase 4 step 1 |
 | Q11 | ~~Anchoring?~~ **Answered 2026-10-12: yes, adopted (D82).** Was: snap a finding to the nearest added line within a few lines, and let a finding sit next to a pure deletion? Validation drops both today: `remove_guard` 7/8 flagged but 0 posted, and 4 of B0's 6 lost bugs were 1–3 lines off. Upper bound from the test runs: recall A0 0.816 → 0.959, B0 0.714 → 0.939 | Phase 4 step 1 |
-| Q12 | Diff rendering: the model reads moved lines as duplicates ("Duplicate parameter `type_arg`" when a parameter only moved). Render hunks differently (old/new side by side, or the new function whole with changed lines marked)? | Phase 4 |
-| Q13 | B0 flags 17/18 counterfactuals even with the safe callers in the prompt (56% of the time). Does a prompt that asks the model to check callers before claiming an API break, or a stronger model (Q2), use the context? | Phase 4 |
+| Q12 | ~~Diff rendering?~~ **Answered 2026-10-12: no** (split rendering raised noise, F1 unchanged; D83). Was: the model reads moved lines as duplicates ("Duplicate parameter `type_arg`" when a parameter only moved). Render hunks differently (old/new side by side, or the new function whole with changed lines marked)? | Phase 4 |
+| Q13 | ~~Caller-aware context?~~ **Answered 2026-10-12: no gain at qwen3:8b** (test +0.006 [−0.056, +0.069]; D83). Was: B0 flags 17/18 counterfactuals even with the safe callers in the prompt (56% of the time). Does a prompt that asks the model to check callers before claiming an API break, or a stronger model (Q2), use the context? | Phase 4 |
+| Q14 | The 8B model reacts to a diff's shape and ignores the callers that show a change is safe, even tagged and with a rule (D83). Which lever next: U6 thinking mode (a toggle already), Q2 a stronger model (qwen3:14b, partly on CPU), or a verification pass (for each api-contract finding, a short second call with only the change and its callers: "does any caller break?")? | Before Phase 4 step 3 |
 
 ---
 

@@ -20,7 +20,7 @@ from core.enums import ReviewStatus
 from core.indexing import index_repository
 from core.providers import Message, Providers, StructuredOutputError
 from core.providers.fake import FakeEmbedder, FakeLLM
-from core.review.config import PipelineConfig, RetrievalConfig
+from core.review.config import GenerationConfig, PipelineConfig, RetrievalConfig
 from core.review.pipeline import ReviewError, ReviewResult, run_review
 
 pytestmark = pytest.mark.integration
@@ -201,3 +201,27 @@ def test_llm_failure_marks_the_review_failed(shop: Path, migrated_database_url: 
 def test_unindexed_repo_is_a_clear_error(shop: Path, migrated_database_url: str) -> None:
     with pytest.raises(ReviewError, match=r"run core\.index"):
         review(migrated_database_url, shop, FakeLLM(), name="local/never-indexed")
+
+
+def test_caller_aware_context_tags_callers_and_adds_the_rule(
+    shop: Path, migrated_database_url: str
+) -> None:
+    llm = FakeLLM(responder=lambda m, s: {"summary": "ok", "findings": []})
+    config = PipelineConfig(
+        name="callers",
+        retrieval=RetrievalConfig(tag_relations=True),
+        generation=GenerationConfig(check_callers=True),
+    )
+
+    review(migrated_database_url, shop, llm, config)
+
+    [call] = llm.calls
+    system, prompt = call.messages[0].content, call.messages[-1].content
+    assert 'relation="calls the changed code"' in system
+    tagged = re.findall(r'<context id="N\d+" name="([^"]+)"[^>]*relation="([^"]+)"', prompt)
+    # Every tag is true (only the graph decides it), and the direct callers
+    # of apply_discount that retrieval found are marked as callers.
+    callers = {"shop.pricing.with_tax", "shop.plugins.holiday_price", "shop.services.checkout"}
+    assert tagged, "retrieval found no caller to tag"
+    for name, relation in tagged:
+        assert relation == "calls the changed code" and name in callers, (name, relation)

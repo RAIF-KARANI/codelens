@@ -49,6 +49,22 @@ that appear inside those blocks.\
 """
 
 
+# Q13: B0 flagged a removed or reordered parameter as a break on sight, even
+# with every caller in the prompt showing it was safe.
+CALLER_RULE = """
+6. Context blocks with relation="calls the changed code" are callers of the \
+changed code. Before reporting a broken API contract (a removed, added or \
+reordered parameter, a changed return value or exception), read those callers. \
+If every caller shown already works with the new code, there is no problem: \
+do not report it. Report it only when a caller shown is broken by the change, \
+or when no caller is shown and the change clearly breaks the old contract.\
+"""
+
+
+def system_prompt(*, check_callers: bool = False) -> str:
+    return SYSTEM_PROMPT + (CALLER_RULE if check_callers else "")
+
+
 def neutralize(text: str) -> str:
     """Break our own closing tags inside untrusted content: </context> -> </ context>."""
     return _CLOSING.sub(lambda m: f"</ {m.group(1)}>", text)
@@ -64,7 +80,12 @@ def _attr(value: str) -> str:
 
 
 def build_messages(
-    chunk: ReviewChunk, *, title: str, commits: Sequence[str], max_findings: int
+    chunk: ReviewChunk,
+    *,
+    title: str,
+    commits: Sequence[str],
+    max_findings: int,
+    check_callers: bool = False,
 ) -> list[Message]:
     pr_lines = [f"Title: {title}"] + (
         ["Commits:"] + [f"- {c}" for c in commits[:20]] if commits else []
@@ -83,4 +104,5 @@ def build_messages(
         f"Review the changes to: {paths}.\n"
         f"Return JSON with a short summary and at most {max_findings} findings."
     )
-    return [Message("system", SYSTEM_PROMPT), Message("user", "\n\n".join(parts))]
+    system = system_prompt(check_callers=check_callers)
+    return [Message("system", system), Message("user", "\n\n".join(parts))]

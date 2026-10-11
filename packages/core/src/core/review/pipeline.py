@@ -22,7 +22,7 @@ from core.providers import Message, ProviderError, Providers, Usage
 from core.review.changes import ChangeSet, collect_changes
 from core.review.config import PipelineConfig
 from core.review.packing import ReviewChunk, build_chunks, fit_to_window
-from core.review.prompts import SYSTEM_PROMPT, build_messages
+from core.review.prompts import build_messages, system_prompt
 from core.review.recorder import ReviewRecorder
 from core.review.retrieval import retrieve_for_seeds, select_seeds
 from core.review.schemas import FindingOut, ReviewOut
@@ -126,7 +126,8 @@ async def run_review(
 
             # Budgets follow the model's window: what's left after the output
             # reserve, a safety margin, and the fixed parts of every prompt.
-            fixed = estimate_tokens(SYSTEM_PROMPT) + _PROMPT_OVERHEAD_TOKENS
+            system = system_prompt(check_callers=config.generation.check_callers)
+            fixed = estimate_tokens(system) + _PROMPT_OVERHEAD_TOKENS
             available = (
                 context_window - config.generation.max_output_tokens - _WINDOW_MARGIN_TOKENS - fixed
             )
@@ -163,6 +164,7 @@ async def run_review(
                     title=title,
                     commits=commits,
                     max_findings=config.generation.max_findings_per_chunk,
+                    check_callers=config.generation.check_callers,
                 )
 
             def measure(c: ReviewChunk) -> int:
