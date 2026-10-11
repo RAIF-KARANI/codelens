@@ -1,0 +1,12 @@
+--- a/src/click/core.py
++++ b/src/click/core.py
+@@ -3281,8 +3281,8 @@
+ 
+     def _pick_type(
+         self,
++        flag_value: t.Any,
+         type_arg: t.Any,
+-        flag_value: t.Any,
+         count: bool,
+         is_flag: bool,
+     ) -> types.ParamType[t.Any]:

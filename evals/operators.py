@@ -8,13 +8,14 @@ supply that context become the case's oracle. None means "not applicable here".
 
 import itertools
 import re
+from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from keyword import iskeyword
 
 from tree_sitter import Node
 
-from core.enums import Severity
+from core.enums import NodeKind, Severity
 from core.parser.types import NodeRef
 from core.review.schemas import Category
 from evals.edits import Edit, indent_at, line_end, line_start, on_own_lines
@@ -28,6 +29,7 @@ from evals.syntax import (
     call_name,
     call_sites,
     caught_around,
+    handler_classes,
     inside,
     last_name,
     parameters,
@@ -44,6 +46,9 @@ class Mutation:
     description: str
     expected: tuple[Category, Severity] | None = None  # None: a clean, behaviour-preserving edit
     oracle: tuple[tuple[NodeRef, Role], ...] = ()
+    subject: tuple[Node, ...] = ()  # what was mutated (a parameter, a raised class...)
+    # Counterfactuals only: edits per file for a "prep" commit the case is based on.
+    prep: tuple[tuple[str, tuple[Edit, ...]], ...] = ()
 
 
 Operator = Callable[[Target], Mutation | None]
@@ -103,7 +108,7 @@ def drop_param(t: Target) -> Mutation | None:
             line = f"const {name}{annotation} = {text(default)};\n"
         at = line_start(content, anchor.start_byte)
         insert = indent_at(content, anchor.start_byte) + line.encode()
-        removal = _remove_param(param, content)
+        removal = _remove_item(param.node, content)
         # A parameter on its own line goes as a whole line, so the signature
         # adds nothing to the diff; the new local is then the added line a
         # reviewer can comment on, so it carries the expectation too.
@@ -113,6 +118,7 @@ def drop_param(t: Target) -> Mutation | None:
             f"Dropped parameter `{name}` (its default became a local); callers still pass it",
             (Category.API_CONTRACT, Severity.CRITICAL),
             _roles(users, "caller"),
+            subject=(param.node,),
         )
     return None
 
@@ -137,6 +143,7 @@ def reorder_params(t: Target) -> Mutation | None:
                 f"Swapped parameters `{a.name}` and `{b.name}`; callers pass both by position",
                 (Category.API_CONTRACT, Severity.WARNING),
                 _roles(users, "caller"),
+                subject=(a.node, b.node),
             )
     return None
 
@@ -267,8 +274,86 @@ def exception_type(t: Target) -> Mutation | None:
                 f"Raises `{new}` instead of `{name}`, which callers catch",
                 (Category.ERROR_HANDLING, Severity.WARNING),
                 _roles(handlers, "caller"),
+                subject=(cls,),
             )
     return None
+
+
+# ---------------------------------------------------------------- counterfactuals
+#
+# The same diff as a seeded operator, on a base where a "prep" commit already
+# made every caller compatible (planning Q10). A reviewer who reads only the
+# diff sees exactly the seeded bug; only the context, indexed at the prep
+# commit, shows that it is safe. Limited to private functions whose every call
+# in the repo is a resolved call site: the prep provably reaches all of them,
+# and no outside user can depend on the old signature.
+
+
+def drop_param_cf(t: Target) -> Mutation | None:
+    """drop_param's diff, after a prep commit stopped every call passing it."""
+    seeded = drop_param(t)
+    sites = _closed_private_sites(t) if seeded else None
+    if seeded is None or sites is None:
+        return None
+    param = _param(t, seeded.subject[0])
+    prep: dict[str, list[Edit]] = defaultdict(list)
+    for path, _fn, site in sites:
+        ok, arg = _argument(site, param)
+        if not ok:
+            return None
+        if arg is not None:
+            prep[path].append(_remove_item(arg, t.graph.content(path)))
+    return _counterfactual(
+        seeded, prep, f"Dropped parameter `{param.name}`; no call passes it any more"
+    )
+
+
+def reorder_params_cf(t: Target) -> Mutation | None:
+    """reorder_params' diff, after a prep commit swapped the two arguments at
+    every positional call."""
+    seeded = reorder_params(t)
+    sites = _closed_private_sites(t) if seeded else None
+    if seeded is None or sites is None:
+        return None
+    a, b = (_param(t, node) for node in seeded.subject)
+    if a.index is None or b.index is None:
+        return None
+    prep: dict[str, list[Edit]] = defaultdict(list)
+    for path, _fn, site in sites:
+        positional = _positional(site)
+        if len(positional) > b.index:
+            x, y = positional[a.index], positional[b.index]
+            prep[path] += [
+                Edit(x.start_byte, x.end_byte, y.text or b""),
+                Edit(y.start_byte, y.end_byte, x.text or b""),
+            ]
+    return _counterfactual(
+        seeded, prep, f"Swapped parameters `{a.name}` and `{b.name}`; every call already swapped"
+    )
+
+
+def exception_type_cf(t: Target) -> Mutation | None:
+    """Python: exception_type's diff, after a prep commit made every handler
+    around a call also catch the new class."""
+    seeded = exception_type(t) if t.fn.python else None
+    sites = _closed_private_sites(t) if seeded else None
+    if seeded is None or sites is None:
+        return None
+    name = last_name(seeded.subject[0]) or ""
+    new = seeded.edits[0].text.decode()
+    prep: dict[str, dict[tuple[int, int], Edit]] = defaultdict(dict)
+    for path, fn, site in sites:
+        handlers = handler_classes(fn, site.node, name)
+        if not handlers:
+            return None  # this call lets the exception escape: its own callers may catch it
+        for node in handlers:
+            if node.parent is not None and node.parent.type == "tuple":
+                edit = Edit(node.end_byte, node.end_byte, f", {new}".encode())
+            else:
+                edit = Edit(node.start_byte, node.end_byte, f"({text(node)}, {new})".encode())
+            prep[path][(edit.start, edit.end)] = edit  # one try can guard several calls
+    flat = {path: list(edits.values()) for path, edits in prep.items()}
+    return _counterfactual(seeded, flat, f"Raises `{new}` instead of `{name}`; callers catch both")
 
 
 # ---------------------------------------------------------------- clean edits
@@ -367,10 +452,102 @@ SEEDED: dict[str, Operator] = {
     "sql_format": sql_format,
     "exception_type": exception_type,
 }
+COUNTERFACTUAL: dict[str, Operator] = {
+    "drop_param_cf": drop_param_cf,
+    "reorder_params_cf": reorder_params_cf,
+    "exception_type_cf": exception_type_cf,
+}
 CLEAN: dict[str, Operator] = {
     "rename_local": rename_local,
     "extract_return": extract_return,
 }
+
+
+# ---------------------------------------------------------------- counterfactual helpers
+
+
+def _counterfactual(
+    seeded: Mutation, prep: dict[str, list[Edit]], description: str
+) -> Mutation | None:
+    if not any(prep.values()):
+        return None  # nothing to prepare: the base would be the seeded bug's base
+    return Mutation(
+        seeded.edits,
+        description,
+        expected=None,
+        oracle=seeded.oracle,  # the callers whose (prepared) code shows it is safe
+        subject=seeded.subject,
+        prep=tuple(sorted((path, tuple(edits)) for path, edits in prep.items() if edits)),
+    )
+
+
+def _closed_private_sites(t: Target) -> list[tuple[str, FunctionSyntax, CallSite]] | None:
+    """Every call site of a private function, or None if the function is
+    public, a call can't be accounted for, or a call unpacks *args."""
+    if not _private(t):
+        return None
+    sites = []
+    for ref in t.graph.callers(t.node.ref):
+        fn = t.graph.function(ref)
+        for site in call_sites(fn, t.node.name) if fn else []:
+            if site.unpacks:
+                return None
+            sites.append((t.graph.nodes[ref][0].path, fn, site))
+    # Every `name(` in the repo, tests and module-level code included, must be
+    # one of those sites; anything else (an unresolved obj.name() call, a test)
+    # could still use the old signature.
+    pattern = re.compile(rf"(?<![\w$]){re.escape(t.node.name)}\s*\(")
+    mentions = sum(len(pattern.findall(text)) for text in t.graph.texts.values())
+    body = t.fn.body
+    header = t.content[t.fn.node.start_byte : body.start_byte if body else t.fn.node.end_byte]
+    mentions -= len(pattern.findall(header.decode("utf-8", "replace")))  # the definition
+    return sites if sites and mentions == len(sites) else None
+
+
+def _private(t: Target) -> bool:
+    name = t.node.name
+    if "<locals>" in t.node.qualified_name:
+        return True
+    if t.fn.python:
+        return name.startswith("_") and not name.startswith("__")
+    code = t.node.code.lstrip()
+    if t.node.kind is NodeKind.FUNCTION:
+        return not code.startswith("export")
+    return code.startswith(("private ", "#")) or name.startswith(("_", "#"))
+
+
+def _param(t: Target, node: Node) -> Param:
+    return next(p for p in parameters(t.fn) or [] if p.node == node)
+
+
+def _positional(site: CallSite) -> list[Node]:
+    args = site.node.child_by_field_name("arguments")
+    return [
+        a
+        for a in (args.named_children if args else [])
+        if a.type not in ("comment", "keyword_argument")
+    ]
+
+
+def _argument(site: CallSite, param: Param) -> tuple[bool, Node | None]:
+    """The argument a call passes for `param`: (True, node), (True, None) when
+    it doesn't pass it, or (False, None) when removing it would shift later
+    positional arguments onto the wrong parameters."""
+    args = site.node.child_by_field_name("arguments")
+    for arg in args.named_children if args else []:
+        if arg.type == "keyword_argument" and _field(arg, "name") == param.name:
+            return True, arg
+    positional = _positional(site)
+    if param.index is None or len(positional) <= param.index:
+        return True, None
+    if len(positional) != param.index + 1:
+        return False, None
+    return True, positional[param.index]
+
+
+def _field(node: Node, name: str) -> str | None:
+    child = node.child_by_field_name(name)
+    return text(child) if child is not None else None
 
 
 # ---------------------------------------------------------------- helpers
@@ -453,23 +630,23 @@ def _is_docstring(node: Node) -> bool:
     ]
 
 
-def _remove_param(param: Param, content: bytes) -> Edit:
-    """Remove a parameter and the comma that separates it from its neighbour:
+def _remove_item(node: Node, content: bytes) -> Edit:
+    """Remove a parameter or argument and the comma that separates it from its neighbour:
     its whole line when it has one (`a,\\n    b=1,\\n):` -> `a,\\n):`)."""
-    siblings = param.node.parent.children if param.node.parent else []
-    i = next(i for i, s in enumerate(siblings) if s == param.node)
+    siblings = node.parent.children if node.parent else []
+    i = next(i for i, s in enumerate(siblings) if s == node)
     before = siblings[i - 1] if i > 0 else None
     after = siblings[i + 1] if i + 1 < len(siblings) else None
-    end = after.end_byte if after is not None and after.type == "," else param.node.end_byte
-    if on_own_lines(content, param.node.start_byte, end):
-        return Edit(line_start(content, param.node.start_byte), line_end(content, end), b"")
+    end = after.end_byte if after is not None and after.type == "," else node.end_byte
+    if on_own_lines(content, node.start_byte, end):
+        return Edit(line_start(content, node.start_byte), line_end(content, end), b"")
     if before is not None and before.type == ",":
-        return Edit(before.start_byte, param.node.end_byte, b"")
+        return Edit(before.start_byte, node.end_byte, b"")
     if after is not None and after.type == ",":
         following = siblings[i + 2]
         end = following.start_byte if following.type != ")" else after.end_byte
-        return Edit(param.node.start_byte, end, b"")
-    return Edit(param.node.start_byte, param.node.end_byte, b"")
+        return Edit(node.start_byte, end, b"")
+    return Edit(node.start_byte, node.end_byte, b"")
 
 
 _PY_NONE_CHECK = re.compile(r"([A-Za-z_]\w*) is None|not ([A-Za-z_]\w*)")

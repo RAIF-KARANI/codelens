@@ -1,0 +1,38 @@
+--- a/src/click/types.py
++++ b/src/click/types.py
+@@ -431,7 +431,7 @@
+             choices_str = "|".join([*dict.fromkeys(choice_metavars)])
+         else:
+             choices_str = "|".join(
+-                [str(i) for i in self._normalized_mapping(ctx=ctx).values()]
++                [str(i) for i in self._normalized_mapping().values()]
+             )
+ 
+         # Use curly braces to indicate a required argument.
+@@ -448,7 +448,7 @@
+         .. versionchanged:: 8.2.0 Added ``ctx`` argument.
+         """
+         return _("Choose from:\n\t{choices}").format(
+-            choices=",\n\t".join(self._normalized_mapping(ctx=ctx).values())
++            choices=",\n\t".join(self._normalized_mapping().values())
+         )
+ 
+     def convert(
+@@ -460,7 +460,7 @@
+         matched "original" choice.
+         """
+         normed_value = self.normalize_choice(choice=value, ctx=ctx)
+-        normalized_mapping = self._normalized_mapping(ctx=ctx)
++        normalized_mapping = self._normalized_mapping()
+ 
+         try:
+             return next(
+@@ -482,7 +482,7 @@
+ 
+         .. versionadded:: 8.2
+         """
+-        choices_str = ", ".join(map(repr, self._normalized_mapping(ctx=ctx).values()))
++        choices_str = ", ".join(map(repr, self._normalized_mapping().values()))
+         return ngettext(
+             "{value!r} is not {choice}.",
+             "{value!r} is not one of {choices}.",

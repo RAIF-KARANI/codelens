@@ -1,0 +1,13 @@
+--- a/src/click/termui.py
++++ b/src/click/termui.py
+@@ -613,8 +613,9 @@
+     echo("\033[2J\033[1;1H", nl=False)
+ 
+ 
+-def _interpret_color(color: int | tuple[int, int, int] | str, offset: int = 0) -> str:
++def _interpret_color(color: int | tuple[int, int, int] | str) -> str:
+     """Interprets a color value and returns the corresponding ANSI code."""
++    offset: int = 0
+     if isinstance(color, str) and color in _ansi_colors:
+         return str(_ansi_colors[color] + offset)
+ 

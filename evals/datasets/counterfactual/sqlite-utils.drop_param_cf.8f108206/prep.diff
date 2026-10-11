@@ -1,0 +1,10 @@
+--- a/sqlite_utils/db.py
++++ b/sqlite_utils/db.py
+@@ -4213,7 +4213,6 @@
+                 columns[0],
+                 fn,
+                 drop=drop,
+-                where=where,
+                 where_args=where_args,
+                 show_progress=show_progress,
+             )

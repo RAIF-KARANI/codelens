@@ -63,6 +63,18 @@ class CodeGraph:
         """Needed to re-parse a mutated file under the same module name."""
         return python_package_dirs(f.path for f in self.result.files)
 
+    def file(self, path: str) -> ParsedFile:
+        return self._files_by_path[path]
+
+    @cached_property
+    def _files_by_path(self) -> dict[str, ParsedFile]:
+        return {f.path: f for f in self.result.files}
+
+    @cached_property
+    def texts(self) -> dict[str, str]:
+        """Every parsed file as text (tests included), for repo-wide searches."""
+        return {f.path: self.content(f.path).decode("utf-8", "replace") for f in self.result.files}
+
     def content(self, path: str) -> bytes:
         if path not in self._content:
             self._content[path] = (self.root / path).read_bytes()

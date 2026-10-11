@@ -67,7 +67,7 @@ def match(
 
 @dataclass(frozen=True, slots=True)
 class CaseScore:
-    seeded: bool
+    kind: str  # seeded | counterfactual | clean
     tp: int
     fp: int
     fn: int
@@ -98,7 +98,7 @@ def score_case(record: CaseRecord) -> CaseScore:
     included = {(r.qualified_name, r.ordinal) for r in record.retrieved if r.included}
     keys = [(o.qualified_name, o.ordinal) for o in record.oracle]
     return CaseScore(
-        seeded=record.kind == "seeded",
+        kind=record.kind,
         tp=len(pairs),
         fp=len(posted) - len(pairs),
         fn=len(record.expected) - len(pairs),
@@ -121,11 +121,16 @@ NAN = float("nan")
 
 def aggregate(scores: Sequence[CaseScore]) -> Metrics:
     """The scorecard numbers. Undefined values (precision with no findings,
-    retrieval with no oracle) are NaN, shown as "n/a"."""
-    seeded = [s for s in scores if s.seeded]
-    clean = [s for s in scores if not s.seeded]
+    retrieval with no oracle) are NaN, shown as "n/a".
+
+    Precision counts every finding posted on a seeded *or* counterfactual case
+    (D79): a counterfactual has nothing to find, so flagging it is a false
+    positive. That is what lets F1, the gate metric, reward using context."""
+    seeded = [s for s in scores if s.kind == "seeded"]
+    counterfactual = [s for s in scores if s.kind == "counterfactual"]
+    clean = [s for s in scores if s.kind == "clean"]
     tp = sum(s.tp for s in seeded)
-    posted = sum(s.posted for s in seeded)
+    posted = sum(s.posted for s in seeded + counterfactual)
     expected = sum(s.tp + s.fn for s in seeded)
     precision = tp / posted if posted else NAN
     recall = tp / expected if expected else NAN
@@ -137,13 +142,16 @@ def aggregate(scores: Sequence[CaseScore]) -> Metrics:
         f1 = 2 * precision * recall / (precision + recall)
     critical = sum(s.critical_total for s in seeded)
 
-    with_oracle = [s for s in seeded if s.oracle_ranks]
+    # Seeded: the context that shows the bug. Counterfactual: the context that
+    # shows there is none.
+    with_oracle = [s for s in seeded + counterfactual if s.oracle_ranks]
     metrics: Metrics = {
         "f1": f1,
         "precision": precision,
         "recall": recall,
         "critical_recall": sum(s.critical_tp for s in seeded) / critical if critical else NAN,
         "noise_per_clean_pr": _mean([s.posted for s in clean]),
+        "false_alarms_per_counterfactual": _mean([s.posted for s in counterfactual]),
     }
     for k in RECALL_AT:
         metrics[f"oracle_recall@{k}"] = _mean(
@@ -176,6 +184,7 @@ QUALITY = (
     "recall",
     "critical_recall",
     "noise_per_clean_pr",
+    "false_alarms_per_counterfactual",
     *(f"oracle_recall@{k}" for k in RECALL_AT),
     "oracle_packed_recall",
     "mrr",

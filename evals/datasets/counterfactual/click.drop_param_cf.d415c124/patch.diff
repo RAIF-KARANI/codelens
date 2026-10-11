@@ -1,0 +1,13 @@
+--- a/src/click/_compat.py
++++ b/src/click/_compat.py
+@@ -244,9 +244,9 @@
+     errors: str | None,
+     is_binary: t.Callable[[t.IO[t.Any], bool], bool],
+     find_binary: t.Callable[[t.IO[t.Any]], t.BinaryIO | None],
+-    force_readable: bool = False,
+     force_writable: bool = False,
+ ) -> t.TextIO:
++    force_readable: bool = False
+     if is_binary(text_stream, False):
+         binary_reader = t.cast(t.BinaryIO, text_stream)
+     else:

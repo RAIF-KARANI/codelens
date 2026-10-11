@@ -1,0 +1,13 @@
+--- a/sqlite_utils/utils.py
++++ b/sqlite_utils/utils.py
+@@ -526,8 +526,9 @@
+ 
+ 
+ def _compile_code(
+-    code: str, imports: Iterable[str], variable: str = "value"
++    code: str, imports: Iterable[str]
+ ) -> Callable[..., Any]:
++    variable: str = "value"
+     globals_dict: dict[str, Any] = {"r": recipes, "recipes": recipes}
+     # Handle imports first so they're available for all approaches
+     for import_ in imports:

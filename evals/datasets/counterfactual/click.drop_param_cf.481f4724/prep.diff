@@ -1,0 +1,19 @@
+--- a/src/click/_compat.py
++++ b/src/click/_compat.py
+@@ -178,14 +178,14 @@
+     # This can happen because the official docs recommend detaching
+     # the streams to get binary streams.  Some code might do this, so
+     # we need to deal with this case explicitly.
+-    if _is_binary_reader(stream, False):
++    if _is_binary_reader(stream):
+         return t.cast(t.BinaryIO, stream)
+ 
+     buf = getattr(stream, "buffer", None)
+ 
+     # Same situation here; this time we assume that the buffer is
+     # actually binary in case it's closed.
+-    if buf is not None and _is_binary_reader(buf, True):
++    if buf is not None and _is_binary_reader(buf):
+         return t.cast(t.BinaryIO, buf)
+ 
+     return None

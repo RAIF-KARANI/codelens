@@ -1,0 +1,12 @@
+--- a/src/utils/internal/iron-crypto.ts
++++ b/src/utils/internal/iron-crypto.ts
+@@ -234,8 +234,8 @@
+ 
+ /** Provides an asynchronous Password-Based Key Derivation Function 2 (PBKDF2) implementation. */
+ async function pbkdf2(
++  salt: string,
+   password: string,
+-  salt: string,
+   iterations: number,
+   keyLength: number,
+   hash: HashAlgorithmIdentifier,

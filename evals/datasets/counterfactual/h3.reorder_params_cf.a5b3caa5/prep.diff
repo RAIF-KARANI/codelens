@@ -1,0 +1,11 @@
+--- a/src/utils/internal/iron-crypto.ts
++++ b/src/utils/internal/iron-crypto.ts
+@@ -132,7 +132,7 @@
+   // prettier-ignore
+   const mac = await hmacWithPassword(pass.integrity, { ...opts.integrity, salt: hmacSalt }, macBaseString);
+ 
+-  if (!fixedTimeComparison(mac.digest, hmac)) {
++  if (!fixedTimeComparison(hmac, mac.digest)) {
+     throw new Error("Bad hmac value");
+   }
+ 

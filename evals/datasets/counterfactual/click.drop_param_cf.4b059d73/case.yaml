@@ -1,0 +1,15 @@
+id: click.drop_param_cf.4b059d73
+kind: counterfactual
+split: test
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: drop_param_cf
+file: src/click/termui.py
+function: click.termui._interpret_color
+description: Dropped parameter `offset`; no call passes it any more
+expected: []
+oracle:
+- qualified_name: click.termui.style
+  ordinal: 0
+  role: caller

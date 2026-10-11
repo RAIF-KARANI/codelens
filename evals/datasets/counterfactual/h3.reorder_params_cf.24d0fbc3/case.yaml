@@ -1,0 +1,16 @@
+id: h3.reorder_params_cf.24d0fbc3
+kind: counterfactual
+split: dev
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: reorder_params_cf
+file: src/rules/handlers/_utils.ts
+function: src/rules/handlers/_utils:isFinalTargetInScope
+description: Swapped parameters `pathname` and `baseTargetPath`; every call already
+  swapped
+expected: []
+oracle:
+- qualified_name: src/rules/handlers/_utils:assertTargetInScope
+  ordinal: 0
+  role: caller

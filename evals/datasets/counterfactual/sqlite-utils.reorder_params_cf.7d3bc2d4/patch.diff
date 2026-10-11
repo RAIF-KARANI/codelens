@@ -1,0 +1,11 @@
+--- a/sqlite_utils/cli.py
++++ b/sqlite_utils/cli.py
+@@ -3776,7 +3776,7 @@
+             db.register_function(value, name=name)
+ 
+ 
+-def _maybe_register_functions(db, functions_list):
++def _maybe_register_functions(functions_list, db):
+     if not functions_list:
+         return
+     for functions in functions_list:

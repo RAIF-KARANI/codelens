@@ -1,0 +1,15 @@
+id: sqlite-utils.drop_param_cf.2a77649f
+kind: counterfactual
+split: test
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: drop_param_cf
+file: sqlite_utils/cli.py
+function: sqlite_utils.cli.insert_upsert_implementation.<locals>._insert_docs
+description: Dropped parameter `tracker`; no call passes it any more
+expected: []
+oracle:
+- qualified_name: sqlite_utils.cli.insert_upsert_implementation
+  ordinal: 0
+  role: caller

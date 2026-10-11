@@ -90,6 +90,22 @@ found what the reviewer needed.
 | `sql_format` | `execute("… = ?", [v])` → `execute(f"… = '{v}'")` (Python) | security, critical | the DB helper, when it is in the repo |
 | `exception_type` | raise a different class than the one callers catch | error-handling, warning | callers with the handler |
 
+### Counterfactual cases: the same diff, made safe by context (Q10, D78)
+
+A counterfactual has **exactly the diff of a seeded bug**. It differs only in its base commit, where a *prep* commit has already made every caller compatible.
+
+| Counterfactual | Prep commit (stored as `prep.diff`) |
+|---|---|
+| `drop_param_cf` | removes that argument at every call site |
+| `reorder_params_cf` | swaps the two arguments at every positional call |
+| `exception_type_cf` | makes every handler also catch the new class |
+
+A reviewer who reads only the diff cannot tell it from the bug, so it flags it; only the context shows nothing is wrong.
+
+- **Only private functions qualify,** and only when every `name(` in the repo is a resolved call site. Outside users of a public function could still pass the old arguments, so "safe" would be false.
+- **Scoring:** a finding on a counterfactual is a false positive in precision (D79), and is also reported as `false_alarms_per_counterfactual`.
+- **Retrieval:** with retrieval on, the runner first indexes the prep commit from a worktree, as `eval-cf/<source>`. Otherwise retrieval would show the old callers.
+
 ### Clean cases (expect no findings)
 
 These are behaviour-preserving edits:

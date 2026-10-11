@@ -1,0 +1,12 @@
+--- a/sqlite_utils/db.py
++++ b/sqlite_utils/db.py
+@@ -4210,8 +4210,8 @@
+ 
+         if multi:
+             return self._convert_multi(
++                fn,
+                 columns[0],
+-                fn,
+                 drop=drop,
+                 where=where,
+                 where_args=where_args,

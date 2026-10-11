@@ -1,0 +1,15 @@
+id: click.drop_param_cf.76d68e4d
+kind: counterfactual
+split: dev
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: drop_param_cf
+file: src/click/core.py
+function: click.core._outside_click_stacklevel
+description: Dropped parameter `skip`; no call passes it any more
+expected: []
+oracle:
+- qualified_name: click.core.Parameter.__init_subclass__
+  ordinal: 0
+  role: caller

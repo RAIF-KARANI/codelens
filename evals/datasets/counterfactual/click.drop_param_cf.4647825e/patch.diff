@@ -1,0 +1,19 @@
+--- a/src/click/types.py
++++ b/src/click/types.py
+@@ -386,7 +386,7 @@
+         }
+ 
+     def _normalized_mapping(
+-        self, ctx: Context | None = None
++        self
+     ) -> cabc.Mapping[_ValueT_co, str]:
+         """
+         Returns mapping where keys are the original choices and the values are
+@@ -395,6 +395,7 @@
+         This is a simple wrapper around :meth:`normalize_choice`, use that
+         instead which is supported.
+         """
++        ctx: Context | None = None
+         return {
+             choice: self.normalize_choice(
+                 choice=choice,

@@ -1,0 +1,15 @@
+id: click.reorder_params_cf.cf909a7a
+kind: counterfactual
+split: test
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: reorder_params_cf
+file: src/click/core.py
+function: click.core.Option._pick_type
+description: Swapped parameters `type_arg` and `flag_value`; every call already swapped
+expected: []
+oracle:
+- qualified_name: click.core.Option.__init__
+  ordinal: 0
+  role: caller

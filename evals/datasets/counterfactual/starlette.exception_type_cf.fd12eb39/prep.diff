@@ -1,0 +1,11 @@
+--- a/starlette/responses.py
++++ b/starlette/responses.py
+@@ -374,7 +374,7 @@
+         else:
+             try:
+                 ranges = self._parse_range_header(http_range, stat_result.st_size)
+-            except MalformedRangeHeader as exc:
++            except (MalformedRangeHeader, RuntimeError) as exc:
+                 return await PlainTextResponse(exc.content, status_code=400)(scope, receive, send)
+             except RangeNotSatisfiable as exc:
+                 response = PlainTextResponse(status_code=416, headers={"Content-Range": f"bytes */{exc.max_size}"})

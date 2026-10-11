@@ -1,0 +1,11 @@
+--- a/sqlite_utils/cli.py
++++ b/sqlite_utils/cli.py
+@@ -1295,7 +1295,7 @@
+                 variable = "line"
+             elif text:
+                 variable = "text"
+-            fn = _compile_code(convert, imports, variable=variable)
++            fn = _compile_code(convert, imports)
+             if lines:
+                 docs = (fn(doc["line"]) for doc in docs)
+             elif text:

@@ -18,7 +18,7 @@ from core.providers.fake import FakeEmbedder, FakeLLM
 from core.review.config import PipelineConfig
 from evals.records import load_run
 from evals.report import write_scorecard
-from evals.run import case_commit, prepare_source, run_cases, select_cases
+from evals.run import case_commits, prepare_source, run_cases, select_cases
 from evals.tests.toy import generate, git, make_toy_source
 
 pytestmark = pytest.mark.integration
@@ -100,22 +100,44 @@ def test_run_records_scores_and_resumes(tmp_path: Path, migrated_database_url: s
     assert 0 < metrics["recall"] < 1
     assert metrics["noise_per_clean_pr"] == 1.0
     assert card["cases"]["errors"] == 0
+    # Counterfactuals ran on their prep commits, indexed from the worktree, and
+    # the fake's finding on each is a false alarm.
+    assert card["cases"]["counterfactual"] > 0
+    assert metrics["false_alarms_per_counterfactual"] == 1.0
+    assert (tmp_path / "worktrees" / "toy" / ".git").exists()
     assert (out / "scorecard.md").exists()
 
 
-def test_case_commit_is_deterministic(tmp_path: Path) -> None:
+def test_case_commits_are_deterministic_and_say_nothing_about_the_bug(tmp_path: Path) -> None:
     source = make_toy_source(tmp_path / "upstream")
     generate(source, tmp_path / "checkouts", tmp_path / "dataset")
     case, patch = select_cases(tmp_path / "dataset", operators=["drop_param"])[0]
     repo = tmp_path / "checkouts" / "toy"
 
-    first = case_commit(repo, case, patch)
+    base, head = case_commits(repo, case, patch)
 
-    assert case_commit(repo, case, patch) == first
-    assert git(repo, "rev-parse", f"{first}^") == case.sha
+    assert case_commits(repo, case, patch) == (base, head)
+    assert base == case.sha and git(repo, "rev-parse", f"{head}^") == case.sha
     assert git(repo, "status", "--porcelain") == ""  # the working tree is untouched
-    changed = git(repo, "diff", "--name-only", case.sha, first)
-    assert changed == case.file
+    assert git(repo, "diff", "--name-only", base, head) == case.file
+    # The subject reaches the prompt: it must not name the operator (D77).
+    subject = git(repo, "log", "-1", "--format=%s", head)
+    assert subject == f"Update {case.file}" and case.operator not in subject
+
+
+def test_counterfactual_head_sits_on_its_prep_commit(tmp_path: Path) -> None:
+    source = make_toy_source(tmp_path / "upstream")
+    generate(source, tmp_path / "checkouts", tmp_path / "dataset")
+    case, patch = select_cases(tmp_path / "dataset", operators=["drop_param_cf"])[0]
+    repo = tmp_path / "checkouts" / "toy"
+
+    base, head = case_commits(repo, case, patch)
+
+    assert git(repo, "rev-parse", f"{base}^") == case.sha
+    assert git(repo, "rev-parse", f"{head}^") == base
+    # The reviewed diff touches only the function; the callers changed in the base.
+    assert git(repo, "diff", "--name-only", base, head) == case.file
+    assert "pkg/api.py" in git(repo, "diff", "--name-only", case.sha, base)
 
 
 def _quiet(_: str) -> None:

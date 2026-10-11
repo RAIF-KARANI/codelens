@@ -1,0 +1,15 @@
+id: sqlite-utils.drop_param_cf.8f108206
+kind: counterfactual
+split: dev
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: drop_param_cf
+file: sqlite_utils/db.py
+function: sqlite_utils.db.Table._convert_multi
+description: Dropped parameter `where`; no call passes it any more
+expected: []
+oracle:
+- qualified_name: sqlite_utils.db.Table.convert
+  ordinal: 0
+  role: caller

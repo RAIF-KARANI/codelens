@@ -1,0 +1,11 @@
+--- a/src/rules/handlers/_utils.ts
++++ b/src/rules/handlers/_utils.ts
+@@ -228,7 +228,7 @@
+  * leading slashes, so `/old/%2f%2fevil.com` survives base stripping intact.
+  * Reject it here instead of short-circuiting to allow.
+  */
+-function isFinalTargetInScope(pathname: string, baseTargetPath: string): boolean {
++function isFinalTargetInScope(baseTargetPath: string, pathname: string): boolean {
+   if (baseTargetPath) {
+     return isPathInScope(pathname, baseTargetPath);
+   }

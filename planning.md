@@ -5,8 +5,8 @@
 > two disagree, **this file wins**. It supersedes `idea.md` §14 (roadmap) and adds
 > decisions D18+.
 
-**Last updated:** 2026-10-11 · **Current position:** Phases 1–2 complete (PRs #1–#9); Phase 3 steps 1–2 merged (#10, #11).
-Step 3 (A0/B0 baselines, Q9 ablation) run and awaiting review. Finding: A0 ≈ B0, so the dataset can't yet show context helping (Q10); decide that before Phase 4.
+**Last updated:** 2026-10-11 · **Current position:** Phases 1–2 complete (PRs #1–#9); Phase 3 steps 1–3 merged (#10–#12).
+Step 4 (counterfactual cases for Q10 + the commit-subject leak fix, D77–D79) built; next: rerun A0/B0 on the extended dataset (the step 3 numbers are contaminated, D77).
 
 ---
 
@@ -707,7 +707,8 @@ what was built, how to run it, and what to verify. Estimates are rough
 |---|---|---|
 | 1 ✅ | `sources.yaml` (3–4 permissively licensed OSS repos, pinned SHAs) + seeded-bug generator (§10.1) | ≥ 60 seeded cases + ≥ 20 clean cases generated reproducibly (73 + 24; D68–D71; PR #10) |
 | 2 ✅ | Runner (`evals.run`), matching + metrics, bootstrap CIs, report | One command produces a scorecard JSON + markdown (D72–D74; PR #11) |
-| 3 🔍 | Run **diff-only (A0)** and **B0** | Baseline numbers committed to `evals/RESULTS.md` (test: A0 F1 0.879, B0 0.864, no significant difference; D75–D76) |
+| 3 ✅ | Run **diff-only (A0)** and **B0** | Baseline numbers committed to `evals/RESULTS.md` (PR #12; **contaminated by the commit-subject leak, D77**) |
+| 4 🔍 | Counterfactual cases (Q10) + leak fix | 27 counterfactuals (`drop_param_cf` 12, `reorder_params_cf` 12, `exception_type_cf` 3); runner indexes each prep commit; precision counts counterfactual findings (D77–D79). Rerun A0/B0 next |
 
 ### Phase 4: The "+" upgrades, one per step, each gated by evals
 | Step | Upgrade | Extra deliverables |
@@ -1075,6 +1076,9 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D74 | Statistics in plain Python: percentile bootstrap (1,000 resamples, seeded) per metric, and a *paired* bootstrap for deltas against a baseline (same case ids resampled for both); undefined metrics are NaN → `null`/"n/a", never 0. The scorecard checks the §10.5 gate (F1 up with CI > 0; noise up ≤ 0.1) | numpy/scipy | ~60 lines, no new dependency, every number explainable; NaN keeps "no findings" distinct from "all findings wrong" |
 | D75 | `max_findings_per_chunk` stays 8 (answers Q9) | 4 | Measured on dev (paired): F1 −0.036, precision −0.079, noise +0.375. The cap is part of the prompt, so it changes what the model writes: with 4 it posted *more* false findings. Q9's premise (always 8 findings) came from a 13-file real PR; single-function changes average ~1 |
 | D76 | Order for measuring: tuning questions on dev first, then the final configs once on test; baselines on test only after dev decisions | Run everything on test | Keeps test numbers untouched by choices made from them (§10.4). Dev also caught a dataset flaw (`help_` → `help__value`) before the test runs |
+| D77 | Case commits are titled `Update <file>`, never with the case id | The id as the message | Commit subjects go into the prompt. `eval case click.raise_to_none.1a2b` told the model which bug to look for: every number in PR #12 (A0 and B0 alike) is contaminated and must be rerun. A regression test now checks that the subject never names the operator |
+| D78 | Counterfactuals are built as two-commit refactors: a *prep* commit makes every caller compatible (drop the argument, swap the arguments, catch the new class too), then the case's diff is byte-identical to the seeded operator's. Only for private functions whose every `name(` in the repo is a resolved call site. With retrieval on, the runner indexes the prep commit (worktree, `eval-cf/<source>`) before reviewing | Mine naturally safe sites; mutate public functions | A survey found ~0 natural sites (real code has no dead parameters). Identical diffs mean a diff-only reviewer cannot tell bug from non-bug; only context can. Public functions are excluded because outside users could still pass the old arguments, which would make "safe" a lie. `raise_to_none` has no unambiguously safe prep (a swallowed error), so it has no counterfactual |
+| D79 | Findings posted on counterfactual cases are false positives in **precision** (so in F1, the gate metric); also reported as `false_alarms_per_counterfactual`; their callers count as oracle for retrieval metrics | Report them only as a separate noise number | If they only fed a side metric, F1 could never reward a reviewer for using context, which is the very thing Phase 4 upgrades must show |
 
 ---
 
@@ -1108,7 +1112,7 @@ PR overlay, migrate service, host port 5433). New decisions:
 | Q7 | Dashboard auth for the demo: public read-only without login, or GitHub login required? | Phase 7 |
 | Q8 | Hosting providers for the demo | Phase 7 |
 | Q9 | ~~Lower `max_findings_per_chunk` (e.g. 4)?~~ **Answered 2026-10-11:** no, keep 8 (D75; `evals/RESULTS.md`) | Phase 3 step 3 (ablate) |
-| Q10 | The seeded dataset can't show context helping: A0 (diff only) ≈ B0 on every operator, because each mutation looks suspicious on sight. Add **counterfactual clean cases**, the same mutation where context shows it's safe (a parameter no caller passes, an `await` dropped on a non-async call, a raise no caller relies on), so diff-only reviewers lose precision and only context can tell the two apart? | Before Phase 4 step 1 |
+| Q10 | ~~The seeded dataset can't show context helping?~~ **Answered 2026-10-11: counterfactual cases** (D78), built in Phase 3 step 4 | Before Phase 4 step 1 |
 | Q11 | Anchor findings next to pure deletions (validation currently drops them: `remove_guard` recall is 0 although the model flags 7/8)? A candidate upgrade with evidence in `evals/RESULTS.md` | Phase 4 (first upgrade?) |
 
 ---

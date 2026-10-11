@@ -1,0 +1,10 @@
+--- a/src/click/_compat.py
++++ b/src/click/_compat.py
+@@ -296,7 +296,6 @@
+         errors,
+         _is_binary_reader,
+         _find_binary_reader,
+-        force_readable=force_readable,
+     )
+ 
+ 

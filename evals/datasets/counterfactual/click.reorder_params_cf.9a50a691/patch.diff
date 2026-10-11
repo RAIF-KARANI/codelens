@@ -1,0 +1,12 @@
+--- a/src/click/_compat.py
++++ b/src/click/_compat.py
+@@ -302,8 +302,8 @@
+ 
+ def _force_correct_text_writer(
+     text_writer: t.IO[t.Any],
++    errors: str | None,
+     encoding: str | None,
+-    errors: str | None,
+     force_writable: bool = False,
+ ) -> t.TextIO:
+     return _force_correct_text_stream(

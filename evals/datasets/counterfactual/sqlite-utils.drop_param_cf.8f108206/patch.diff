@@ -1,0 +1,14 @@
+--- a/sqlite_utils/db.py
++++ b/sqlite_utils/db.py
+@@ -4252,9 +4252,10 @@
+         return self
+ 
+     def _convert_multi(
+-        self, column, fn, drop, show_progress, where=None, where_args=None
++        self, column, fn, drop, show_progress, where_args=None
+     ) -> "Table":
+         # First we execute the function
++        where = None
+         pk_to_values = {}
+         new_column_types: dict[str, set[type]] = {}
+         pks = self.pks
