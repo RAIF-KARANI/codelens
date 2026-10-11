@@ -7,6 +7,6 @@ language: python
 operator: rename_local
 file: src/click/shell_completion.py
 function: click.shell_completion.PowerShellComplete.format_completion
-description: Renamed local `help_` to `help__value`
+description: Renamed local `help_` to `help_value`
 expected: []
 oracle: []

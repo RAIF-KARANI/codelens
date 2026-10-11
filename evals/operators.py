@@ -309,7 +309,9 @@ def rename_local(t: Target) -> Mutation | None:
             continue
         # Each language's own convention, so the rename isn't a style finding.
         suffixes = ("_value", "_item") if python else ("Value", "Item")
-        options = (_RENAMES.get(name), *(name + suffix for suffix in suffixes))
+        # `help_` (dodging a builtin) -> `help_value`, not `help__value`.
+        stem = name.rstrip("_") or name
+        options = (_RENAMES.get(name), *(stem + suffix for suffix in suffixes))
         new = next((c for c in options if c and c not in taken and not iskeyword(c)), None)
         if new is not None:
             return Mutation(

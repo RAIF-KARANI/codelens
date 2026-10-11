@@ -3,8 +3,8 @@
 The evaluation harness (planning.md §10). Every pipeline upgrade must beat the
 baseline here before it is adopted.
 
-**Status:** steps 1–2 are built: the dataset, the runner and the scorecard. The A0/B0
-baselines come in step 3 (`RESULTS.md`).
+**Status:** Phase 3 is done: the dataset, the runner, the scorecard and the A0/B0
+baselines in [`RESULTS.md`](RESULTS.md).
 
 ## Running an eval
 
