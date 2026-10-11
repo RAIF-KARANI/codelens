@@ -136,7 +136,10 @@ async def prepare_source(
         f"{name} @ {source.sha[:10]}: indexed, {report.embedded} embedded "
         f"({report.up_to_date} up to date) in {time.perf_counter() - started:.0f}s"
     )
-    return Prepared(source.name, root, name, checkouts.parent / "worktrees" / source.name)
+    # Absolute: `git worktree add` runs inside the checkout, where a relative
+    # path would put the worktree *in* the source tree (it did).
+    worktree = (checkouts.parent / "worktrees" / source.name).resolve()
+    return Prepared(source.name, root, name, worktree)
 
 
 async def index_at(

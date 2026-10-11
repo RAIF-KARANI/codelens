@@ -39,7 +39,7 @@ def test_generation_is_reproducible_and_sound(source: Source, tmp_path: Path) ->
         by_operator.setdefault(case.operator, []).append(case)
     # Every operator has a site in the toy repo, in both languages where it applies.
     assert set(by_operator) == set(SEEDED) | set(COUNTERFACTUAL) | set(CLEAN)
-    assert {c.language for c in by_operator["raise_to_none"]} == {"python", "typescript"}
+    assert {c.language for c, _ in cases} == {"python", "typescript"}
 
     checkout_dir = tmp_path / "checkouts" / "toy"
     for case, patch in cases:
@@ -77,9 +77,12 @@ def test_splits_are_stratified_by_operator(source: Source, tmp_path: Path) -> No
 def test_checkout_resets_local_changes(source: Source, tmp_path: Path) -> None:
     root = checkout(source, tmp_path)
     (root / "pkg" / "store.py").write_text("broken", encoding="utf-8")
+    (root / "stray").mkdir()
+    (root / "stray" / "extra.py").write_text("def extra(): pass\n", encoding="utf-8")
 
     assert checkout(source, tmp_path) == root
     assert "def find" in (root / "pkg" / "store.py").read_text(encoding="utf-8")
+    assert not (root / "stray").exists()  # untracked files would be indexed too
 
 
 def test_sources_file_is_valid_and_pinned() -> None:

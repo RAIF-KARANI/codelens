@@ -46,7 +46,9 @@ def checkout(source: Source, root: Path = DEFAULT_CHECKOUTS) -> Path:
         _git(
             dest, "-c", "advice.detachedHead=false", "checkout", "--quiet", "--force", "FETCH_HEAD"
         )
-    _git(dest, "reset", "--quiet", "--hard")  # undo anything a previous run left behind
+    # Undo anything a previous run left behind: the working tree is what gets indexed.
+    _git(dest, "reset", "--quiet", "--hard")
+    _git(dest, "clean", "-ffdxq")
     if _head(dest) != source.sha:
         raise RuntimeError(f"{source.name}: checkout is not at {source.sha}")
     return dest
