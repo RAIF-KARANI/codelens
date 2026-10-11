@@ -1,0 +1,12 @@
+id: sqlite-utils.rename_local.579c7e2e
+kind: clean
+split: dev
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: rename_local
+file: sqlite_utils/db.py
+function: sqlite_utils.db.Table.insert_chunk
+description: Renamed local `queries_and_params` to `queries_and_params_value`
+expected: []
+oracle: []

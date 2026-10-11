@@ -1,0 +1,12 @@
+id: click.rename_local.0acb8da9
+kind: clean
+split: test
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: rename_local
+file: src/click/testing.py
+function: click.testing._FDCapture.stop
+description: Renamed local `data` to `payload`
+expected: []
+oracle: []

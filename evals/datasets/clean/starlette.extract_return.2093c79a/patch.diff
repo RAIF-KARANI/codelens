@@ -1,0 +1,12 @@
+--- a/starlette/requests.py
++++ b/starlette/requests.py
+@@ -179,7 +179,8 @@
+     @property
+     def auth(self) -> Any:
+         assert "auth" in self.scope, "AuthenticationMiddleware must be installed to access request.auth"
+-        return self.scope["auth"]
++        result = self.scope["auth"]
++        return result
+ 
+     @property
+     def user(self) -> Any:

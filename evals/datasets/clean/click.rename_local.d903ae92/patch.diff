@@ -1,0 +1,16 @@
+--- a/src/click/shell_completion.py
++++ b/src/click/shell_completion.py
+@@ -546,10 +546,10 @@
+         # newlines and carriage returns to spaces. The literal "_"
+         # sentinel matches what ZshComplete uses for "no help text".
+         if item.help:
+-            help_ = item.help.replace("\r", " ").replace("\n", " ")
++            help__value = item.help.replace("\r", " ").replace("\n", " ")
+         else:
+-            help_ = "_"
+-        return f"{item.type}\n{item.value}\n{help_}"
++            help__value = "_"
++        return f"{item.type}\n{item.value}\n{help__value}"
+ 
+ 
+ _available_shells: t.Final[dict[str, type[ShellComplete]]] = {

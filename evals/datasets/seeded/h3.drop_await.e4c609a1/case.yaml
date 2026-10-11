@@ -1,0 +1,20 @@
+id: h3.drop_await.e4c609a1
+kind: seeded
+split: dev
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: drop_await
+file: src/utils/session.ts
+function: src/utils/session:sealSession
+description: Removed `await` before `seal(session, config.password, {`, an async function
+expected:
+- file: src/utils/session.ts
+  line_start: 300
+  line_end: 300
+  category: concurrency
+  severity: critical
+oracle:
+- qualified_name: src/utils/internal/iron-crypto:seal
+  ordinal: 0
+  role: callee

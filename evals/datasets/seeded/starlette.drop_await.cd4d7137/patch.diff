@@ -1,0 +1,11 @@
+--- a/starlette/templating.py
++++ b/starlette/templating.py
+@@ -48,7 +48,7 @@
+         extensions = request.get("extensions", {})
+         if "http.response.debug" in extensions:  # pragma: no branch
+             await send({"type": "http.response.debug", "info": {"template": self.template, "context": self.context}})
+-        await super().__call__(scope, receive, send)
++        super().__call__(scope, receive, send)
+ 
+ 
+ class Jinja2Templates:

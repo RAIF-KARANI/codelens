@@ -1,0 +1,21 @@
+id: sqlite-utils.drop_param.94a6b7af
+kind: seeded
+split: test
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: drop_param
+file: sqlite_utils/db.py
+function: sqlite_utils.db.Database.create_table_sql
+description: Dropped parameter `pk` (its default became a local); callers still pass
+  it
+expected:
+- file: sqlite_utils/db.py
+  line_start: 1433
+  line_end: 1463
+  category: api-contract
+  severity: critical
+oracle:
+- qualified_name: sqlite_utils.db.Database.create_table
+  ordinal: 0
+  role: caller

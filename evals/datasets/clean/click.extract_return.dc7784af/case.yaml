@@ -1,0 +1,12 @@
+id: click.extract_return.dc7784af
+kind: clean
+split: test
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: extract_return
+file: src/click/decorators.py
+function: click.decorators.help_option
+description: Moved the returned expression into a local `result`
+expected: []
+oracle: []

@@ -1,0 +1,29 @@
+id: click.raise_to_none.1acf4f8e
+kind: seeded
+split: dev
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: raise_to_none
+file: src/click/_compat.py
+function: click._compat.open_stream
+description: '`raise ValueError(` became `return None`; callers use the result'
+expected:
+- file: src/click/_compat.py
+  line_start: 401
+  line_end: 401
+  category: bug
+  severity: critical
+oracle:
+- qualified_name: click.types.File.convert
+  ordinal: 0
+  role: caller
+- qualified_name: click.utils._LazyFile.__init__
+  ordinal: 0
+  role: caller
+- qualified_name: click.utils._LazyFile.open
+  ordinal: 0
+  role: caller
+- qualified_name: click.utils.open_file
+  ordinal: 0
+  role: caller

@@ -1,0 +1,11 @@
+--- a/src/utils/event-stream.ts
++++ b/src/utils/event-stream.ts
+@@ -201,7 +201,7 @@
+ 
+   async resume(): Promise<void> {
+     this._paused = false;
+-    await this.flush();
++    this.flush();
+   }
+ 
+   async flush(): Promise<void> {

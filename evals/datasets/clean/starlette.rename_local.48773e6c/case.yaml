@@ -1,0 +1,12 @@
+id: starlette.rename_local.48773e6c
+kind: clean
+split: dev
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: rename_local
+file: starlette/staticfiles.py
+function: starlette.staticfiles.StaticFiles.is_not_modified
+description: Renamed local `etag` to `etag_value`
+expected: []
+oracle: []

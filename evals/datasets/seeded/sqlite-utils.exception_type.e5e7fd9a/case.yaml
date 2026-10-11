@@ -1,0 +1,20 @@
+id: sqlite-utils.exception_type.e5e7fd9a
+kind: seeded
+split: test
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: exception_type
+file: sqlite_utils/utils.py
+function: sqlite_utils.utils._compile_code
+description: Raises `RuntimeError` instead of `SyntaxError`, which callers catch
+expected:
+- file: sqlite_utils/utils.py
+  line_start: 571
+  line_end: 571
+  category: error-handling
+  severity: warning
+oracle:
+- qualified_name: sqlite_utils.cli.convert
+  ordinal: 0
+  role: caller

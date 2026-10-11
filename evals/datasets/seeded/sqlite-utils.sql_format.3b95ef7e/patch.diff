@@ -1,0 +1,11 @@
+--- a/sqlite_utils/db.py
++++ b/sqlite_utils/db.py
+@@ -3030,7 +3030,7 @@
+         autoincrement_sequence = None
+         if create_table_autoincrement:
+             sequence_row = self.db.execute(
+-                "SELECT seq FROM sqlite_sequence WHERE name = ?", [self.name]
++                f"SELECT seq FROM sqlite_sequence WHERE name = '{self.name}'"
+             ).fetchone()
+             if sequence_row is not None:
+                 autoincrement_sequence = sequence_row[0]

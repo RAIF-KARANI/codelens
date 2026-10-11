@@ -1,0 +1,11 @@
+--- a/starlette/websockets.py
++++ b/starlette/websockets.py
+@@ -129,7 +129,7 @@
+     async def receive_bytes(self) -> bytes:
+         if self.application_state != WebSocketState.CONNECTED:
+             raise WebSocketDisconnected('WebSocket is not connected. Need to call "accept" first.')
+-        message = await self.receive()
++        message = self.receive()
+         self._raise_on_disconnect(message)
+         return cast(bytes, message["bytes"])
+ 

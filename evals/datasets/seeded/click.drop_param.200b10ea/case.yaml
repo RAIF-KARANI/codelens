@@ -1,0 +1,21 @@
+id: click.drop_param.200b10ea
+kind: seeded
+split: test
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: drop_param
+file: src/click/_compat.py
+function: click._compat._is_binary_writer
+description: Dropped parameter `default` (its default became a local); callers still
+  pass it
+expected:
+- file: src/click/_compat.py
+  line_start: 163
+  line_end: 163
+  category: api-contract
+  severity: critical
+oracle:
+- qualified_name: click._compat._find_binary_writer
+  ordinal: 0
+  role: caller

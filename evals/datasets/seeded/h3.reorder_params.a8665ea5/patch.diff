@@ -1,0 +1,11 @@
+--- a/src/utils/query.ts
++++ b/src/utils/query.ts
+@@ -142,7 +142,7 @@
+ }
+ 
+ /** Split on `sep` while ignoring separators inside double-quoted strings. */
+-function splitOutsideQuotes(input: string, sep: string): string[] {
++function splitOutsideQuotes(sep: string, input: string): string[] {
+   const parts: string[] = [];
+   let current = "";
+   let inQuotes = false;

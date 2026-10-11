@@ -1,0 +1,13 @@
+--- a/starlette/formparsers.py
++++ b/starlette/formparsers.py
+@@ -99,8 +99,8 @@
+         self._current_fields += 1
+         if self._current_fields > self.max_fields:
+             raise MultiPartException(f"Too many fields. Maximum number of fields is {self.max_fields}.")
+-        message = (FormMessage.FIELD_END, b"")
+-        self.messages.append(message)
++        message_value = (FormMessage.FIELD_END, b"")
++        self.messages.append(message_value)
+ 
+     def on_end(self) -> None:
+         message = (FormMessage.END, b"")

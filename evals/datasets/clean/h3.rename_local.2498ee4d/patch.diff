@@ -1,0 +1,18 @@
+--- a/src/rules/internal/key.ts
++++ b/src/rules/internal/key.ts
+@@ -36,11 +36,11 @@
+  * slash-prefixed path counts as method-scoped; everything else is a plain path.
+  */
+ export function parseRouteKey(key: string): ParsedRouteKey {
+-  const match = METHOD_KEY_RE.exec(key);
+-  if (match) {
+-    const method = match[1]!.toUpperCase();
++  const matchValue = METHOD_KEY_RE.exec(key);
++  if (matchValue) {
++    const method = matchValue[1]!.toUpperCase();
+     if (HTTP_METHODS.has(method)) {
+-      return { method, path: withLeadingSlash(match[2]!) };
++      return { method, path: withLeadingSlash(matchValue[2]!) };
+     }
+   }
+   return { method: "", path: withLeadingSlash(key) };

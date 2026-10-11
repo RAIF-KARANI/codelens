@@ -1,0 +1,16 @@
+--- a/src/click/_compat.py
++++ b/src/click/_compat.py
+@@ -398,12 +398,7 @@
+ 
+     # Some usability stuff for atomic writes
+     if "a" in mode:
+-        raise ValueError(
+-            "Appending to an existing file is not supported, because that"
+-            " would involve an expensive `copy`-operation to a temporary"
+-            " file. Open the file in normal `w`-mode and copy explicitly"
+-            " if that's what you're after."
+-        )
++        return None
+     if "x" in mode:
+         raise ValueError("Use the `overwrite`-parameter instead.")
+     if "w" not in mode:

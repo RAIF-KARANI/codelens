@@ -1,0 +1,12 @@
+id: sqlite-utils.rename_local.c14cc052
+kind: clean
+split: test
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: rename_local
+file: sqlite_utils/cli.py
+function: sqlite_utils.cli.populate_fts
+description: Renamed local `db` to `db_value`
+expected: []
+oracle: []

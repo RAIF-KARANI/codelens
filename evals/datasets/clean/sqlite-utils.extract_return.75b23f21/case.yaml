@@ -1,0 +1,12 @@
+id: sqlite-utils.extract_return.75b23f21
+kind: clean
+split: dev
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: extract_return
+file: sqlite_utils/db.py
+function: sqlite_utils.db.Database.table_names
+description: Moved the returned expression into a local `result`
+expected: []
+oracle: []

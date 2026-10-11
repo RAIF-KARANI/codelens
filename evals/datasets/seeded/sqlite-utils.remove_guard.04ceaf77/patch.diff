@@ -1,0 +1,11 @@
+--- a/sqlite_utils/create_table_parser.py
++++ b/sqlite_utils/create_table_parser.py
+@@ -320,8 +320,6 @@
+ 
+ 
+ def _split_spans(sql: str, tokens: list[_Token]) -> list[tuple[str, int, int]]:
+-    if not tokens:
+-        return []
+     items: list[tuple[str, int, int]] = []
+     depth = 0
+     start = tokens[0].start

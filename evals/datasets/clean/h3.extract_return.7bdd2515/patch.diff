@@ -1,0 +1,12 @@
+--- a/src/rules/match.ts
++++ b/src/rules/match.ts
+@@ -355,7 +355,8 @@
+   for (const name in matchedRules) {
+     routeRules[name] = (matchedRules as Record<string, MatchedRouteRule>)[name]!.options;
+   }
+-  return routeRules as ResolvedRouteRules;
++  const result = routeRules as ResolvedRouteRules;
++  return result;
+ }
+ 
+ /**

@@ -1,0 +1,11 @@
+--- a/sqlite_utils/db.py
++++ b/sqlite_utils/db.py
+@@ -4976,7 +4976,7 @@
+                     if (hash_id or (pk and not rowid_pk)) and self.last_rowid:
+                         # Set self.last_pk to the pk(s) for that rowid
+                         row = next(
+-                            iter(self.rows_where("rowid = ?", [self.last_rowid]))
++                            iter(self.rows_where(f"rowid = '{self.last_rowid}'"))
+                         )
+                         if hash_id:
+                             self.last_pk = row[hash_id]

@@ -1,0 +1,36 @@
+# OSS repos the eval cases are built from (planning.md §10.1, Q1 answered 2026-10-11).
+# Each is pinned by commit; licenses were checked at that commit. `include` limits
+# where mutations land (library code only: no tests, docs, scripts or benchmarks).
+#
+# Why these four: sqlite-utils is the only candidate with real parameterised SQL;
+# starlette is async-heavy (drop_await); click has the best call resolution (60% of
+# in-repo calls resolved); h3 is a mid-size ESM TypeScript repo (our resolver does
+# not follow CommonJS require()). Survey numbers are in the Phase 3 step 1 PR.
+sources:
+  - name: sqlite-utils
+    url: https://github.com/simonw/sqlite-utils
+    sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876  # main, 2026-10-10
+    license: Apache-2.0
+    language: python
+    include: [sqlite_utils/]
+
+  - name: starlette
+    url: https://github.com/Kludex/starlette
+    sha: 96d5023c55b29224edb8d684868c49f681d079a9  # main, 2026-10-09
+    license: BSD-3-Clause
+    language: python
+    include: [starlette/]
+
+  - name: click
+    url: https://github.com/pallets/click
+    sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6  # main, 2026-10-04
+    license: BSD-3-Clause
+    language: python
+    include: [src/click/]
+
+  - name: h3
+    url: https://github.com/h3js/h3
+    sha: 66cfb8a357b6285451bad498c2c40002601fae98  # v2.0.2, 2026-10-07
+    license: MIT
+    language: typescript
+    include: [src/]

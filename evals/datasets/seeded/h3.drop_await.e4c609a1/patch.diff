@@ -1,0 +1,11 @@
+--- a/src/utils/session.ts
++++ b/src/utils/session.ts
+@@ -297,7 +297,7 @@
+     session.lastSeenAt = Date.now();
+   }
+ 
+-  const sealed = await seal(session, config.password, {
++  const sealed = seal(session, config.password, {
+     ...sealDefaults,
+     ttl: (config.maxAge || config.idleTimeout || 0) * 1000,
+     ...config.seal,

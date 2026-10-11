@@ -1,0 +1,12 @@
+id: h3.extract_return.d16db358
+kind: clean
+split: test
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: extract_return
+file: src/utils/internal/proxy.ts
+function: src/utils/internal/proxy:rewritePrefix
+description: Moved the returned expression into a local `result`
+expected: []
+oracle: []

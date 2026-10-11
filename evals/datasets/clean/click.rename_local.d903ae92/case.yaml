@@ -1,0 +1,12 @@
+id: click.rename_local.d903ae92
+kind: clean
+split: dev
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: rename_local
+file: src/click/shell_completion.py
+function: click.shell_completion.PowerShellComplete.format_completion
+description: Renamed local `help_` to `help__value`
+expected: []
+oracle: []

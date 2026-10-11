@@ -1,0 +1,11 @@
+--- a/starlette/routing.py
++++ b/starlette/routing.py
+@@ -481,8 +481,6 @@
+         if scope["type"] in ("http", "websocket"):  # pragma:no branch
+             headers = Headers(scope=scope)
+             parsed_host = parse_host_header(headers.get("host"))
+-            if parsed_host is None:
+-                return Match.NONE, {}
+             host = parsed_host.host
+ 
+             match = self.host_regex.match(host)

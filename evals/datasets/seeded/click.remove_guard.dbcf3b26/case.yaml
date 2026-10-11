@@ -1,0 +1,20 @@
+id: click.remove_guard.dbcf3b26
+kind: seeded
+split: dev
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: remove_guard
+file: src/click/types.py
+function: click.types._guess_type
+description: Deleted the guard `if default is None:` before `default` is used
+expected:
+- file: src/click/types.py
+  line_start: 1323
+  line_end: 1324
+  category: bug
+  severity: warning
+oracle:
+- qualified_name: click.types.convert_type
+  ordinal: 3
+  role: caller

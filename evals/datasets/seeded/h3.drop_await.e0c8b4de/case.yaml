@@ -1,0 +1,20 @@
+id: h3.drop_await.e0c8b4de
+kind: seeded
+split: test
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: drop_await
+file: src/utils/auth.ts
+function: src/utils/auth:requireBasicAuth
+description: Removed `await` before `authFailed(event, realm)`, an async function
+expected:
+- file: src/utils/auth.ts
+  line_start: 60
+  line_end: 60
+  category: concurrency
+  severity: critical
+oracle:
+- qualified_name: src/utils/auth:authFailed
+  ordinal: 0
+  role: callee

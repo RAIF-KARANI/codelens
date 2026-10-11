@@ -1,0 +1,17 @@
+id: sqlite-utils.sql_format.3b95ef7e
+kind: seeded
+split: test
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: sql_format
+file: sqlite_utils/db.py
+function: sqlite_utils.db.Table.transform_sql
+description: Replaced a parameterised query with string interpolation
+expected:
+- file: sqlite_utils/db.py
+  line_start: 3033
+  line_end: 3033
+  category: security
+  severity: critical
+oracle: []

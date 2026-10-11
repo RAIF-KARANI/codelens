@@ -1,0 +1,20 @@
+id: h3.remove_guard.ce830b69
+kind: seeded
+split: test
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: remove_guard
+file: src/rules/merge.ts
+function: src/rules/merge:mergeMatchedRouteRules
+description: Deleted the guard `if (!altLayers) {` before `altLayers` is used
+expected:
+- file: src/rules/merge.ts
+  line_start: 36
+  line_end: 37
+  category: bug
+  severity: warning
+oracle:
+- qualified_name: src/rules/match:createMatcherFromFind
+  ordinal: 0
+  role: caller

@@ -1,0 +1,20 @@
+id: click.reorder_params.3ca6c03f
+kind: seeded
+split: dev
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: reorder_params
+file: src/click/_compat.py
+function: click._compat._wrap_io_open
+description: Swapped parameters `encoding` and `errors`; callers pass both by position
+expected:
+- file: src/click/_compat.py
+  line_start: 364
+  line_end: 365
+  category: api-contract
+  severity: warning
+oracle:
+- qualified_name: click._compat.open_stream
+  ordinal: 0
+  role: caller

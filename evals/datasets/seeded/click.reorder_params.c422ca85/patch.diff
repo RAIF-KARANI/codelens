@@ -1,0 +1,12 @@
+--- a/src/click/shell_completion.py
++++ b/src/click/shell_completion.py
+@@ -19,8 +19,8 @@
+ def shell_complete(
+     cli: Command,
+     ctx_args: cabc.MutableMapping[str, t.Any],
++    complete_var: str,
+     prog_name: str,
+-    complete_var: str,
+     instruction: str,
+ ) -> t.Literal[0, 1]:
+     """Perform shell completion for the given CLI program.

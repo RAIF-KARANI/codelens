@@ -1,0 +1,11 @@
+--- a/src/click/core.py
++++ b/src/click/core.py
+@@ -2233,7 +2233,7 @@
+     error, or return an iterator over the value.
+     """
+     if isinstance(value, str):
+-        raise TypeError
++        raise RuntimeError
+ 
+     return iter(value)
+ 

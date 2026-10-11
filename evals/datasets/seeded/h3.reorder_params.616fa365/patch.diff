@@ -1,0 +1,11 @@
+--- a/src/rules/internal/scope.ts
++++ b/src/rules/internal/scope.ts
+@@ -209,7 +209,7 @@
+   );
+ }
+ 
+-function isCanonicalInScope(canonical: string, base: string): boolean {
++function isCanonicalInScope(base: string, canonical: string): boolean {
+   return canonical === base || canonical.startsWith(base + "/");
+ }
+ 

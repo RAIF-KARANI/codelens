@@ -1,0 +1,21 @@
+id: click.drop_param.de6bdb5d
+kind: seeded
+split: test
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: drop_param
+file: src/click/core.py
+function: click.core.Option.get_default
+description: Dropped parameter `call` (its default became a local); callers still
+  pass it
+expected:
+- file: src/click/core.py
+  line_start: 3390
+  line_end: 3390
+  category: api-contract
+  severity: critical
+oracle:
+- qualified_name: click.core.Option.get_help_extra
+  ordinal: 0
+  role: caller

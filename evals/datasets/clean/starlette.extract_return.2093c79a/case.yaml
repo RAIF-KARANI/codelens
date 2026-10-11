@@ -1,0 +1,12 @@
+id: starlette.extract_return.2093c79a
+kind: clean
+split: test
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: extract_return
+file: starlette/requests.py
+function: starlette.requests.HTTPConnection.auth
+description: Moved the returned expression into a local `result`
+expected: []
+oracle: []

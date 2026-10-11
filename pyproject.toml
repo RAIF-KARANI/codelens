@@ -50,11 +50,13 @@ select = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["core", "api", "worker"]
+known-first-party = ["core", "api", "worker", "evals"]
 
 # ---------------------------------------------------------------- pytest
 [tool.pytest.ini_options]
-testpaths = ["packages/core/tests", "services/api/tests", "services/worker/tests"]
+testpaths = ["packages/core/tests", "services/api/tests", "services/worker/tests", "evals/tests"]
+# evals/ is a plain package at the repo root (not installed): put the root on sys.path.
+pythonpath = ["."]
 # importlib mode lets each package have its own tests/ dir without
 # needing __init__.py files or clashing module names.
 addopts = "-ra --import-mode=importlib"

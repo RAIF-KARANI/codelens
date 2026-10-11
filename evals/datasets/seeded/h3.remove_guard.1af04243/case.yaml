@@ -1,0 +1,20 @@
+id: h3.remove_guard.1af04243
+kind: seeded
+split: test
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: remove_guard
+file: src/utils/internal/path.ts
+function: src/utils/internal/path:joinURL
+description: Deleted the guard `if (!base) {` before `base` is used
+expected:
+- file: src/utils/internal/path.ts
+  line_start: 29
+  line_end: 30
+  category: bug
+  severity: warning
+oracle:
+- qualified_name: src/rules/handlers/_utils:prepareRuleTarget
+  ordinal: 0
+  role: caller

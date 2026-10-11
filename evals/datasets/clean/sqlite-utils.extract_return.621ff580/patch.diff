@@ -1,0 +1,12 @@
+--- a/sqlite_utils/utils.py
++++ b/sqlite_utils/utils.py
+@@ -75,7 +75,8 @@
+ 
+     def __next__(self) -> Row:
+         try:
+-            return next(self._iterator)
++            result = next(self._iterator)
++            return result
+         except StopIteration:
+             self._closeable.close()
+             raise

@@ -1,0 +1,12 @@
+--- a/sqlite_utils/db.py
++++ b/sqlite_utils/db.py
+@@ -2511,8 +2511,7 @@
+             Trigger(*r)
+             for r in self.db.execute(
+                 "select name, tbl_name, sql from sqlite_master where type = 'trigger'"
+-                " and tbl_name = ?",
+-                (self.name,),
++                f" and tbl_name = '{self.name}'",
+             ).fetchall()
+         ]
+ 

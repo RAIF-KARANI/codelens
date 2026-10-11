@@ -1,0 +1,12 @@
+--- a/sqlite_utils/cli.py
++++ b/sqlite_utils/cli.py
+@@ -2261,8 +2261,8 @@
+ 
+ 
+ def _execute_query(
++    sql,
+     db,
+-    sql,
+     param,
+     raw,
+     raw_lines,

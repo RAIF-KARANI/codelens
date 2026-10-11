@@ -1,0 +1,12 @@
+--- a/src/click/decorators.py
++++ b/src/click/decorators.py
+@@ -116,7 +116,8 @@
+         def new_func(*args: P.args, **kwargs: P.kwargs) -> R:
+             ctx = get_current_context()
+             obj = ctx.meta[key]
+-            return ctx.invoke(f, obj, *args, **kwargs)
++            result = ctx.invoke(f, obj, *args, **kwargs)
++            return result
+ 
+         return update_wrapper(new_func, f)
+ 

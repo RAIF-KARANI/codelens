@@ -1,0 +1,20 @@
+--- a/sqlite_utils/db.py
++++ b/sqlite_utils/db.py
+@@ -4534,7 +4534,7 @@
+         ignore,
+         list_mode=False,
+     ) -> sqlite3.Cursor | None:
+-        queries_and_params = self.build_insert_queries_and_params(
++        queries_and_params_value = self.build_insert_queries_and_params(
+             extracts,
+             chunk,
+             all_columns,
+@@ -4551,7 +4551,7 @@
+         )
+         result = None
+         with self.db.atomic():
+-            for query, params in queries_and_params:
++            for query, params in queries_and_params_value:
+                 try:
+                     result = self.db.execute(query, params)
+                 except OperationalError as e:

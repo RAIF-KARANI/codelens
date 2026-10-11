@@ -1,0 +1,11 @@
+--- a/src/click/_termui_impl.py
++++ b/src/click/_termui_impl.py
+@@ -430,8 +430,6 @@
+     Returns ``None`` when there is no command to run or it is not on the path,
+     leaving the caller to pick a fallback.
+     """
+-    if not cmd_parts:
+-        return None
+ 
+     import shutil
+ 

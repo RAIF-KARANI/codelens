@@ -1,0 +1,18 @@
+--- a/src/click/parser.py
++++ b/src/click/parser.py
+@@ -439,14 +439,7 @@
+                 # Option allows omitting the value.
+                 value = FLAG_NEEDS_VALUE
+             else:
+-                raise BadOptionUsage(
+-                    option_name,
+-                    ngettext(
+-                        "Option {name!r} requires an argument.",
+-                        "Option {name!r} requires {nargs} arguments.",
+-                        nargs,
+-                    ).format(name=option_name, nargs=nargs),
+-                )
++                return None
+         elif nargs == 1:
+             next_rarg = state.rargs[0]
+ 

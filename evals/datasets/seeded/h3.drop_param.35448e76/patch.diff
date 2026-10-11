@@ -1,0 +1,12 @@
+--- a/src/utils/sanitize.ts
++++ b/src/utils/sanitize.ts
+@@ -7,7 +7,8 @@
+  *
+  * Allowed characters: horizontal tabs, spaces or visible ascii characters: https://www.rfc-editor.org/rfc/rfc7230#section-3.1.2
+  */
+-export function sanitizeStatusMessage(statusMessage = ""): string {
++export function sanitizeStatusMessage(): string {
++  const statusMessage = "";
+   return statusMessage.replace(DISALLOWED_STATUS_CHARS, "");
+ }
+ 

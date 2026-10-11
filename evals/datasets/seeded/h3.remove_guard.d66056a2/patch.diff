@@ -1,0 +1,12 @@
+--- a/src/utils/internal/iron-crypto.ts
++++ b/src/utils/internal/iron-crypto.ts
+@@ -91,9 +91,6 @@
+ ): Promise<unknown> {
+   const now = Date.now() + (opts.localtimeOffsetMsec || 0);
+ 
+-  if (!password) {
+-    throw new Error("Empty password");
+-  }
+ 
+   const parts = sealed.split("*");
+   if (parts.length !== 8) {

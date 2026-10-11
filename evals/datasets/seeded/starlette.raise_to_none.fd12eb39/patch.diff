@@ -1,0 +1,11 @@
+--- a/starlette/responses.py
++++ b/starlette/responses.py
+@@ -507,7 +507,7 @@
+         units = units.strip().lower()
+ 
+         if units != "bytes":
+-            raise MalformedRangeHeader("Only support bytes range")
++            return None
+ 
+         if range_.count(",") + 1 > cls.max_ranges:
+             return []

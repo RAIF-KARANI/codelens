@@ -1,3 +1,92 @@
 # evals
 
-Golden PR set and retrieval/review benchmark scripts. Populated in a later phase.
+The evaluation harness (planning.md §10). Every pipeline upgrade must beat the
+baseline here before it is adopted.
+
+**Status:** step 1 is built: the sources and the seeded/clean dataset. The runner,
+metrics and baselines come in steps 2–3.
+
+## The dataset
+
+```bash
+python -m evals.generate_seeded            # ~1 min; replaces datasets/{seeded,clean}
+```
+
+The generator:
+
+1. Checks out each repo in [`sources.yaml`](sources.yaml) at its pinned commit, into `data/evals/sources/` (gitignored).
+2. Parses each repo with `core.parser`, the same parser the indexer uses.
+3. Runs every operator over every non-test function.
+4. Picks cases round-robin across the repos.
+
+Running it twice gives byte-identical output.
+
+| Repo | License | Language | Why |
+|---|---|---|---|
+| sqlite-utils | Apache-2.0 | Python | the only candidate with real parameterised SQL |
+| starlette | BSD-3-Clause | Python | async-heavy |
+| click | BSD-3-Clause | Python | best call resolution (60% of in-repo calls) |
+| h3 | MIT | TypeScript | ESM imports, async, mid-size |
+
+### Seeded bugs: visible only with context
+
+Each operator mutates a function only where catching the bug needs *other* code:
+- a caller that uses the result, passes the argument, or catches the exception;
+- or an async callee.
+
+That code becomes the case's **oracle**, so the eval can measure whether retrieval
+found what the reviewer needed.
+
+| Operator | Mutation | Expected | Oracle |
+|---|---|---|---|
+| `raise_to_none` | `raise X(...)` → `return None` (`return undefined`) | bug, critical | callers that use the return value |
+| `drop_param` | remove a defaulted parameter; its default becomes a local | api-contract, critical | callers that pass it |
+| `reorder_params` | swap two adjacent parameters of the same shape and type | api-contract, warning | callers that pass both by position |
+| `drop_await` | remove `await` before a call to an in-repo async function | concurrency, critical | the async callee |
+| `remove_guard` | delete `if x is None: return` / `if (!x) return` before `x` is used | bug, warning | where `x` comes from (the callee that produced it, or the callers) |
+| `sql_format` | `execute("… = ?", [v])` → `execute(f"… = '{v}'")` (Python) | security, critical | the DB helper, when it is in the repo |
+| `exception_type` | raise a different class than the one callers catch | error-handling, warning | callers with the handler |
+
+### Clean cases (expect no findings)
+
+These are behaviour-preserving edits:
+- `rename_local`: rename a local variable, following each language's naming convention.
+- `extract_return`: `return expr` becomes `result = expr` followed by `return result`.
+
+### Checks on every case
+
+Each case passes all of these, or it isn't written:
+- **It still parses.** tree-sitter finds no new syntax errors; for Python, `ast.parse` also succeeds.
+- **The patch applies.** `git apply --check` passes on the pinned checkout.
+- **A correct finding can be posted.** If the patch adds lines, the expected range must touch one, because the reviewer only posts on added lines.
+  - `remove_guard` is a pure deletion, so B0 cannot post on it at all. Keeping those cases measures that blind spot (D70).
+
+## Files
+
+```
+datasets/
+  seeded/<id>/case.yaml   source, sha, file, function, operator, description,
+                          expected [{file, line_start, line_end, category, severity}],
+                          oracle [{qualified_name, ordinal, role}], split (dev|test)
+  seeded/<id>/patch.diff  byte-exact (git won't normalise it; see .gitattributes)
+  clean/<id>/...          the same, with empty expected and oracle
+  summary.md              case counts per operator, source and split
+```
+
+Case ids are `<source>.<operator>.<hash of file + function>`.
+
+The split is stratified per (kind, operator), with 30% of cases in dev. Prompts and weights are tuned on **dev** only, and reported numbers come from **test**.
+
+## Code
+
+| Module | Role |
+|---|---|
+| `sources.py` | `sources.yaml` model; shallow checkout of the pinned commit |
+| `graph.py` | parse result + callers/callees + each function's syntax tree (`Target`) |
+| `syntax.py` | tree-sitter helpers: own-body walk, parameters, call sites, try/except |
+| `operators.py` | the 7 seeded operators and 2 clean edits |
+| `edits.py` | byte edits → new file + expected lines; `git apply`-able diffs |
+| `cases.py` | `case.yaml` model, read/write |
+| `generate_seeded.py` | the CLI: candidates → selection → checks → split → write |
+
+Tests are in `tests/`, run on a toy Python + TypeScript repo. CI runs them; it runs no model evals (no GPU, §10.6).

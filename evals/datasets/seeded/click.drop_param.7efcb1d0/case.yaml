@@ -1,0 +1,21 @@
+id: click.drop_param.7efcb1d0
+kind: seeded
+split: dev
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: drop_param
+file: src/click/_compat.py
+function: click._compat.get_text_stdout
+description: Dropped parameter `encoding` (its default became a local); callers still
+  pass it
+expected:
+- file: src/click/_compat.py
+  line_start: 347
+  line_end: 347
+  category: api-contract
+  severity: critical
+oracle:
+- qualified_name: click._compat.open_stream
+  ordinal: 0
+  role: caller

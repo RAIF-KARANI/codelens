@@ -1,0 +1,12 @@
+--- a/starlette/config.py
++++ b/starlette/config.py
+@@ -124,8 +124,8 @@
+         self,
+         key: str,
+         value: Any,
+-        cast: Callable[[Any], Any] | None = None,
+     ) -> Any:
++        cast: Callable[[Any], Any] | None = None
+         if cast is None or value is None:
+             return value
+         elif cast is bool and isinstance(value, str):

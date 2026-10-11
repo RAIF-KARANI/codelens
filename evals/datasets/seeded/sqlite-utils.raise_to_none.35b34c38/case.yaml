@@ -1,0 +1,39 @@
+id: sqlite-utils.raise_to_none.35b34c38
+kind: seeded
+split: test
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: raise_to_none
+file: sqlite_utils/db.py
+function: sqlite_utils.db.Database.table
+description: '`raise NoTable(f"Table {table_name} is actually a view")` became `return
+  None`; callers use the result'
+expected:
+- file: sqlite_utils/db.py
+  line_start: 1015
+  line_end: 1015
+  category: bug
+  severity: critical
+oracle:
+- qualified_name: sqlite_utils.db.Database.__getitem__
+  ordinal: 0
+  role: caller
+- qualified_name: sqlite_utils.db.Database.add_foreign_keys
+  ordinal: 0
+  role: caller
+- qualified_name: sqlite_utils.db.Database.create_table
+  ordinal: 0
+  role: caller
+- qualified_name: sqlite_utils.db.Database.index_foreign_keys
+  ordinal: 0
+  role: caller
+- qualified_name: sqlite_utils.db.Database.reset_counts
+  ordinal: 0
+  role: caller
+- qualified_name: sqlite_utils.db.Database.resolve_foreign_keys
+  ordinal: 0
+  role: caller
+- qualified_name: sqlite_utils.db.Database.tables
+  ordinal: 0
+  role: caller

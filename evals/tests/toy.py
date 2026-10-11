@@ -1,0 +1,145 @@
+"""A toy repo (Python + TypeScript) with exactly one obvious site per operator."""
+
+from pathlib import Path
+from textwrap import dedent
+
+from evals.graph import CodeGraph, Target
+
+FILES = {
+    "pkg/__init__.py": "",
+    "pkg/store.py": '''
+        class NotFound(Exception):
+            pass
+
+
+        def find(items, key, strict=True):
+            """Return the item with this key."""
+            for item in items:
+                if item.key == key:
+                    return item
+            raise NotFound(key)
+
+
+        def label(prefix, name):
+            return prefix + ":" + name
+
+
+        def save(db, name, value):
+            db.execute("insert into t (name, value) values (?, ?)", [name, value])
+
+
+        async def fetch(db, key):
+            return await db.get(key)
+
+
+        async def load(db, key):
+            row = await fetch(db, key)
+            return row
+
+
+        def check(value):
+            if value < 0:
+                raise ValueError(value)
+
+
+        def render(
+            template,
+            context,
+            escape=True,
+        ):
+            """Fill the template."""
+            return template.format(**context)
+        ''',
+    "pkg/api.py": """
+        from pkg.store import NotFound, check, find, label, render
+
+
+        def show(items, key):
+            try:
+                item = find(items, key, False)
+            except NotFound:
+                return None
+            return label("item", item.name)
+
+
+        def first_name(items, key):
+            item = find(items, key)
+            if item is None:
+                return ""
+            return item.name
+
+
+        def describe(items, key):
+            value = first_name(items, key)
+            check(len(key))
+            return label(value, key)
+
+
+        def page(context):
+            return render("<p>{body}</p>", context, escape=False)
+        """,
+    "src/store.ts": """
+        export class NotFound extends Error {}
+
+        export function find(items: Item[], key: string, strict = true): Item {
+          for (const item of items) {
+            if (item.key === key) return item;
+          }
+          throw new NotFound(key);
+        }
+
+        export function label(prefix: string, name: string): string {
+          return `${prefix}:${name}`;
+        }
+
+        export async function fetchRow(db: Db, key: string): Promise<Row> {
+          return db.get(key);
+        }
+
+        export async function loadRow(db: Db, key: string): Promise<Row> {
+          const row = await fetchRow(db, key);
+          return row;
+        }
+        """,
+    "src/api.ts": """
+        import { NotFound, find, label } from "./store";
+
+        export function show(items: Item[], key: string): string | null {
+          try {
+            const item = find(items, key, false);
+            return label("item", item.name);
+          } catch (error) {
+            if (error instanceof NotFound) return null;
+            throw error;
+          }
+        }
+
+        export function firstName(items: Item[], key: string): string {
+          const item = find(items, key);
+          if (!item) return "";
+          return item.name;
+        }
+        """,
+    "tests/test_store.py": """
+        from pkg.store import find
+
+
+        def test_find():
+            assert find([], "k", True) is None
+        """,
+}
+
+
+def write_toy_repo(root: Path) -> Path:
+    for path, code in FILES.items():
+        target = root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(dedent(code).lstrip("\n"), encoding="utf-8", newline="\n")
+    return root
+
+
+def get_target(graph: CodeGraph, qualified_name: str) -> Target:
+    [target] = [
+        t for t in graph.targets(["pkg/", "src/"]) if t.node.qualified_name == qualified_name
+    ]
+    return target

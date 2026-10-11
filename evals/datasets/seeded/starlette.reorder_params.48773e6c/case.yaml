@@ -1,0 +1,21 @@
+id: starlette.reorder_params.48773e6c
+kind: seeded
+split: test
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: reorder_params
+file: starlette/staticfiles.py
+function: starlette.staticfiles.StaticFiles.is_not_modified
+description: Swapped parameters `response_headers` and `request_headers`; callers
+  pass both by position
+expected:
+- file: starlette/staticfiles.py
+  line_start: 211
+  line_end: 211
+  category: api-contract
+  severity: warning
+oracle:
+- qualified_name: starlette.staticfiles.StaticFiles.file_response
+  ordinal: 0
+  role: caller

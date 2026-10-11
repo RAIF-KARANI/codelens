@@ -1,0 +1,21 @@
+id: h3.drop_await.a7e369ca
+kind: seeded
+split: test
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: drop_await
+file: src/utils/event-stream.ts
+function: src/utils/event-stream:EventStream.push
+description: 'Removed `await` before `this._sendEvent({ data: message })`, an async
+  function'
+expected:
+- file: src/utils/event-stream.ts
+  line_start: 120
+  line_end: 120
+  category: concurrency
+  severity: critical
+oracle:
+- qualified_name: src/utils/event-stream:EventStream._sendEvent
+  ordinal: 0
+  role: callee

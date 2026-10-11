@@ -1,0 +1,33 @@
+id: h3.raise_to_none.36ffe85f
+kind: seeded
+split: test
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: raise_to_none
+file: src/utils/internal/path.ts
+function: src/utils/internal/path:normalizeRoute
+description: '`throw new Error(`Route patterns are pathnames, received URL: ${route}`);`
+  became `return undefined;`; callers use the result'
+expected:
+- file: src/utils/internal/path.ts
+  line_start: 211
+  line_end: 211
+  category: bug
+  severity: critical
+oracle:
+- qualified_name: src/h3:H3.mount
+  ordinal: 0
+  role: caller
+- qualified_name: src/h3:H3.on
+  ordinal: 0
+  role: caller
+- qualified_name: src/middleware:createMatcher
+  ordinal: 0
+  role: caller
+- qualified_name: src/rules/internal/key:decodeRoutePattern
+  ordinal: 0
+  role: caller
+- qualified_name: src/utils/route:removeRoute
+  ordinal: 0
+  role: caller

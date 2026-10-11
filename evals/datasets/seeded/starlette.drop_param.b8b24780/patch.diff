@@ -1,0 +1,12 @@
+--- a/starlette/exceptions.py
++++ b/starlette/exceptions.py
+@@ -5,7 +5,8 @@
+ 
+ 
+ class HTTPException(Exception):
+-    def __init__(self, status_code: int, detail: str | None = None, headers: Mapping[str, str] | None = None) -> None:
++    def __init__(self, status_code: int, headers: Mapping[str, str] | None = None) -> None:
++        detail: str | None = None
+         if detail is None:
+             detail = http.client.responses.get(status_code, "")
+         self.status_code = status_code

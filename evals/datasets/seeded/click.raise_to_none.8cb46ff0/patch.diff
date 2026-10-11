@@ -1,0 +1,11 @@
+--- a/src/click/parser.py
++++ b/src/click/parser.py
+@@ -93,7 +93,7 @@
+             rv.append(tuple(x))
+         elif nargs < 0:
+             if spos is not None:
+-                raise TypeError("Cannot have two nargs < 0")
++                return None
+ 
+             spos = len(rv)
+             rv.append(UNSET)

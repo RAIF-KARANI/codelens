@@ -1,0 +1,21 @@
+id: starlette.reorder_params.9fe2db12
+kind: seeded
+split: test
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: reorder_params
+file: starlette/middleware/errors.py
+function: starlette.middleware.errors.ServerErrorMiddleware.format_line
+description: Swapped parameters `frame_lineno` and `frame_index`; callers pass both
+  by position
+expected:
+- file: starlette/middleware/errors.py
+  line_start: 188
+  line_end: 188
+  category: api-contract
+  severity: warning
+oracle:
+- qualified_name: starlette.middleware.errors.ServerErrorMiddleware.generate_frame_html
+  ordinal: 0
+  role: caller

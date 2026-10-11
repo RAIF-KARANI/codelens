@@ -1,0 +1,12 @@
+--- a/starlette/requests.py
++++ b/starlette/requests.py
+@@ -226,7 +226,8 @@
+ 
+     @property
+     def method(self) -> str:
+-        return cast(str, self.scope["method"])
++        result = cast(str, self.scope["method"])
++        return result
+ 
+     @property
+     def receive(self) -> Receive:

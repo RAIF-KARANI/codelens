@@ -1,0 +1,20 @@
+id: starlette.remove_guard.17a03d79
+kind: seeded
+split: dev
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: remove_guard
+file: starlette/routing.py
+function: starlette.routing.Host.matches
+description: Deleted the guard `if parsed_host is None:` before `parsed_host` is used
+expected:
+- file: starlette/routing.py
+  line_start: 483
+  line_end: 484
+  category: bug
+  severity: warning
+oracle:
+- qualified_name: starlette._utils.parse_host_header
+  ordinal: 0
+  role: callee

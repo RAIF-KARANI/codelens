@@ -1,0 +1,21 @@
+id: sqlite-utils.drop_param.72231154
+kind: seeded
+split: test
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: drop_param
+file: sqlite_utils/db.py
+function: sqlite_utils.db.Database.register_function
+description: Dropped parameter `fn` (its default became a local); callers still pass
+  it
+expected:
+- file: sqlite_utils/db.py
+  line_start: 795
+  line_end: 821
+  category: api-contract
+  severity: critical
+oracle:
+- qualified_name: sqlite_utils.db.Database.register_fts4_bm25
+  ordinal: 0
+  role: caller

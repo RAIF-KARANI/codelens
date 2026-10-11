@@ -1,0 +1,23 @@
+id: click.raise_to_none.72bbc6b7
+kind: seeded
+split: test
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: raise_to_none
+file: src/click/parser.py
+function: click.parser._OptionParser._get_value_from_state
+description: '`raise BadOptionUsage(` became `return None`; callers use the result'
+expected:
+- file: src/click/parser.py
+  line_start: 442
+  line_end: 442
+  category: bug
+  severity: critical
+oracle:
+- qualified_name: click.parser._OptionParser._match_long_opt
+  ordinal: 0
+  role: caller
+- qualified_name: click.parser._OptionParser._match_short_opt
+  ordinal: 0
+  role: caller

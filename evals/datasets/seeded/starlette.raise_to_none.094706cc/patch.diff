@@ -1,0 +1,11 @@
+--- a/starlette/routing.py
++++ b/starlette/routing.py
+@@ -150,7 +150,7 @@
+     if duplicated_params:
+         names = ", ".join(sorted(duplicated_params))
+         ending = "s" if len(duplicated_params) > 1 else ""
+-        raise ValueError(f"Duplicated param name{ending} {names} at path {path}")
++        return None
+ 
+     if is_host:
+         # Align with `Host.matches()` behavior, which ignores port.

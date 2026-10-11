@@ -1,0 +1,32 @@
+id: sqlite-utils.remove_guard.04ceaf77
+kind: seeded
+split: test
+source: sqlite-utils
+sha: 9c66bafa52ae23d40499c74b0db3b635bcddb876
+language: python
+operator: remove_guard
+file: sqlite_utils/create_table_parser.py
+function: sqlite_utils.create_table_parser._split_spans
+description: Deleted the guard `if not tokens:` before `tokens` is used
+expected:
+- file: sqlite_utils/create_table_parser.py
+  line_start: 322
+  line_end: 323
+  category: bug
+  severity: warning
+oracle:
+- qualified_name: sqlite_utils.create_table_parser._split_ranges
+  ordinal: 0
+  role: caller
+- qualified_name: sqlite_utils.create_table_parser.parse_autoincrement
+  ordinal: 0
+  role: caller
+- qualified_name: sqlite_utils.create_table_parser.parse_checks
+  ordinal: 0
+  role: caller
+- qualified_name: sqlite_utils.create_table_parser.parse_column_comments
+  ordinal: 0
+  role: caller
+- qualified_name: sqlite_utils.create_table_parser.parse_uniques
+  ordinal: 0
+  role: caller

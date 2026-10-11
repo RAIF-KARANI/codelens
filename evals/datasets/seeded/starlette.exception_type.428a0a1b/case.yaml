@@ -1,0 +1,20 @@
+id: starlette.exception_type.428a0a1b
+kind: seeded
+split: test
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: exception_type
+file: starlette/requests.py
+function: starlette.requests.Request.stream
+description: Raises `RuntimeError` instead of `ClientDisconnect`, which callers catch
+expected:
+- file: starlette/requests.py
+  line_start: 252
+  line_end: 252
+  category: error-handling
+  severity: warning
+oracle:
+- qualified_name: starlette.middleware.base._CachedRequest.wrapped_receive
+  ordinal: 0
+  role: caller

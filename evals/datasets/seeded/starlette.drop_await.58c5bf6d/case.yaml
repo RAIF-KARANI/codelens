@@ -1,0 +1,20 @@
+id: starlette.drop_await.58c5bf6d
+kind: seeded
+split: test
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: drop_await
+file: starlette/responses.py
+function: starlette.responses.StreamingResponse.__call__
+description: Removed `await` before `self.stream_response(send)`, an async function
+expected:
+- file: starlette/responses.py
+  line_start: 263
+  line_end: 263
+  category: concurrency
+  severity: critical
+oracle:
+- qualified_name: starlette.responses.StreamingResponse.stream_response
+  ordinal: 0
+  role: callee

@@ -1,0 +1,21 @@
+id: click.reorder_params.c422ca85
+kind: seeded
+split: dev
+source: click
+sha: 2247b35ea1c47c727d7a06e51fa280e12a863ff6
+language: python
+operator: reorder_params
+file: src/click/shell_completion.py
+function: click.shell_completion.shell_complete
+description: Swapped parameters `prog_name` and `complete_var`; callers pass both
+  by position
+expected:
+- file: src/click/shell_completion.py
+  line_start: 22
+  line_end: 23
+  category: api-contract
+  severity: warning
+oracle:
+- qualified_name: click.core.Command._main_shell_completion
+  ordinal: 0
+  role: caller

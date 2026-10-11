@@ -1,0 +1,20 @@
+id: h3.reorder_params.616fa365
+kind: seeded
+split: test
+source: h3
+sha: 66cfb8a357b6285451bad498c2c40002601fae98
+language: typescript
+operator: reorder_params
+file: src/rules/internal/scope.ts
+function: src/rules/internal/scope:isCanonicalInScope
+description: Swapped parameters `canonical` and `base`; callers pass both by position
+expected:
+- file: src/rules/internal/scope.ts
+  line_start: 212
+  line_end: 212
+  category: api-contract
+  severity: warning
+oracle:
+- qualified_name: src/rules/internal/scope:isEveryCanonicalReadingInScope
+  ordinal: 0
+  role: caller

@@ -1,0 +1,30 @@
+id: starlette.raise_to_none.094706cc
+kind: seeded
+split: dev
+source: starlette
+sha: 96d5023c55b29224edb8d684868c49f681d079a9
+language: python
+operator: raise_to_none
+file: starlette/routing.py
+function: starlette.routing.compile_path
+description: '`raise ValueError(f"Duplicated param name{ending} {names} at path {path}")`
+  became `return None`; callers use the result'
+expected:
+- file: starlette/routing.py
+  line_start: 153
+  line_end: 153
+  category: bug
+  severity: critical
+oracle:
+- qualified_name: starlette.routing.Host.__init__
+  ordinal: 0
+  role: caller
+- qualified_name: starlette.routing.Mount.__init__
+  ordinal: 0
+  role: caller
+- qualified_name: starlette.routing.Route.__init__
+  ordinal: 0
+  role: caller
+- qualified_name: starlette.routing.WebSocketRoute.__init__
+  ordinal: 0
+  role: caller

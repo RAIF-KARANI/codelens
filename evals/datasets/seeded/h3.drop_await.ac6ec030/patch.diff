@@ -1,0 +1,11 @@
+--- a/src/utils/internal/validate.ts
++++ b/src/utils/internal/validate.ts
+@@ -175,7 +175,7 @@
+     }
+   }
+ 
+-  const validatedQuery = await validateSource(
++  const validatedQuery = validateSource(
+     "query",
+     query,
+     validate.query as StandardSchemaV1<Record<string, string | string[]>>,

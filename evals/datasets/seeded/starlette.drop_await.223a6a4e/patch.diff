@@ -1,0 +1,11 @@
+--- a/starlette/websockets.py
++++ b/starlette/websockets.py
+@@ -157,7 +157,7 @@
+     async def iter_bytes(self) -> AsyncIterator[bytes]:
+         try:
+             while True:
+-                yield await self.receive_bytes()
++                yield self.receive_bytes()
+         except WebSocketDisconnect:
+             pass
+ 
