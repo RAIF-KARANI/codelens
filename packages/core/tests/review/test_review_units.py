@@ -285,3 +285,55 @@ def test_test_files_count_less_when_chunks_are_capped() -> None:
 
     assert kept(0.25) == ["shop/pricing.py"]  # 2 > 7 * 0.25
     assert kept(1.0) == ["tests/test_pricing.py"]  # unweighted, the bigger test diff wins
+
+
+# ---------------------------------------------------------------- anchoring (Q11)
+
+
+def test_anchoring_off_by_default_keeps_b0_behaviour() -> None:
+    chunk = pricing_chunk()  # added lines 2-3
+
+    [checked] = validate(
+        [(chunk, [finding(line_start=5, line_end=5, evidence=[])])], ValidationConfig()
+    )
+
+    assert (checked.status, checked.drop_reason) == (FindingStatus.DROPPED, "not_on_changed_lines")
+    assert checked.anchored_from is None
+
+
+def test_anchor_window_snaps_a_near_miss_and_drops_a_far_one() -> None:
+    chunk = pricing_chunk()  # added lines 2-3
+    config = ValidationConfig(anchor_window=3)
+    raw = [
+        finding(line_start=6, line_end=6, evidence=[]),  # 3 below line 3: snapped
+        finding(line_start=7, line_end=8, evidence=[], category=Category.MAINTAINABILITY),
+        finding(line_start=1, line_end=1, evidence=[], category=Category.API_CONTRACT),  # 1 above 2
+    ]
+
+    near, far, above = validate([(chunk, raw)], config)
+
+    assert (near.status, near.line_start, near.line_end, near.anchored_from) == (
+        FindingStatus.POSTED,
+        3,
+        3,
+        (6, 6),
+    )
+    assert (far.status, far.drop_reason) == (FindingStatus.DROPPED, "not_on_changed_lines")
+    assert (above.line_start, above.anchored_from) == (2, (1, 1))
+
+
+def test_deletion_borders_anchor_findings_about_a_removed_guard() -> None:
+    old = "def area(box):\n    if box is None:\n        return 0\n    return box.w * box.h\n"
+    new = "def area(box):\n    return box.w * box.h\n"
+    change = file_change("shop/geo.py", old, new)
+    chunks, _ = build_chunks(
+        ChangeSet("base", "head", (change,)), list(change.seeds), {}, PackingConfig()
+    )
+    about_guard = finding(file_path="shop/geo.py", line_start=2, line_end=2, evidence=[])
+
+    [without] = validate([(chunks[0], [about_guard])], ValidationConfig())
+    [with_borders] = validate([(chunks[0], [about_guard])], ValidationConfig(anchor_deletions=True))
+
+    # The diff adds no line at all: B0 can never post this.
+    assert without.drop_reason == "not_on_changed_lines"
+    assert (with_borders.status, with_borders.anchored_from) == (FindingStatus.POSTED, None)

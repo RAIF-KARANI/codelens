@@ -25,6 +25,57 @@ python -m evals.report evals/results/<run> --baseline evals/results/<baseline-ru
 | Code | `main` @ `9992f7f`, plus the step 5 worktree-path fix. That fix is runner plumbing and does not affect what is reviewed |
 | Runs | 2026-10-11, A0 then B0. 0 errors, 0 failed reviews |
 
+**Current default** (`configs/pipeline/default.yaml`): B0 + A1 anchoring.
+
+| Step | Upgrade | Test F1 vs predecessor (paired 95% CI) | Decision |
+|---|---|---|---|
+| Phase 4 step 1 | A1 anchoring | 0.654 → **0.767**, +0.113 [+0.040, +0.194] | **adopted** |
+
+---
+
+## Phase 4 step 1: A1 anchoring (Q11), adopted
+
+**What changed:** validation only. Prompts, retrieval and model calls are identical to B0.
+- **`anchor_window: 3`:** a finding up to 3 lines off a changed line is moved onto the nearest one, instead of being dropped.
+- **`anchor_deletions: true`:** the lines on either side of a pure deletion count as changed lines.
+
+Configs: `b0_anchor.yaml`, plus `a0_anchor.yaml` for reference.
+
+**Dev check first (D76, 41 cases):**
+- F1 rose from 0.704 to 0.814, +0.110 [+0.034, +0.219].
+- Recall rose from 0.792 to 1.000.
+- Noise and counterfactual false alarms were unchanged.
+- Raw model output was identical in 40 of 41 cases, so the delta is anchoring alone.
+
+### Test split (83 cases, paired against the baselines above)
+
+| metric | B0 | B0 + A1 | Δ (95% CI) | A0 | A0 + A1 | Δ (95% CI) |
+|---|---|---|---|---|---|---|
+| **F1** | 0.654 | **0.767** | **+0.113 [+0.040, +0.194]** | 0.741 | **0.821** | +0.080 [+0.026, +0.145] |
+| precision | 0.603 | 0.648 | +0.044 [−0.013, +0.100] | 0.678 | 0.706 | +0.028 |
+| recall | 0.714 | **0.939** | +0.225 [+0.111, +0.349] | 0.816 | 0.980 | +0.163 |
+| critical recall | 0.828 | 0.931 | +0.103 | 0.966 | 1.000 | +0.035 |
+| noise per clean PR | 0.438 | 0.438 | 0.000 | 0.312 | 0.312 | 0.000 |
+| false alarms per counterfactual | 0.944 | 1.000 | +0.056 | 1.000 | 1.000 | 0.000 |
+| matches lost to validation | 11 | **0** | | 7 | 0 | |
+| latency p50 / p95 | 14.3 / 30.2 s | 13.1 / 23.5 s | | 6.1 / 9.4 s | 4.7 / 5.7 s | |
+
+**The gate is passed** (F1 CI above 0, noise unchanged), so A1 is adopted into `default.yaml`.
+
+- **`remove_guard` went from 0 to 7 of 8.** The deletion borders made the model's existing findings postable.
+- **Snapping moved 8 findings: 5 real catches and 3 false positives.** The false positives were on counterfactuals; the snapped findings there are the same "parameter removed" claims the model makes on the seeded twins.
+- **Raw model output was identical to the B0 run in 77 of 83 cases.** The 6 that differ are all click cases, from the earlier interrupted run and a since-rebuilt `eval-cf/click` index. So almost all of the delta is anchoring.
+
+### Does retrieval earn its cost now? Not yet (D80)
+
+| metric | A0 + A1 | B0 + A1 | B0 − A0, paired 95% CI |
+|---|---|---|---|
+| F1 | 0.821 | 0.767 | **−0.054 [−0.110, −0.012]** |
+| precision | 0.706 | 0.648 | −0.058 [−0.112, −0.014] |
+| recall | 0.980 | 0.939 | −0.041 [−0.111, 0.000] |
+
+With anchoring on both sides, retrieved context still costs F1, now mostly through precision. Both configs flag every counterfactual (1.0 false alarms per case), so B0 doesn't yet use the safe callers it retrieves. That is Phase 4 step 2 (Q12 diff rendering, Q13 context use).
+
 ---
 
 ## Baselines (test split)

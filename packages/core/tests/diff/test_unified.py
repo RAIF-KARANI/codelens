@@ -216,3 +216,28 @@ def test_preamble_is_ignored() -> None:
     )
 
     assert diff.path == "m.py" and diff.added_lines() == {1}
+
+
+def test_deletion_borders_are_the_lines_around_pure_deletions() -> None:
+    text = dedent(
+        """\
+        --- a/m.py
+        +++ b/m.py
+        @@ -1,9 +1,7 @@
+         def f(x):
+        -    if x is None:
+        -        return 0
+             y = x.y
+        -    z = 1
+        +    z = 2
+             return y + z
+         def g():
+             pass
+        """
+    )
+    [diff] = parse_unified_diff(text)
+
+    # The guard (old 2-3) went with nothing in its place: new lines 1 and 2
+    # border it. `z = 1` -> `z = 2` is a replacement: its added line anchors it.
+    assert diff.deletion_borders() == {1, 2}
+    assert diff.added_lines() == {3}

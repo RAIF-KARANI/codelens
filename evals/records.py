@@ -30,6 +30,7 @@ class Prediction(BaseModel):
     title: str
     status: FindingStatus
     drop_reason: str | None = None
+    anchored_from: tuple[int, int] | None = None  # the model's lines, if validation moved it
 
 
 class Retrieved(BaseModel):

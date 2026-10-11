@@ -1,0 +1,9 @@
+# Phase 4 step 1 reference: A0 (diff only) + the same anchoring as b0_anchor.
+# Anchoring doesn't depend on retrieval, so judging whether retrieval earns its
+# cost after this step (D80) means comparing b0_anchor with this, not with A0.
+name: a0_anchor
+retrieval:
+  enabled: false
+validation:
+  anchor_window: 3
+  anchor_deletions: true

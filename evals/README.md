@@ -10,7 +10,7 @@ baselines in [`RESULTS.md`](RESULTS.md).
 
 ```bash
 docker compose up -d postgres redis          # and Ollama running natively
-python -m evals.run --config configs/pipeline/b0.yaml             # dev split (default)
+python -m evals.run --config configs/pipeline/default.yaml        # dev split (default)
 python -m evals.run --config configs/pipeline/b0.yaml --split test --name b0-test
 python -m evals.run ... --operator drop_await --limit 5           # a quick slice
 python -m evals.run ... --name b0-test --resume                   # after an interruption

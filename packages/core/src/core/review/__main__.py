@@ -1,7 +1,7 @@
 """Review a local branch end to end and print the findings.
 
     python -m core.review <repo_path> --base main [--head HEAD]
-                          [--repo-name local/x] [--config configs/pipeline/b0.yaml]
+                          [--repo-name local/x] [--config configs/pipeline/default.yaml]
 
 The repo must already be indexed (core.index) and, for retrieved context,
 embedded (core.embed). Everything is recorded: reviews, findings (posted and
@@ -21,7 +21,7 @@ from core.providers import ProviderError, open_providers
 from core.review.config import PipelineConfig
 from core.review.pipeline import ReviewError, ReviewResult, run_review
 
-DEFAULT_CONFIG = Path("configs/pipeline/b0.yaml")
+DEFAULT_CONFIG = Path("configs/pipeline/default.yaml")  # B0 + adopted upgrades
 
 
 async def _run(args: argparse.Namespace, config: PipelineConfig) -> ReviewResult:

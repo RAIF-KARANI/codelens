@@ -180,6 +180,7 @@ def to_record(case: Case, result: ReviewResult, seconds: float) -> CaseRecord:
             title=c.finding.title,
             status=c.status,
             drop_reason=c.drop_reason,
+            anchored_from=c.anchored_from,
         )
         for c in result.findings
     ]
