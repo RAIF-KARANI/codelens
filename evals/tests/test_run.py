@@ -16,9 +16,9 @@ from core.db import create_engine
 from core.providers import Message, Providers
 from core.providers.fake import FakeEmbedder, FakeLLM
 from core.review.config import PipelineConfig
-from evals.records import load_run
+from evals.records import CaseRecord, append_case, load_run
 from evals.report import write_scorecard
-from evals.run import case_commits, prepare_source, run_cases, select_cases
+from evals.run import case_commits, case_fields, pending, prepare_source, run_cases, select_cases
 from evals.tests.toy import generate, git, make_toy_source
 
 pytestmark = pytest.mark.integration
@@ -155,3 +155,19 @@ def _run_json(cases: int) -> str:
         '"temperature": 0.1, "seed": 42, "codelens_commit": null, "dataset_hash": "x", '
         f'"cases": {cases}, "filters": {{}}, "started_at": "now"}}'
     )
+
+
+def test_pending_retries_failures_only_when_asked(tmp_path: Path) -> None:
+    source = make_toy_source(tmp_path / "upstream")
+    generate(source, tmp_path / "checkouts", tmp_path / "dataset")
+    first, second, third = select_cases(tmp_path / "dataset")[:3]
+    cases = [first, second, third]
+    out = tmp_path / "run"
+    out.mkdir()
+    (out / "run.json").write_text(_run_json(3), encoding="utf-8")
+    append_case(out, CaseRecord(**case_fields(first[0]), status="completed"))
+    append_case(out, CaseRecord(**case_fields(second[0]), status="failed"))  # e.g. a timeout
+
+    assert [c.id for c, _ in pending(cases, out)] == [third[0].id]
+    retried = pending(cases, out, retry_failed=True)
+    assert [c.id for c, _ in retried] == [second[0].id, third[0].id]

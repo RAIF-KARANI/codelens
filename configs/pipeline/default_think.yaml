@@ -1,0 +1,30 @@
+# Phase 4 step 3 ablation (U6, Q14): the default + Qwen3 thinking mode.
+# Thinking tokens count against num_predict and the 8k window, so the output
+# reserve grows from 1500 to 3000: a probe on 8 dev cases measured 551-2157
+# output tokens (thinking + JSON), none truncated at 3500. The bigger reserve
+# shrinks the prompt budget, which is part of what is being measured.
+# Measured against default.yaml in evals/RESULTS.md.
+name: default_think
+retrieval:
+  enabled: true
+  vector_k: 8
+  max_seeds: 24
+packing:
+  diff_share: 0.4
+  changed_share: 0.25
+  context_share: 0.35
+  diff_tokens: 4000
+  changed_node_tokens: 3500
+  context_tokens: 4000
+  max_chunks: 4
+  degrade_to_signature: true
+  test_file_weight: 0.25
+generation:
+  think: true
+  max_output_tokens: 3000
+  max_findings_per_chunk: 8
+validation:
+  min_confidence: 0.6
+  max_comments: 5
+  anchor_window: 3
+  anchor_deletions: true

@@ -198,17 +198,30 @@ def render_markdown(card: dict[str, Any]) -> str:
 
 
 def write_scorecard(
-    directory: Path, *, baseline: Path | None = None, resamples: int = 1000
+    directory: Path,
+    *,
+    baseline: Path | None = None,
+    resamples: int = 1000,
+    completed_only: bool = False,
 ) -> Path:
+    """Score a run (optionally against a baseline) and write scorecard.{json,md}.
+
+    completed_only: keep only cases every run involved reviewed successfully.
+    A failed review posts nothing, which on a clean or counterfactual case
+    looks like a correct "no finding"; this view removes that flattery. It is
+    written as scorecard-completed.{json,md} beside the full one."""
     info, records = load_run(directory)
-    card = build_scorecard(
-        info,
-        records,
-        baseline=load_run(baseline) if baseline else None,
-        resamples=resamples,
-    )
-    (directory / "scorecard.json").write_text(json.dumps(card, indent=2), encoding="utf-8")
-    path = directory / "scorecard.md"
+    base = load_run(baseline) if baseline else None
+    if completed_only:
+        keep = {r.case_id for r in records if r.status == "completed"}
+        if base is not None:
+            keep &= {r.case_id for r in base[1] if r.status == "completed"}
+            base = (base[0], [r for r in base[1] if r.case_id in keep])
+        records = [r for r in records if r.case_id in keep]
+    card = build_scorecard(info, records, baseline=base, resamples=resamples)
+    stem = "scorecard-completed" if completed_only else "scorecard"
+    (directory / f"{stem}.json").write_text(json.dumps(card, indent=2), encoding="utf-8")
+    path = directory / f"{stem}.md"
     path.write_text(render_markdown(card), encoding="utf-8", newline="\n")
     return path
 
@@ -245,8 +258,18 @@ def main() -> None:
     parser.add_argument("run", type=Path, help="results directory of the run")
     parser.add_argument("--baseline", type=Path, help="results directory to compare against")
     parser.add_argument("--resamples", type=int, default=1000)
+    parser.add_argument(
+        "--completed-only",
+        action="store_true",
+        help="only cases every run reviewed successfully (failed reviews post nothing)",
+    )
     args = parser.parse_args()
-    path = write_scorecard(args.run, baseline=args.baseline, resamples=args.resamples)
+    path = write_scorecard(
+        args.run,
+        baseline=args.baseline,
+        resamples=args.resamples,
+        completed_only=args.completed_only,
+    )
     print(path.read_text(encoding="utf-8"))
 
 

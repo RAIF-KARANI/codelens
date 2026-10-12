@@ -2,7 +2,7 @@
 
     python -m evals.run --config configs/pipeline/b0.yaml [--split dev|test|all]
                         [--operator OP ...] [--case ID ...] [--limit N]
-                        [--name NAME] [--resume]
+                        [--name NAME] [--resume [--retry-failed]]
 
 For each source the selected cases use: check out the pinned commit, then index
 and embed it as `eval/<source>` (incremental, so a no-op after the first run).
@@ -199,7 +199,7 @@ def to_record(case: Case, result: ReviewResult, seconds: float) -> CaseRecord:
             )
     ranked = sorted(best.items(), key=lambda kv: (-kv[1].similarity, kv[0]))
     return CaseRecord(
-        **_case_fields(case),
+        **case_fields(case),
         status="completed" if result.status.value == "completed" else "failed",
         review_id=result.review_id,
         seconds=seconds,
@@ -212,7 +212,7 @@ def to_record(case: Case, result: ReviewResult, seconds: float) -> CaseRecord:
     )
 
 
-def _case_fields(case: Case) -> dict[str, object]:
+def case_fields(case: Case) -> dict[str, object]:
     return {
         "case_id": case.id,
         "kind": case.kind,
@@ -222,6 +222,14 @@ def _case_fields(case: Case) -> dict[str, object]:
         "expected": case.expected,
         "oracle": case.oracle,
     }
+
+
+def pending(cases: Selected, out: Path, *, retry_failed: bool = False) -> Selected:
+    """The cases `out` has no record for yet; with `retry_failed`, also those
+    whose latest record failed or errored (their new record will replace it)."""
+    retry = {"failed", "error"} if retry_failed else set()
+    done = {r.case_id for r in load_run(out)[1] if r.status not in retry}
+    return [(c, p) for c, p in cases if c.id not in done]
 
 
 async def run_cases(
@@ -234,11 +242,14 @@ async def run_cases(
     context_window: int,
     out: Path,
     embed_max_tokens: int = 1024,
+    retry_failed: bool = False,
     say: Callable[[str], None] = _say,
 ) -> None:
-    """Review each case and append its record. Cases already in `out` are skipped."""
-    done = {r.case_id for r in load_run(out)[1]}
-    todo = [(c, p) for c, p in cases if c.id not in done]
+    """Review each case and append its record. Cases already in `out` are
+    skipped, except failed or errored ones when `retry_failed` (e.g. after an
+    Ollama timeout): their new record is appended, and the last one counts."""
+    todo = pending(cases, out, retry_failed=retry_failed)
+    done = len(cases) - len(todo)
     errors_in_a_row = 0
     for n, (case, patch) in enumerate(todo, 1):
         source = prepared[case.source]
@@ -266,7 +277,7 @@ async def run_cases(
             errors_in_a_row = 0
         except (ReviewError, ProviderError, GitError, subprocess.CalledProcessError) as exc:
             record = CaseRecord(
-                **_case_fields(case),
+                **case_fields(case),
                 status="error",
                 error=f"{type(exc).__name__}: {exc}",
                 seconds=time.perf_counter() - started,
@@ -278,7 +289,7 @@ async def run_cases(
             f"tp {score.tp} fp {score.fp}" if score.kind == "seeded" else f"posted {score.posted}"
         )
         say(
-            f"[{len(done) + n}/{len(cases)}] {case.id:<44} {record.status:<9} "
+            f"[{done + n}/{len(cases)}] {case.id:<44} {record.status:<9} "
             f"{record.seconds:5.1f}s  {verdict}" + (f"  {record.error}" if record.error else "")
         )
         if errors_in_a_row >= _MAX_CONSECUTIVE_ERRORS:
@@ -369,6 +380,7 @@ async def _main(args: argparse.Namespace) -> Path:
                 context_window=settings.llm_num_ctx,
                 out=out,
                 embed_max_tokens=settings.embed_max_tokens,
+                retry_failed=args.retry_failed,
             )
     finally:
         await engine.dispose()
@@ -384,6 +396,11 @@ def main() -> None:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--name", help="results directory name (default <config>-<split>-<time>)")
     parser.add_argument("--resume", action="store_true", help="continue an interrupted run")
+    parser.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="with --resume: run failed/errored cases again (e.g. after a timeout)",
+    )
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     parser.add_argument("--results", type=Path, default=DEFAULT_RESULTS)
     parser.add_argument("--sources", type=Path, default=DEFAULT_SOURCES)
