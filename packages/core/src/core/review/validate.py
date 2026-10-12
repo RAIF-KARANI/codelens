@@ -7,6 +7,7 @@
   low_confidence         below config.min_confidence
   duplicate              same fingerprint as a higher-confidence finding
   over_cap               beyond config.max_comments (severity, then confidence)
+  verified_safe          (later, in verify.py) its callers show it can't happen
 
 Dropped findings are kept with their reason, for traces and evals.
 
@@ -60,7 +61,7 @@ def validate(
     checked = [
         item
         if item.status is not FindingStatus.POSTED or best[item.fingerprint] is item
-        else _drop(item, "duplicate")
+        else drop(item, "duplicate")
         for item in checked
     ]
 
@@ -70,7 +71,7 @@ def validate(
         key=lambda i: (_SEVERITY_ORDER[i.finding.severity], -i.finding.confidence),
     )
     over = {id(i) for i in posted[config.max_comments :]}
-    return [_drop(i, "over_cap") if id(i) in over else i for i in checked]
+    return [drop(i, "over_cap") if id(i) in over else i for i in checked]
 
 
 def _check_one(chunk: ReviewChunk, finding: FindingOut, config: ValidationConfig) -> CheckedFinding:
@@ -116,7 +117,8 @@ def _nearest(anchors: set[int], start: int, end: int, window: int) -> int | None
     return best if distance(best) <= window else None
 
 
-def _drop(item: CheckedFinding, reason: str) -> CheckedFinding:
+def drop(item: CheckedFinding, reason: str) -> CheckedFinding:
+    """The same finding, dropped for `reason`."""
     return CheckedFinding(
         item.finding,
         item.chunk_index,

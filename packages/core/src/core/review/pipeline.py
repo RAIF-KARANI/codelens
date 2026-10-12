@@ -34,6 +34,7 @@ from core.review.recorder import ReviewRecorder
 from core.review.retrieval import retrieve_for_seeds, select_seeds
 from core.review.schemas import FindingOut, ReviewOut
 from core.review.validate import CheckedFinding, validate
+from core.review.verify import verify_findings
 from core.text.tokens import estimate_tokens
 
 
@@ -257,6 +258,17 @@ async def run_review(
             seconds["generate"] = time.perf_counter() - started
 
             checked = validate(raw, config.validation)
+            if config.verification.enabled:
+                checked, spent = await verify_findings(
+                    conn,
+                    providers.llm,
+                    repo_id=repo_id,
+                    chunks=chunks,
+                    checked=checked,
+                    config=config.verification,
+                    event=recorder.event,
+                )
+                usage += spent
             await recorder.context(chunks)
             await recorder.findings(checked)
             status = (

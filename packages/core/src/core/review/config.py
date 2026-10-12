@@ -11,6 +11,8 @@ from typing import Literal, Self
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from core.review.schemas import Category
+
 
 class _Section(BaseModel):
     # A typo in a YAML key must fail loudly, not silently fall back to a default.
@@ -112,12 +114,25 @@ class ValidationConfig(_Section):
     )
 
 
+class VerificationConfig(_Section):
+    """Q16b, verify.py: one narrow call per caller-dependent finding, against
+    the changed function's callers from the graph. Off = B0."""
+
+    enabled: bool = False
+    # The reviewer labels API breaks "bug" far more often than "api-contract".
+    categories: list[Category] = [Category.BUG, Category.API_CONTRACT, Category.ERROR_HANDLING]
+    max_callers: int = Field(default=8, ge=1)
+    max_caller_lines: int = Field(default=40, ge=1)
+    max_output_tokens: int = Field(default=300, gt=0)
+
+
 class PipelineConfig(_Section):
     name: str = "b0"
     retrieval: RetrievalConfig = RetrievalConfig()
     packing: PackingConfig = PackingConfig()
     generation: GenerationConfig = GenerationConfig()
     validation: ValidationConfig = ValidationConfig()
+    verification: VerificationConfig = VerificationConfig()
 
     @classmethod
     def from_yaml(cls, path: Path) -> Self:

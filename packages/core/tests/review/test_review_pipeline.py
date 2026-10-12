@@ -20,8 +20,15 @@ from core.enums import ReviewStatus
 from core.indexing import index_repository
 from core.providers import Message, Providers, StructuredOutputError
 from core.providers.fake import FakeEmbedder, FakeLLM
-from core.review.config import GenerationConfig, PipelineConfig, RetrievalConfig
+from core.review.config import (
+    GenerationConfig,
+    PipelineConfig,
+    RetrievalConfig,
+    VerificationConfig,
+)
 from core.review.pipeline import ReviewError, ReviewResult, run_review
+from core.review.schemas import ReviewOut
+from core.review.verify import VerifyOut
 
 pytestmark = pytest.mark.integration
 
@@ -255,3 +262,34 @@ def test_thinking_that_runs_out_falls_back_to_a_plain_review(
     assert (plain.think, plain.sampling) == (False, {})  # B0's generation settings
     types = [r.type for r in query(migrated_database_url, "SELECT type FROM review_events")]
     assert "think_fallback" in types and "chunk_failed" not in types
+
+
+@pytest.mark.parametrize("still_a_problem", [False, True])
+def test_verification_checks_findings_against_the_real_callers(
+    shop: Path, migrated_database_url: str, still_a_problem: bool
+) -> None:
+    def respond(messages: Sequence[Message], schema: type[BaseModel]) -> dict[str, Any]:
+        if schema is VerifyOut:
+            return {"still_a_problem": still_a_problem, "reason": "see with_tax"}
+        return scripted(messages, schema)
+
+    llm = FakeLLM(responder=respond)
+    config = PipelineConfig(name="verify", verification=VerificationConfig(enabled=True))
+
+    result = review(migrated_database_url, shop, llm, config)
+
+    review_call, verify_call = llm.calls  # one review, one check of the one posted finding
+    assert review_call.schema is ReviewOut
+    assert verify_call.schema is VerifyOut
+    prompt = verify_call.messages[-1].content
+    # The callers come from the graph, every one of them, tests excluded.
+    assert '<caller name="shop.pricing.with_tax"' in prompt
+    assert '<caller name="shop.services.checkout"' in prompt
+    assert "tests/" not in "".join(re.findall(r'path="([^"]+)"', prompt))
+    [first, *_] = result.findings
+    if still_a_problem:
+        assert (first.status.value, first.drop_reason) == ("posted", None)
+    else:
+        assert (first.status.value, first.drop_reason) == ("dropped", "verified_safe")
+    stored = query(migrated_database_url, "SELECT drop_reason FROM findings ORDER BY id")
+    assert stored[0].drop_reason == (None if still_a_problem else "verified_safe")
