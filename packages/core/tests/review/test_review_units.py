@@ -11,7 +11,7 @@ from core.parser.repository import parse_source
 from core.parser.types import ParsedFile
 from core.parser.walker import SourceFile, source_from_content
 from core.review.changes import ChangeSet, FileChange
-from core.review.config import PackingConfig, ValidationConfig
+from core.review.config import GenerationConfig, PackingConfig, ValidationConfig
 from core.review.packing import ReviewChunk, build_chunks, fit_to_window, render_diff
 from core.review.prompts import SYSTEM_PROMPT, build_messages, neutralize
 from core.review.retrieval import Candidate
@@ -381,3 +381,11 @@ def test_caller_rule_is_only_in_the_prompt_when_asked() -> None:
 
     assert plain.content == SYSTEM_PROMPT
     assert checked.content.startswith(SYSTEM_PROMPT) and "calls the changed code" in checked.content
+
+
+def test_generation_sampling_lists_only_the_overrides_that_are_set() -> None:
+    assert GenerationConfig().sampling() == {}
+    assert GenerationConfig(temperature=0.6, top_k=20).sampling() == {
+        "temperature": 0.6,
+        "top_k": 20,
+    }

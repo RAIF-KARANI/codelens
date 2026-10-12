@@ -235,9 +235,11 @@ def test_llm_does_not_repair_truncated_output() -> None:
         calls += 1
         return chat_response('{"findings": [{"title": "Divi', done_reason="length")
 
-    with pytest.raises(StructuredOutputError, match="500-token limit"):
+    with pytest.raises(StructuredOutputError, match="500-token limit") as caught:
         run(llm(handler).generate_structured([Message("user", "u")], Review))
     assert calls == 1
+    # The error says where the tokens went, so a truncation can be diagnosed.
+    assert 'thinking 0 chars, JSON 29 chars ending \'{"findings"' in str(caught.value)
 
 
 # ---------------------------------------------------------------- fakes
@@ -291,3 +293,20 @@ def test_embedder_sends_its_context_size_for_queries_and_documents() -> None:
 
     # Same options both ways: a difference would make Ollama reload the model.
     assert seen[0]["options"] == seen[1]["options"] == {"num_ctx": 2048}
+
+
+def test_sampling_overrides_the_provider_defaults_for_one_call() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(body(request))
+        return chat_response(GOOD)
+
+    provider = llm(handler)
+    sampling = {"temperature": 0.6, "top_p": 0.95, "top_k": 20}
+    run(provider.generate_structured([Message("user", "u")], Review, sampling=sampling))
+    run(provider.generate_structured([Message("user", "u")], Review))
+
+    with_override, default = (s["options"] for s in seen)
+    assert with_override == {**default, **sampling}  # seed and num_ctx kept
+    assert default["temperature"] == 0.1 and "top_p" not in default

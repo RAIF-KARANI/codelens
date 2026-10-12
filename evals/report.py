@@ -55,6 +55,7 @@ def build_scorecard(
             "planned": info.cases,
             "errors": sum(r.status == "error" for r in records),
             "failed_reviews": sum(r.status == "failed" for r in records),
+            "think_fallbacks": sum(r.fallback_chunks for r in records),
         },
         "metrics": {
             name: {"value": _num(v), "ci95": _pair(intervals[name]) if name in intervals else None}
@@ -133,7 +134,8 @@ def render_markdown(card: dict[str, Any]) -> str:
         f"window {card['context_window']}, {cases['seeded']} seeded + "
         f"{cases.get('counterfactual', 0)} counterfactual + {cases['clean']} clean "
         f"cases (of {cases['planned']} planned; {cases['errors']} errors, "
-        f"{cases['failed_reviews']} failed reviews)",
+        f"{cases['failed_reviews']} failed reviews, "
+        f"{cases.get('think_fallbacks', 0)} thinking fallbacks)",
         "",
     ]
     baseline = card.get("baseline")

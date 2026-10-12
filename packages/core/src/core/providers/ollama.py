@@ -10,7 +10,7 @@ API used:
 
 import asyncio
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Self
 
 import httpx
@@ -196,9 +196,14 @@ class OllamaLLM:
         *,
         think: bool = False,
         max_output_tokens: int | None = None,
+        sampling: Mapping[str, float] | None = None,
     ) -> LLMResult[T]:
         conversation = [{"role": m.role, "content": m.content} for m in messages]
-        options = {**self._options, "num_predict": max_output_tokens or self._max_output_tokens}
+        options = {
+            **self._options,
+            **(sampling or {}),
+            "num_predict": max_output_tokens or self._max_output_tokens,
+        }
         usage = Usage()
 
         for attempt in (1, 2):
@@ -221,10 +226,15 @@ class OllamaLLM:
             raw = message.get("content") or ""
 
             if data.get("done_reason") == "length":
-                # Truncated JSON. A repair turn would hit the same limit.
+                # Truncated JSON. A repair turn would hit the same limit. Say
+                # where the tokens went: a long chain of thought, or a JSON
+                # answer that never closes (e.g. endless whitespace).
+                thinking = message.get("thinking") or ""
                 raise StructuredOutputError(
-                    f"output hit the {options['num_predict']}-token limit before the JSON ended",
+                    f"output hit the {options['num_predict']}-token limit before the JSON ended "
+                    f"(thinking {len(thinking)} chars, JSON {len(raw)} chars ending {raw[-60:]!r})",
                     raw,
+                    truncated=True,
                 )
             try:
                 output = schema.model_validate_json(raw)

@@ -81,6 +81,21 @@ class GenerationConfig(_Section):
     # Q13: a prompt rule to check the tagged callers before claiming an API
     # break (pairs with retrieval.tag_relations).
     check_callers: bool = False
+    # Sampling overrides; None = the machine's settings (LLM_TEMPERATURE...).
+    # Thinking needs Qwen's thinking sampling (0.6 / 0.95 / 20): at 0.1 the
+    # chain of thought falls into repetition loops and never answers (D86).
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    top_p: float | None = Field(default=None, gt=0, le=1)
+    top_k: int | None = Field(default=None, ge=1)
+    # With thinking: when the model runs out of output budget (in practice, a
+    # chain of thought looping on itself, D86), review the chunk again without
+    # thinking, with B0's output reserve and sampling, instead of failing it.
+    think_fallback: bool = False
+
+    def sampling(self) -> dict[str, float]:
+        """The overrides that are set, as Ollama options."""
+        values = {"temperature": self.temperature, "top_p": self.top_p, "top_k": self.top_k}
+        return {k: v for k, v in values.items() if v is not None}
 
 
 class ValidationConfig(_Section):
