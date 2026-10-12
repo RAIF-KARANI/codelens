@@ -8,7 +8,8 @@ severity-graded review findings.
 > **Status:** Phases 1–4 done: the indexer, the review pipeline, the eval harness and the
 > measured upgrades ([`evals/RESULTS.md`](evals/RESULTS.md)). Phase 5 (GitHub App) is in
 > progress: background jobs and the first API endpoints. The plan of record is
-> [`planning.md`](planning.md).
+> [`planning.md`](planning.md); how the system works today, component by component, is in
+> [`architecture.md`](architecture.md).
 
 ## Repository layout
 
