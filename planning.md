@@ -608,6 +608,7 @@ Legend: ✅ exists · 🔜 next · 📋 planned (phase).
 codelens/
 ├── idea.md                         ✅ vision & design narrative
 ├── planning.md                     ✅ this file: plan of record
+├── architecture.md                 ✅ how the system works now (as built)
 ├── README.md                       ✅ setup & usage
 ├── pyproject.toml / uv.lock        ✅ uv workspace, ruff, pytest
 ├── docker-compose.yml              ✅ postgres, redis, migrate, api, worker (+ reranker 📋4)
