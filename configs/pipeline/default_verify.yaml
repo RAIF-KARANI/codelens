@@ -1,0 +1,31 @@
+# Phase 4 step 4 (Q16b): the default + a verification pass. Each posted
+# finding labelled bug / api-contract / error-handling gets one narrow call
+# with only the finding, its file's diff and the changed function's callers
+# from the graph; a clear "the callers show this can't happen" drops it
+# (verified_safe). Measured against default.yaml in evals/RESULTS.md.
+name: default_verify
+retrieval:
+  enabled: true
+  vector_k: 8
+  max_seeds: 24
+packing:
+  diff_share: 0.4
+  changed_share: 0.25
+  context_share: 0.35
+  diff_tokens: 4000
+  changed_node_tokens: 3500
+  context_tokens: 4000
+  max_chunks: 4
+  degrade_to_signature: true
+  test_file_weight: 0.25
+generation:
+  think: false
+  max_output_tokens: 1500
+  max_findings_per_chunk: 8
+validation:
+  min_confidence: 0.6
+  max_comments: 5
+  anchor_window: 3
+  anchor_deletions: true
+verification:
+  enabled: true

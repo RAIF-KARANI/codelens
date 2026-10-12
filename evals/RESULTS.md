@@ -36,6 +36,38 @@ python -m evals.report evals/results/<run> --baseline evals/results/<baseline-ru
 | Phase 4 step 3 | U6 thinking (output reserve 3000) | dev +0.092 [+0.030, +0.165]; **test +0.050 [−0.035, +0.138]**, 13% of reviews truncated | not adopted |
 | Phase 4 step 3b | thinking at 16k, Qwen sampling (0.6) | dev −0.021 [−0.115, +0.069], 0 failures | rejected on dev |
 | Phase 4 step 3b | thinking at 16k, temp 0.1 + fallback | dev +0.008 [−0.050, +0.061], 0 failures, 7 fallbacks | rejected on dev |
+| Phase 4 step 4 | verification pass (Q16b) | dev +0.038 [−0.041, +0.101]; **test +0.026 [−0.048, +0.104]**, recall −0.082 | rejected; **Phase 4 closed** |
+
+---
+
+## Phase 4 step 4: a verification pass (Q16b), rejected; Phase 4 closed
+
+**What changed** (`verify.py`, `default_verify.yaml`; off by default): after validation, each posted finding labelled `bug`, `api-contract` or `error-handling` gets **one narrow second call**.
+- **What the call sees:** the finding, its file's diff, and the changed function's callers. The callers come **from the graph's `calls` edges** (not similarity search), tests excluded, at most 8 callers of up to 40 lines each.
+- **The question:** do these callers show the problem cannot happen?
+- **The rule:** only a clear "yes" drops the finding (`verified_safe`). With no known caller, or if the call fails, the finding stands.
+- **Why those categories:** the reviewer labels its counterfactual false alarms `bug` (17 of 18), not `api-contract`.
+
+**A schema lesson.** In the first dev run, the verifier never said "safe" (31 of 31 confirmed). Its reasons showed why: with the verdict field *first*, the model commits to `true` before reasoning, then writes, for example, *"the calling code is already handling the new `RuntimeError`"*. That's right, but it's after its own wrong verdict. Ollama's grammar generates fields in schema order, so `reason` now comes first and the verdict last (D87).
+
+### Results (paired against the default)
+
+| metric | dev, verdict first | dev, reason first | **test, reason first** |
+|---|---|---|---|
+| F1 Δ | +0.014 | +0.038 [−0.041, +0.101] | **+0.026 [−0.048, +0.104]** |
+| precision Δ | +0.020 | +0.081 [+0.004, +0.170] | +0.089 [+0.006, +0.176] |
+| recall Δ | 0 | −0.042 | **−0.082** (6 real bugs cleared) |
+| false alarms per counterfactual | 1.00 | 0.67 | 0.72 |
+| latency p50 / p95 | 21 / 25 s | 19 / 25 s | 19 / 30 s |
+
+**Rejected (D87).** The verifier does clear safe counterfactuals using the real callers, the first non-thinking config to do so. But it clears real bugs at the same rate: of the reordered parameters on test, it dropped **4 of 8 real bugs and 3 of 8 safe twins**. qwen3:8b can't tell a safe call from a breaking one even with only the callers in front of it.
+
+### Phase 4 in one paragraph
+
+Retrieval, prompting, rendering, thinking, a 16k window and a narrow verification call were each measured against the same 83 test cases.
+- **One upgrade was adopted:** anchoring (F1 0.654 → 0.767), which fixes how findings are placed.
+- **Everything aimed at making qwen3:8b reason over context failed the gate.** These changes moved precision or noise without a significant F1 gain: caller tags, the split diff, thinking (at 8k and at 16k with fallback), and verification. The 8B model reacts to the shape of a diff, and the evidence that would clear it doesn't change its verdict reliably.
+- **What's left,** for later: a stronger model (Q2), and the retrieval upgrades U1–U5. Those should be re-measured with whichever model can use their context.
 
 ---
 

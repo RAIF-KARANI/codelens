@@ -5,8 +5,8 @@
 > two disagree, **this file wins**. It supersedes `idea.md` §14 (roadmap) and adds
 > decisions D18+.
 
-**Last updated:** 2026-10-11 · **Current position:** Phases 1–3 complete; Phase 4 steps 1–3 done: anchoring adopted (test F1 0.767),
-split diff / caller context / thinking (8k and 16k) rejected (D83, D85, D86). Next: decide Q16 (how to continue Phase 4).
+**Last updated:** 2026-10-11 · **Current position:** Phases 1–4 complete. Phase 4 adopted anchoring (test F1 0.654 → 0.767); every
+change aimed at making qwen3:8b reason over context was rejected (D83, D85–D87). Next: Phase 5 (GitHub App).
 
 ---
 
@@ -724,11 +724,12 @@ come first; the retrieval upgrades follow, once better context can pay off.
 | 1 ✅ | A1 anchoring (Q11): snap near-miss findings to the nearest changed line; lines bordering a pure deletion are anchors | `validation.anchor_window`, `anchor_deletions`; `b0_anchor.yaml`, `a0_anchor.yaml`, `default.yaml`. **Adopted:** test F1 +0.113 [+0.040, +0.194] (D82) |
 | 2 ✅ | Diff rendering (Q12) and context use (Q13): render hunks so moved lines aren't read as duplicates; prompt the model to check callers before claiming an API break | `packing.diff_style`, `retrieval.tag_relations`, `generation.check_callers` (all default off). **Both rejected** (D83) |
 | 3 ✅ | U6 thinking mode (moved up; Q14 answered), at 8k and 16k (Q15) | `default_think.yaml`, `default_think16k*.yaml`; `generation.temperature/top_p/top_k`, `think_fallback`; `--retry-failed`; `report --completed-only`. **Not adopted** (D85, D86) |
-| 4 | U1 FTS + RRF | `identifiers.py`, tsv builder, fusion SQL, `--mode fts/hybrid` |
-| 5 | U2 graph expansion | Recursive CTE, hub control, graph-based fused list |
-| 6 | U3 reranker | `services/reranker`, compose service, HTTP client, blend weights |
-| 7 | U4 centrality prior | PageRank job, score term |
-| 8 | U5 anti-patterns | YAML library + sync + retrieval + `[AP]` citations |
+| 4 ✅ | Verification pass (Q16b): one narrow call per caller-dependent finding, with the graph's callers | `review/verify.py`, `verification` config, `default_verify.yaml`. **Rejected** (D87); Phase 4 closed here (Q16d) |
+| later | U1 FTS + RRF | `identifiers.py`, tsv builder, fusion SQL, `--mode fts/hybrid` |
+| later | U2 graph expansion | Recursive CTE, hub control, graph-based fused list |
+| later | U3 reranker | `services/reranker`, compose service, HTTP client, blend weights |
+| later | U4 centrality prior | PageRank job, score term |
+| later | U5 anti-patterns | YAML library + sync + retrieval + `[AP]` citations |
 
 Every step ends by running the eval, writing a `RESULTS.md` entry (adopt or reject,
 with numbers), and updating `configs/pipeline/default.yaml`.
@@ -1097,6 +1098,7 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D84 | Latency budget for the adoption gate: **p95 ≤ 10 minutes per review**, wall clock (user's decision, 2026-10-12) | Interactive (p95 ≤ 2 min); no budget | CodeLens posts reviews asynchronously on PR events, like hosted review bots, so minutes are acceptable; a budget is still needed so an upgrade can't trade unbounded time for quality. Latency is measured per eval case (one changed function), so a real multi-file PR scales with its chunk count; Phase 5 re-checks the budget end to end |
 | D85 | Thinking mode (8k window, 3,000-token output reserve) is not adopted; kept as `default_think.yaml` | Adopt on the dev result, or on the completed-only view | Test, paired: F1 +0.050 [−0.035, +0.138] (all cases) and +0.058 [−0.011, +0.136] (72 both completed), so the gate fails either way. 11/83 reviews (13%) ran out of output budget, costing recall −0.122. On completed reviews it is the first change that makes the model use context: precision +0.109, noise 0.44 → 0.06, counterfactual false alarms 1.00 → 0.54, all significant. The fix is room to think (Q15), not a different idea. Failed reviews would flatter a config on counterfactual/clean cases, so `--completed-only` reports the view without them |
 | D86 | Thinking is not adopted at 16k either. Its failures are repetition loops at low temperature (a chain of thought re-reading a moved line forever; 128 completed reviews never exceeded 2,617 tokens), not too small a budget. Qwen's sampling (0.6/0.95/20) stops the loops but loses recall (dev F1 −0.021); temp 0.1 with a 3,500 budget plus `think_fallback` (redo the chunk without thinking) fails nothing but gains nothing (dev +0.008). Kept: per-config sampling, `think_fallback`, truncation errors that say where the tokens went | Keep tuning thinking | Four measurements disagree (8k dev +0.08, 8k test +0.06 n.s., 16k dev ±0.01) at ~4× latency. More GPU hours on thinking at 8B have diminishing returns |
+| D87 | Reject the verification pass; close Phase 4 at anchoring and move to Phase 5; U1–U5 deferred until a model that uses context (Q2) | Keep iterating on 8B prompting | Test, paired: F1 +0.026 [−0.048, +0.104], precision +0.089, recall −0.082. It cleared 4/8 real reorder bugs and 3/8 safe twins, so it cannot tell them apart. Lesson kept: in structured output, the reasoning field must come before the verdict (Ollama generates fields in schema order); verdict-first, it confirmed 31/31 while its own reasons said safe |
 
 ---
 
@@ -1136,7 +1138,7 @@ PR overlay, migrate service, host port 5433). New decisions:
 | Q13 | ~~Caller-aware context?~~ **Answered 2026-10-12: no gain at qwen3:8b** (test +0.006 [−0.056, +0.069]; D83). Was: B0 flags 17/18 counterfactuals even with the safe callers in the prompt (56% of the time). Does a prompt that asks the model to check callers before claiming an API break, or a stronger model (Q2), use the context? | Phase 4 |
 | Q14 | ~~Which lever next?~~ **Answered 2026-10-12: thinking mode first** (user's choice; D85). Was: The 8B model reacts to a diff's shape and ignores the callers that show a change is safe, even tagged and with a rule (D83). Which lever next: U6 thinking mode (a toggle already), Q2 a stronger model (qwen3:14b, partly on CPU), or a verification pass (for each api-contract finding, a short second call with only the change and its callers: "does any caller break?")? | Before Phase 4 step 3 |
 | Q15 | ~~16k window for thinking?~~ **Answered 2026-10-12:** measured (Ollama now runs with flash attention + q8_0 KV); thinking still not adopted (D86). Was: Thinking needs a bigger output reserve than the 8k window can spare (13% of test reviews truncated at 3,000). Run Ollama with flash attention + q8_0 KV (`OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`, D66: free on this GPU) and evaluate thinking at a 16k window with a ~6,000-token reserve? A server setting on the user's machine | Before Phase 4 step 4 |
-| Q16 | How to continue Phase 4, now that prompting (D83) and thinking (D86) don't get qwen3:8b to use context: (a) the retrieval upgrades U1–U5 as planned, accepting that F1 may not move; (b) a verification pass (a second, narrow call per API-contract finding); (c) a stronger model (Q2: qwen3:14b, partly on CPU); or (d) stop Phase 4 at anchoring and move to Phase 5 (GitHub App) | Now |
+| Q16 | ~~How to continue Phase 4?~~ **Answered 2026-10-12: (b) a verification pass, then (d) Phase 5** (user's choice; verification rejected, D87). Was: How to continue Phase 4, now that prompting (D83) and thinking (D86) don't get qwen3:8b to use context: (a) the retrieval upgrades U1–U5 as planned, accepting that F1 may not move; (b) a verification pass (a second, narrow call per API-contract finding); (c) a stronger model (Q2: qwen3:14b, partly on CPU); or (d) stop Phase 4 at anchoring and move to Phase 5 (GitHub App) | Now |
 
 ---
 
