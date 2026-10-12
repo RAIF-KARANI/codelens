@@ -5,15 +5,17 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from core.diff import git
 from core.enums import EdgeKind, Language, NodeKind
 from core.parser.builder import sha256_hex
 from core.parser.extraction import Extraction
 from core.parser.javascript import extract_javascript
+from core.parser.languages import detect
 from core.parser.modules import js_module_name, python_module_name, python_package_dirs
 from core.parser.python import extract_python
 from core.parser.resolver import resolve_edges
 from core.parser.types import ParsedFile, ParseResult, SkippedFile
-from core.parser.walker import SourceFile, discover_sources
+from core.parser.walker import MAX_FILE_BYTES, SourceFile, discover_sources, source_from_content
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +25,42 @@ _UTF8_BOM = b"\xef\xbb\xbf"
 def parse_repository(root: Path) -> ParseResult:
     root = root.resolve()
     sources, skipped = discover_sources(root)
-    package_dirs = python_package_dirs(s.path for s in sources)
+    return _parse_sources(root, sources, skipped)
 
+
+def parse_revision(repo: Path, rev: str) -> ParseResult:
+    """Like parse_repository, but from git objects at `rev`: no checkout, so it
+    works on a bare mirror and nothing in the repo runs.
+
+    Only tracked files exist at a revision, so there is no .gitignore to apply;
+    the walker's other rules (vendored directories, size, minified, binary)
+    are the same (`source_from_content`).
+    """
+    sources: list[SourceFile] = []
+    skipped: list[SkippedFile] = []
+    wanted: list[git.Blob] = []
+    for blob in git.list_blobs(repo, rev):
+        if detect(blob.path) is None:
+            continue  # not source code: not worth reading
+        if blob.size > MAX_FILE_BYTES:
+            skipped.append(SkippedFile(blob.path, "too_large"))  # known without reading it
+            continue
+        wanted.append(blob)
+
+    contents = git.read_blobs(repo, [b.oid for b in wanted])
+    for blob in wanted:
+        source = source_from_content(blob.path, contents[blob.oid])
+        if isinstance(source, SkippedFile):
+            skipped.append(source)
+        elif source is not None:
+            sources.append(source)
+    return _parse_sources(repo, sorted(sources, key=lambda s: s.path), skipped)
+
+
+def _parse_sources(
+    root: Path, sources: list[SourceFile], skipped: list[SkippedFile]
+) -> ParseResult:
+    package_dirs = python_package_dirs(s.path for s in sources)
     files: list[ParsedFile] = []
     for source in sources:
         try:

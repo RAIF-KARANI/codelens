@@ -80,6 +80,12 @@ class GitHubClient:
         # GitHub sends "2026-10-12T17:00:00Z"; fromisoformat reads the Z since 3.11.
         return InstallationToken(data["token"], datetime.fromisoformat(data["expires_at"]))
 
+    # --- as an installation (an installation token, auth.InstallationTokens)
+
+    async def get_repo(self, full_name: str, token: str) -> dict[str, Any]:
+        """A repository: default branch, visibility, ..."""
+        return await self._request("GET", f"/repos/{full_name}", token=token)
+
     # --- unauthenticated
 
     async def convert_manifest(self, code: str) -> dict[str, Any]:

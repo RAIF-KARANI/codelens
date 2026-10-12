@@ -68,12 +68,20 @@ async def get_repo(repo_id: int, session: Session) -> schemas.RepoDetail:
 async def index_repo(
     repo_id: int, session: Session, queue: Annotated[JobQueue, Depends(get_queue)]
 ) -> schemas.IndexQueued:
-    """Re-index the repo, then embed what changed. Poll index-runs for progress."""
+    """Re-index the repo (a local checkout, or a GitHub repo's mirror at its
+    default branch), then embed what changed. Poll index-runs for progress."""
     repo = await session.get(models.Repo, repo_id)
     if repo is None:
         raise not_found("repo", repo_id)
-    if repo.source is not RepoSource.LOCAL or not repo.local_path:
-        raise ApiError(409, "unsupported_source", f"{repo.full_name} has no local checkout")
+    indexable = (
+        repo.installation_id is not None
+        if repo.source is RepoSource.GITHUB
+        else repo.local_path is not None
+    )
+    if not indexable:
+        raise ApiError(
+            409, "not_indexable", f"{repo.full_name} has no local checkout or GitHub installation"
+        )
     await queue.index_repo(repo_id)
     return schemas.IndexQueued(repo_id=repo_id)
 

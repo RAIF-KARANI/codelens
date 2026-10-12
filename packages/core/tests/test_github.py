@@ -205,3 +205,50 @@ def test_registration_flow(tmp_path: Path) -> None:
     assert registration.saved is not None
     assert (tmp_path / "github-app.pem").exists()
     assert "codelens-test/installations/new" in ok.text
+
+
+def test_mirror_sync_keeps_the_token_off_argv_and_disk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    from core.github import mirror
+
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "a.py").write_text("x = 1\n")
+    run = ["git", "-C", str(work), "-c", "user.name=T", "-c", "user.email=t@example.com"]
+    subprocess.run([*run, "init", "-q", "-b", "main"], check=True)
+    subprocess.run([*run, "add", "-A"], check=True)
+    subprocess.run([*run, "commit", "-q", "-m", "one"], check=True)
+
+    calls: list[tuple[list[str], dict[str, str]]] = []
+    real_run = subprocess.run
+
+    def spy(args: list[str], **kwargs: Any) -> Any:
+        calls.append((args, kwargs.get("env") or {}))
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(mirror.subprocess, "run", spy)
+    path = mirror.mirror_path(tmp_path / "data", 3)
+    mirror.sync_mirror(path, work.as_uri(), "ghs_SECRET")
+    mirror.sync_mirror(path, work.as_uri(), "ghs_SECRET")  # second run: fetch only
+
+    assert [args[1] if args[1] != "-C" else args[3] for args, _ in calls] == [
+        "init",
+        "fetch",
+        "fetch",
+    ]
+    for args, env in calls:
+        assert not any("ghs_SECRET" in a for a in args)
+        assert env["GIT_TERMINAL_PROMPT"] == "0"
+    assert calls[1][1]["GIT_CONFIG_VALUE_1"].startswith("Authorization: Basic ")
+    assert "ghs_SECRET" not in (path / "config").read_text()
+    assert (
+        subprocess.run(
+            ["git", "-C", str(path), "rev-parse", "refs/heads/main"], capture_output=True, text=True
+        ).stdout.strip()
+        == subprocess.run(
+            ["git", "-C", str(work), "rev-parse", "HEAD"], capture_output=True, text=True
+        ).stdout.strip()
+    )

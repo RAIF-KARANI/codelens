@@ -115,13 +115,21 @@ def test_review_failing_before_the_pipeline_marks_the_row(
 
 
 @pytest.mark.integration
-def test_index_refuses_a_repo_without_a_checkout(sql: Sql, worker_on_fakes: Any) -> None:
-    [repo] = sql("INSERT INTO repos (full_name, source) VALUES ('acme/app', 'github') RETURNING id")
+def test_index_refuses_a_repo_it_cannot_reach(sql: Sql, worker_on_fakes: Any) -> None:
+    [github] = sql(
+        "INSERT INTO repos (full_name, source) VALUES ('acme/app', 'github') RETURNING id"
+    )
+    [local] = sql(
+        "INSERT INTO repos (full_name, source) VALUES ('local/gone', 'local') RETURNING id"
+    )
 
-    result = index_repo.apply(args=(repo.id,))
+    uninstalled = index_repo.apply(args=(github.id,))
+    no_checkout = index_repo.apply(args=(local.id,))
 
-    assert isinstance(result.result, IndexingError)
-    assert "no local checkout" in str(result.result)
+    assert isinstance(uninstalled.result, IndexingError)
+    assert "not covered by any installation" in str(uninstalled.result)
+    assert isinstance(no_checkout.result, IndexingError)
+    assert "no local checkout" in str(no_checkout.result)
 
 
 @pytest.mark.integration

@@ -10,7 +10,9 @@ import pytest
 from fastapi.testclient import TestClient
 from httpx import Response
 
+from api.dependencies import get_queue
 from api.main import create_app
+from api.queue import QueueUnavailable
 from core.config import Settings
 from core.github.webhooks import sign
 
@@ -20,9 +22,25 @@ SECRET = "unit-webhook-secret"
 Sql = Callable[..., list[Any]]
 
 
+class RecordingQueue:
+    def __init__(self, *, down: bool = False) -> None:
+        self.jobs: list[tuple[str, int]] = []
+        self.down = down
+
+    async def index_repo(self, repo_id: int) -> None:
+        if self.down:
+            raise QueueUnavailable("connection refused")
+        self.jobs.append(("index_repo", repo_id))
+
+    async def review(self, review_id: int, base: str) -> None:
+        raise AssertionError("webhooks don't queue reviews until step 3b")
+
+
 @contextmanager
-def client(settings: Settings) -> Iterator[TestClient]:
-    with TestClient(create_app(settings)) as c:
+def client(settings: Settings, queue: RecordingQueue | None = None) -> Iterator[TestClient]:
+    app = create_app(settings)
+    app.dependency_overrides[get_queue] = lambda: queue or RecordingQueue()
+    with TestClient(app) as c:
         yield c
 
 
@@ -202,3 +220,121 @@ def test_other_events_are_recorded_until_step_3(settings: Settings, sql: Sql) ->
         99,
     )
     assert delivery.processed_at is not None
+
+
+# --- repositories and pushes (step 3a)
+
+
+def repo_payload(github_id: int, full_name: str) -> dict[str, Any]:
+    return {"id": github_id, "name": full_name.split("/")[1], "full_name": full_name}
+
+
+@pytest.mark.integration
+def test_a_new_installation_indexes_its_repositories(settings: Settings, sql: Sql) -> None:
+    secret = settings.github_webhook_secret.get_secret_value()
+    payload = {
+        **installation("created"),
+        "repositories": [repo_payload(1, "octo/api"), repo_payload(2, "octo/web")],
+    }
+    queue = RecordingQueue()
+    with client(settings, queue) as c:
+        response = deliver(c, secret, "installation", payload)
+
+    assert response.json()["status"] == "processed"
+    repos = sql(
+        "SELECT r.id, r.github_id, r.full_name, r.source, i.github_installation_id"
+        " FROM repos r JOIN installations i ON i.id = r.installation_id ORDER BY r.github_id"
+    )
+    assert [(r.github_id, r.full_name, r.source, r.github_installation_id) for r in repos] == [
+        (1, "octo/api", "github", 99),
+        (2, "octo/web", "github", 99),
+    ]
+    assert queue.jobs == [("index_repo", r.id) for r in repos]
+
+
+@pytest.mark.integration
+def test_repositories_added_and_removed(settings: Settings, sql: Sql) -> None:
+    secret = settings.github_webhook_secret.get_secret_value()
+    queue = RecordingQueue()
+    with client(settings, queue) as c:
+        deliver(
+            c,
+            secret,
+            "installation",
+            {**installation("created"), "repositories": [repo_payload(1, "octo/api")]},
+            delivery="d-1",
+        )
+        changed = deliver(
+            c,
+            secret,
+            "installation_repositories",
+            {
+                **installation("added"),
+                "repositories_added": [repo_payload(2, "octo/web")],
+                "repositories_removed": [repo_payload(1, "octo/api")],
+            },
+            delivery="d-2",
+        )
+
+    assert changed.json()["status"] == "processed"
+    rows = {
+        r.full_name: r
+        for r in sql("SELECT id, full_name, installation_id FROM repos ORDER BY github_id")
+    }
+    assert rows["octo/api"].installation_id is None  # detached, data kept
+    assert rows["octo/web"].installation_id is not None
+    assert queue.jobs == [("index_repo", rows["octo/api"].id), ("index_repo", rows["octo/web"].id)]
+
+
+@pytest.mark.integration
+def test_a_push_to_the_default_branch_reindexes(settings: Settings, sql: Sql) -> None:
+    secret = settings.github_webhook_secret.get_secret_value()
+
+    def push(ref: str, *, repo_id: int = 1, deleted: bool = False) -> dict[str, Any]:
+        return {
+            "ref": ref,
+            "deleted": deleted,
+            "installation": {"id": 99},
+            "repository": {**repo_payload(repo_id, "octo/api"), "default_branch": "trunk"},
+        }
+
+    queue = RecordingQueue()
+    with client(settings, queue) as c:
+        deliver(
+            c,
+            secret,
+            "installation",
+            {**installation("created"), "repositories": [repo_payload(1, "octo/api")]},
+            delivery="d-0",
+        )
+        queue.jobs.clear()
+        default = deliver(c, secret, "push", push("refs/heads/trunk"), delivery="d-1")
+        feature = deliver(c, secret, "push", push("refs/heads/feature"), delivery="d-2")
+        deleted = deliver(c, secret, "push", push("refs/heads/trunk", deleted=True), delivery="d-3")
+        unknown = deliver(c, secret, "push", push("refs/heads/trunk", repo_id=7), delivery="d-4")
+
+    [repo] = sql("SELECT id, default_branch FROM repos")
+    assert default.json()["status"] == "processed"
+    assert [r.json()["status"] for r in (feature, deleted, unknown)] == ["ignored"] * 3
+    assert repo.default_branch == "trunk"  # learned from the push
+    assert queue.jobs == [("index_repo", repo.id)]
+
+
+@pytest.mark.integration
+def test_jobs_lost_to_a_broker_outage_come_back_on_redelivery(settings: Settings, sql: Sql) -> None:
+    secret = settings.github_webhook_secret.get_secret_value()
+    payload = {**installation("created"), "repositories": [repo_payload(1, "octo/api")]}
+
+    with client(settings, RecordingQueue(down=True)) as c:
+        failed = deliver(c, secret, "installation", payload, delivery="same")
+    assert failed.status_code == 503
+    # The state is saved, but the delivery isn't marked processed...
+    assert sql("SELECT processed_at FROM webhook_deliveries")[0].processed_at is None
+
+    # ...so GitHub's "Redeliver" queues the job instead of being skipped.
+    queue = RecordingQueue()
+    with client(settings, queue) as c:
+        redelivered = deliver(c, secret, "installation", payload, delivery="same")
+    assert redelivered.json()["status"] == "processed"
+    assert len(queue.jobs) == 1
+    assert sql("SELECT processed_at FROM webhook_deliveries")[0].processed_at is not None

@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     # endpoint refuses everything, like the API without its JWT secret.
     github_webhook_secret: SecretStr = SecretStr("")
     github_api_url: str = "https://api.github.com"
+    # Clone URLs are "<github_web_url>/<owner>/<name>.git".
+    github_web_url: str = "https://github.com"
+
+    # --- storage: bare mirrors of GitHub repos live in DATA_DIR/repos/ (gitignored)
+    data_dir: Path = Path("data")
 
     @field_validator("api_jwt_secret")
     @classmethod

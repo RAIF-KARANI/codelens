@@ -22,6 +22,8 @@ and review the diff before committing it.
 
 import asyncio
 import os
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -29,8 +31,8 @@ import pytest
 from sqlalchemy import text
 
 from core.db import create_engine
-from core.indexing import index_repository
-from core.parser import ParseResult, parse_repository
+from core.indexing import index_repository, index_revision
+from core.parser import ParseResult, parse_repository, parse_revision
 
 FIXTURES = Path(__file__).parent / "fixtures" / "repos"
 REPOS = ["py_shop", "ts_shop"]
@@ -146,5 +148,52 @@ def test_indexed_graph_matches_golden(repo: str, migrated_database_url: str) -> 
     assert render_db(migrated_database_url) == _expected_in_db(repo)
 
     # Re-indexing the unchanged fixture leaves the stored graph byte-identical.
+    asyncio.run(index())
+    assert render_db(migrated_database_url) == _expected_in_db(repo)
+
+
+# ---------------------------------------------------------------- from git objects
+# GitHub repos are indexed from a bare mirror at a commit, with no checkout
+# (parse_revision / index_revision). The same fixture, committed, must give
+# exactly the same graph.
+
+
+def committed(repo: str, tmp_path: Path) -> Path:
+    """The fixture as a bare repository with one commit (like a mirror)."""
+    work = Path(shutil.copytree(FIXTURES / repo, tmp_path / "work"))
+    run = ["git", "-c", "user.name=T", "-c", "user.email=t@example.com", "-C"]
+    subprocess.run([*run, str(work), "init", "-q"], check=True)
+    subprocess.run([*run, str(work), "config", "core.autocrlf", "false"], check=True)
+    subprocess.run([*run, str(work), "add", "-A"], check=True)
+    subprocess.run([*run, str(work), "commit", "-q", "-m", "fixture"], check=True)
+    bare = tmp_path / "mirror.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(work), str(bare)], check=True)
+    return bare
+
+
+@pytest.mark.parametrize("repo", REPOS)
+def test_revision_parse_matches_golden(repo: str, tmp_path: Path) -> None:
+    assert render_parse(parse_revision(committed(repo, tmp_path), "HEAD")) == read_golden(repo)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("repo", REPOS)
+def test_revision_index_matches_golden(
+    repo: str, tmp_path: Path, migrated_database_url: str
+) -> None:
+    mirror = committed(repo, tmp_path)
+
+    async def index() -> None:
+        engine = create_engine(migrated_database_url, pooled=False)
+        try:
+            async with engine.begin() as conn:  # GitHub repo rows come from webhooks
+                await conn.execute(
+                    text("INSERT INTO repos (full_name, source) VALUES ('octo/shop', 'github')")
+                )
+            report = await index_revision(engine, mirror, "HEAD", name="octo/shop")
+            assert report.commit_sha is not None and len(report.commit_sha) == 40
+        finally:
+            await engine.dispose()
+
     asyncio.run(index())
     assert render_db(migrated_database_url) == _expected_in_db(repo)

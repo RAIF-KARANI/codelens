@@ -91,7 +91,7 @@ settings page → **Advanced** → **Recent deliveries** lists every delivery, a
 docker compose exec postgres psql -U codelens -c "SELECT github_installation_id, account_login FROM installations"
 ```
 
-## What the webhook endpoint does (Phase 5 step 2)
+## What the webhook endpoint does (Phase 5 steps 2–3a)
 
 `POST /webhooks/github`:
 
@@ -104,8 +104,17 @@ docker compose exec postgres psql -U codelens -c "SELECT github_installation_id,
    is answered `duplicate` and skipped; one that failed halfway is handled again (D95).
 4. **Mirrors `installation` events** (created, suspend, unsuspend, deleted,
    new_permissions_accepted) into the `installations` table.
-5. **Records other events** (`push`, `pull_request`, …) as `ignored` for now. Step 3
-   queues indexing and reviews for them.
+5. **Attaches repositories:** installing the App, or adding repos to an installation,
+   creates a repo row for each and queues **index → embed**. The worker keeps a bare
+   mirror of each repo in `data/repos/<id>.git` and indexes its default branch. Removed
+   repos are detached (their data stays).
+6. **Re-indexes on push** to a repo's default branch. Pushes to other branches are
+   recorded as `ignored`.
+7. **Records `pull_request` events** as `ignored` for now; step 3b reviews them.
+
+So after installing the App on a test repo (with the API, both workers and the smee
+client running), `GET /api/v1/repos` lists the repo, and its index run appears under
+`/api/v1/repos/{id}/index-runs` within a minute or so.
 
 ## Troubleshooting
 
