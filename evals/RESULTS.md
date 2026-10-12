@@ -30,6 +30,54 @@ python -m evals.report evals/results/<run> --baseline evals/results/<baseline-ru
 | Step | Upgrade | Test F1 vs predecessor (paired 95% CI) | Decision |
 |---|---|---|---|
 | Phase 4 step 1 | A1 anchoring | 0.654 → **0.767**, +0.113 [+0.040, +0.194] | **adopted** |
+| Phase 4 step 2 | split diff (Q12) | dev: −0.006 [−0.072, +0.052], noise +0.50 | rejected on dev |
+| Phase 4 step 2 | caller-aware context (Q13) | dev +0.029 [0.000, +0.072]; **test +0.006 [−0.056, +0.069]** | rejected |
+| Phase 4 step 2 | split + callers | dev: 0.000 [−0.052, +0.054], noise +0.25 | rejected on dev |
+
+---
+
+## Phase 4 step 2: diff rendering (Q12) and context use (Q13), both rejected
+
+**Why these two:** the B0 prompts showed two problems.
+- **Diff misreading.** The model read a moved parameter's `-` and `+` lines as "duplicate parameter". It did the same with `- force_readable: bool = False` in a signature next to `+ force_readable = False` in the body.
+- **Unused context.** It never used the callers in its prompt. It also couldn't tell which context blocks *were* callers: in one counterfactual, 5 of 8 blocks were test functions.
+
+**What was tried** (all toggles default off; configs `default_split`, `default_callers`, `default_split_callers`):
+- **`packing.diff_style: split`:** each hunk is shown twice. Before is unnumbered, so it can't be cited, with removed lines marked. After is numbered, with `+` on added lines.
+- **`retrieval.tag_relations`:** one query on the graph's `calls` edges marks each context block `relation="calls the changed code"` or `relation="called by the changed code"`.
+- **`generation.check_callers`:** adds rule 6 to the system prompt. Before reporting an API break, read the tagged callers; if every caller shown works with the new code, don't report it.
+
+### Dev (41 cases, paired against the current default, `b0-anchor-dev`)
+
+| metric | default | + split | + callers | + both |
+|---|---|---|---|---|
+| F1 | 0.814 | 0.807 (−0.006) | 0.842 (+0.029 [0.000, +0.072]) | 0.814 (0.000) |
+| precision | 0.686 | 0.697 | 0.727 | 0.686 |
+| recall | 1.000 | 0.958 | 1.000 | 1.000 |
+| noise per clean PR | 0.75 | **1.25** | 0.625 | 1.00 |
+| false alarms per counterfactual | 1.00 | 1.11 | 1.00 | 1.00 |
+
+### Test (83 cases): caller-aware context, the only dev candidate
+
+| metric | default (B0 + A1) | + callers | Δ, paired 95% CI |
+|---|---|---|---|
+| F1 | 0.767 | 0.773 | +0.006 [−0.056, +0.069] |
+| precision | 0.648 | 0.657 | +0.009 |
+| recall | 0.939 | 0.939 | 0.000 |
+| noise per clean PR | 0.438 | 0.438 | 0.000 |
+| false alarms per counterfactual | 1.000 | 1.056 | +0.056 |
+
+**Rejected.** The test result doesn't pass the gate; the dev gain was noise.
+
+### What this says
+
+1. **The split diff backfires.** Showing old and new side by side invites comments on the difference: rename noise rose from 4 to 7 findings on 4 clean cases. The "duplicate parameter" titles were a symptom, not the cause of the false alarms.
+2. **The 8B model does not use callers, even when told to.** With the callers tagged and an explicit rule, it still flagged every counterfactual (9 of 9 on dev, 19 posts on 18 cases on test). Typical titles: *"Parameter order changed in `_analyze` function"*, *"Removed parameter breaks API contract"*. It reacts to the diff's shape and ignores the evidence that the change is safe. Prompting alone can't fix this at qwen3:8b.
+3. **Retrieval-side changes can't help until the model can reason with what it gets.** That points at the model, not the context:
+   - thinking mode (U6), which is already a config toggle;
+   - a stronger model (Q2);
+   - a targeted verification pass for API-contract findings (Q14).
+   Planned retrieval upgrades such as graph expansion (U2) would put the callers in the prompt more often; on today's evidence, that wouldn't change the verdicts.
 
 ---
 

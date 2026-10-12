@@ -8,11 +8,11 @@ and the stored copy is the *old* version.
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from core.db.models import CodeNode, File
-from core.enums import NodeKind
+from core.db.models import CodeEdge, CodeNode, File
+from core.enums import EdgeKind, NodeKind
 from core.providers import Embedder, EmbedKind
 from core.retrieval import SearchHit, vector_search
 from core.review.config import RetrievalConfig
@@ -20,6 +20,7 @@ from core.review.seeds import Seed
 from core.text.tokens import chars_for_tokens
 
 nodes_t = CodeNode.__table__
+edges_t = CodeEdge.__table__
 files_t = File.__table__
 
 _QUERY_MAX_TOKENS = 1024
@@ -39,6 +40,7 @@ class Candidate:
     similarity: float  # best over the seeds that retrieved it
     rank: int  # best rank over those seeds
     seeds: tuple[str, ...]  # qualified names of the seeds that retrieved it
+    relation: str | None = None  # "calls the changed code" / "called by the changed code"
 
     @property
     def label(self) -> str:
@@ -94,6 +96,7 @@ async def retrieve_for_seeds(
         )
 
     all_ids = {hit.node_id for hits in hits_per_seed.values() for hit in hits}
+    relation = await _relations(conn, seed_ids, all_ids) if config.tag_relations else {}
     code = {
         row.id: row.code
         for row in await conn.execute(
@@ -116,11 +119,44 @@ async def retrieve_for_seeds(
                 similarity=h.similarity,
                 rank=h.rank,
                 seeds=(seeds[index].node.qualified_name,),
+                relation=relation.get(h.node_id),
             )
             for h in hits
         ]
         for index, hits in hits_per_seed.items()
     }
+
+
+async def _relations(
+    conn: AsyncConnection, seed_ids: set[int], candidate_ids: set[int]
+) -> dict[int, str]:
+    """How each candidate relates to the changed code through `calls` edges.
+    A caller is the more useful fact (it shows whether a change breaks it),
+    so it wins when a node is both."""
+    if not seed_ids or not candidate_ids:
+        return {}
+    rows = await conn.execute(
+        select(edges_t.c.src_node_id, edges_t.c.dst_node_id).where(
+            edges_t.c.kind == EdgeKind.CALLS,
+            or_(
+                and_(
+                    edges_t.c.src_node_id.in_(candidate_ids),
+                    edges_t.c.dst_node_id.in_(seed_ids),
+                ),
+                and_(
+                    edges_t.c.src_node_id.in_(seed_ids),
+                    edges_t.c.dst_node_id.in_(candidate_ids),
+                ),
+            ),
+        )
+    )
+    found: dict[int, str] = {}
+    for src, dst in rows:
+        if src in candidate_ids and dst in seed_ids:
+            found[src] = "calls the changed code"
+        elif dst in candidate_ids:
+            found.setdefault(dst, "called by the changed code")
+    return found
 
 
 def merge_candidates(lists: Sequence[Sequence[Candidate]]) -> list[Candidate]:
@@ -148,4 +184,5 @@ def _merge(a: Candidate, b: Candidate) -> Candidate:
         similarity=max(a.similarity, b.similarity),
         rank=min(a.rank, b.rank),
         seeds=tuple(dict.fromkeys(a.seeds + b.seeds)),
+        relation=a.relation or b.relation,
     )

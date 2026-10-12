@@ -13,7 +13,7 @@ only usable if it points at exact lines.
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
-from core.diff import FileDiff
+from core.diff import FileDiff, Hunk
 from core.enums import NodeKind
 from core.review.changes import ChangeSet, FileChange
 from core.review.config import PackingConfig
@@ -66,9 +66,13 @@ def numbered(code: str, start_line: int) -> str:
     return "\n".join(f"{start_line + i:>5}  {line}" for i, line in enumerate(code.split("\n")))
 
 
-def render_diff(diff: FileDiff) -> str:
-    """A unified diff with each line's *new-file* line number on the left
-    (blank for removed lines, which have none)."""
+def render_diff(diff: FileDiff, style: str = "unified") -> str:
+    """The diff with each line's *new-file* line number on the left.
+
+    unified: removed and added lines interleaved; removed lines have no number.
+    split (Q12): each hunk twice, before (unnumbered, removed lines marked "-")
+    and after (numbered, added lines marked "+"), so a line that moved or was
+    rewritten isn't read as two lines that both exist."""
     out = [f"--- {diff.old_path or '/dev/null'}", f"+++ {diff.new_path or '/dev/null'}"]
     marker = {"added": "+", "removed": "-", "context": " "}
     for hunk in diff.hunks:
@@ -76,10 +80,29 @@ def render_diff(diff: FileDiff) -> str:
             f"@@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@ "
             f"{hunk.section}".rstrip()
         )
+        if style == "split":
+            out += _split_hunk(hunk, marker)
+            continue
         for line in hunk.lines:
             number = f"{line.new_line:>5}" if line.new_line is not None else "     "
             out.append(f"{number} {marker[line.kind]} {line.text}")
     return "\n".join(out)
+
+
+def _split_hunk(hunk: Hunk, marker: dict[str, str]) -> list[str]:
+    out = []
+    if any(line.kind == "removed" for line in hunk.lines):
+        out.append("before (for reference only; do not cite these lines):")
+        out += [
+            f"      {marker[line.kind]} {line.text}" for line in hunk.lines if line.kind != "added"
+        ]
+        out.append("after:")
+    out += [
+        f"{line.new_line:>5} {marker[line.kind]} {line.text}"
+        for line in hunk.lines
+        if line.kind != "removed" and line.new_line is not None
+    ]
+    return out
 
 
 def _cut(text: str, tokens: int, note: str) -> str:
@@ -107,7 +130,7 @@ def build_chunks(
     current: list[tuple[FileChange, str]] = []
     used = 0
     for change in reviewable:
-        text = render_diff(change.diff)
+        text = render_diff(change.diff, config.diff_style)
         tokens = estimate_tokens(text)
         if tokens > config.diff_tokens:  # one huge file: keep its first hunks
             text = _cut(text, config.diff_tokens, "... (diff truncated)")
@@ -232,6 +255,8 @@ def _context_blocks(
             "lines": f"{c.start_line}-{c.end_line}",
             "similarity": f"{c.similarity:.2f}",
         }
+        if c.relation:
+            attrs["relation"] = c.relation
         block = _fit(c.label, attrs, c.code, c.start_line, c.signature, budget, config)
         if block is None:
             trace.append(TraceItem(c, False, False, 0, "over_budget"))

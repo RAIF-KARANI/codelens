@@ -337,3 +337,47 @@ def test_deletion_borders_anchor_findings_about_a_removed_guard() -> None:
     # The diff adds no line at all: B0 can never post this.
     assert without.drop_reason == "not_on_changed_lines"
     assert (with_borders.status, with_borders.anchored_from) == (FindingStatus.POSTED, None)
+
+
+# ---------------------------------------------------------------- Q12 split diff, Q13 caller rule
+
+
+def test_split_diff_shows_each_hunk_before_and_after() -> None:
+    change = file_change(
+        "shop/pricing.py", PRICING_OLD, PRICING_NEW.replace("1 - percent", "1-percent")
+    )
+
+    lines = render_diff(change.diff, "split").splitlines()
+
+    before, after = (
+        lines.index("before (for reference only; do not cite these lines):"),
+        lines.index("after:"),
+    )
+    # Before: the old lines, unnumbered so they can't be cited, removed ones marked.
+    assert lines[before + 1 : before + 3] == [
+        "        def discount(amount, percent):",
+        "      -     return amount * (1 - percent / 100)",
+    ]
+    assert all(not line[:5].strip() for line in lines[before + 1 : after])
+    assert lines[after + 1 :][:4] == [
+        "    1   def discount(amount, percent):",
+        "    2 +     if percent > 100:",
+        "    3 +         return None",
+        "    4 +     return amount * (1-percent / 100)",
+    ]
+
+
+def test_split_diff_without_removed_lines_has_no_before() -> None:
+    change = file_change("shop/pricing.py", PRICING_OLD, PRICING_NEW)
+
+    assert "before" not in render_diff(change.diff, "split")
+
+
+def test_caller_rule_is_only_in_the_prompt_when_asked() -> None:
+    chunk = pricing_chunk()
+
+    plain, _ = build_messages(chunk, title="t", commits=[], max_findings=3)
+    checked, _ = build_messages(chunk, title="t", commits=[], max_findings=3, check_callers=True)
+
+    assert plain.content == SYSTEM_PROMPT
+    assert checked.content.startswith(SYSTEM_PROMPT) and "calls the changed code" in checked.content

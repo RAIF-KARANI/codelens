@@ -1,0 +1,29 @@
+# Phase 4 step 2 ablation (Q13): the default + caller-aware context (blocks that
+# call or are called by the changed code are tagged) + the check-callers rule.
+# Measured against default.yaml in evals/RESULTS.md.
+name: default_callers
+retrieval:
+  enabled: true
+  vector_k: 8
+  max_seeds: 24
+  tag_relations: true
+packing:
+  diff_share: 0.4
+  changed_share: 0.25
+  context_share: 0.35
+  diff_tokens: 4000
+  changed_node_tokens: 3500
+  context_tokens: 4000
+  max_chunks: 4
+  degrade_to_signature: true
+  test_file_weight: 0.25
+generation:
+  think: false
+  max_output_tokens: 1500
+  max_findings_per_chunk: 8
+  check_callers: true
+validation:
+  min_confidence: 0.6
+  max_comments: 5
+  anchor_window: 3
+  anchor_deletions: true
