@@ -24,6 +24,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY packages/core packages/core
 COPY services/worker services/worker
+# The pipeline configs (PIPELINE_CONFIG resolves against /app).
+COPY configs configs
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --package codelens-worker
 
@@ -32,4 +34,5 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 RUN useradd --create-home --uid 1000 app
 USER app
 
-CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=INFO"]
+# docker-compose.yml runs one worker per queue; this default serves both.
+CMD ["celery", "-A", "worker.celery_app", "worker", "-Q", "index,gpu", "--loglevel=INFO"]

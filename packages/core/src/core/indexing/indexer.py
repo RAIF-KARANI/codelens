@@ -45,6 +45,11 @@ class IndexingError(Exception):
     """A user-facing indexing error (bad input, concurrent run)."""
 
 
+class IndexLocked(IndexingError):
+    """Another index run holds this repo's lock. Worth retrying later, unlike
+    other indexing errors (the worker's index task does)."""
+
+
 @dataclass(slots=True)
 class IndexReport:
     repo_id: int
@@ -127,7 +132,7 @@ async def index_repository(
             text("SELECT pg_try_advisory_lock(hashtext(:key))"), {"key": f"index:{full_name}"}
         )
         if not locked:
-            raise IndexingError(f"another index run for {full_name} is in progress")
+            raise IndexLocked(f"another index run for {full_name} is in progress")
         try:
             report = await _index_locked(engine, root, full_name, result)
         finally:
@@ -303,4 +308,4 @@ def _git_head(root: Path) -> str | None:
     return out.stdout.strip() or None
 
 
-__all__ = ["IndexReport", "IndexingError", "index_repository"]
+__all__ = ["IndexLocked", "IndexReport", "IndexingError", "index_repository"]

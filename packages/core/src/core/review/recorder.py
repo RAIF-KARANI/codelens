@@ -8,7 +8,7 @@ leaves a `running`/`failed` review with everything recorded so far.
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import func, insert, update
+from sqlalchemy import delete, func, insert, update
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from core.db.models import Finding, Review, ReviewContextItem, ReviewEvent
@@ -39,22 +39,43 @@ class ReviewRecorder:
         head_sha: str,
         model: str,
         config: PipelineConfig,
+        review_id: int | None = None,
     ) -> int:
+        """Insert a running review, or claim `review_id`, one the API queued."""
+        values = {
+            "base_sha": base_sha,
+            "head_sha": head_sha,
+            "model": model,
+            "status": ReviewStatus.RUNNING,
+            "started_at": func.now(),
+            "pipeline_config": config.model_dump(mode="json"),
+        }
         async with self._conn.begin():
-            self.review_id = await self._conn.scalar(
-                insert(reviews_t)
-                .values(
-                    repo_id=repo_id,
-                    source=source,
-                    base_sha=base_sha,
-                    head_sha=head_sha,
-                    model=model,
-                    status=ReviewStatus.RUNNING,
-                    started_at=func.now(),
-                    pipeline_config=config.model_dump(mode="json"),
+            if review_id is None:
+                self.review_id = await self._conn.scalar(
+                    insert(reviews_t)
+                    .values(repo_id=repo_id, source=source, **values)
+                    .returning(reviews_t.c.id)
                 )
+                return self.review_id
+            # A `running` review here is a retry after a crashed attempt (the
+            # worker acks late, so the broker redelivers). Its partial timeline,
+            # trace and findings are cleared so the review restarts cleanly and
+            # event seq numbers start again at 1.
+            for table in (events_t, items_t, findings_t):
+                await self._conn.execute(delete(table).where(table.c.review_id == review_id))
+            self.review_id = await self._conn.scalar(
+                update(reviews_t)
+                .where(
+                    reviews_t.c.id == review_id,
+                    reviews_t.c.repo_id == repo_id,
+                    reviews_t.c.status.in_([ReviewStatus.QUEUED, ReviewStatus.RUNNING]),
+                )
+                .values(finished_at=None, error=None, **values)
                 .returning(reviews_t.c.id)
             )
+            if self.review_id is None:
+                raise ValueError(f"review {review_id} is not a queued review of repo {repo_id}")
         return self.review_id
 
     async def event(self, type_: str, **payload: Any) -> None:
@@ -131,3 +152,20 @@ class ReviewRecorder:
                     },
                 )
             )
+
+
+async def fail_unfinished(conn: AsyncConnection, review_id: int, error: str) -> bool:
+    """Mark a queued or running review failed. For errors raised before the
+    pipeline could record its own end (a bad revision, a missing repo). A review
+    that already finished is left alone. Returns whether a row changed."""
+    async with conn.begin():
+        changed = await conn.scalar(
+            update(reviews_t)
+            .where(
+                reviews_t.c.id == review_id,
+                reviews_t.c.status.in_([ReviewStatus.QUEUED, ReviewStatus.RUNNING]),
+            )
+            .values(status=ReviewStatus.FAILED, finished_at=func.now(), error=error)
+            .returning(reviews_t.c.id)
+        )
+    return changed is not None

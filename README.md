@@ -5,7 +5,10 @@ repository into a code graph (functions, classes, calls, imports), retrieves rel
 context with hybrid vector + full-text search plus graph expansion, and asks an LLM for
 severity-graded review findings.
 
-> **Status:** Phase 1 (foundation). Scaffold, schema, parser, and indexing CLI.
+> **Status:** Phases 1–4 done: the indexer, the review pipeline, the eval harness and the
+> measured upgrades ([`evals/RESULTS.md`](evals/RESULTS.md)). Phase 5 (GitHub App) is in
+> progress: background jobs and the first API endpoints. The plan of record is
+> [`planning.md`](planning.md).
 
 ## Repository layout
 
@@ -42,7 +45,8 @@ This starts:
 | `redis`    | `localhost:6379`        | Celery broker + result backend         |
 | `migrate`  | n/a                     | Runs `alembic upgrade head`, then exits |
 | `api`      | http://localhost:8000   | `/health`, `/docs`; hot-reloads        |
-| `worker`   | n/a                     | Celery; `docker compose restart worker` after edits |
+| `worker`   | n/a                     | Celery, `index` queue (2 at a time) |
+| `worker-gpu` | n/a                   | Celery, `gpu` queue: embedding and reviews, one at a time; `docker compose restart worker worker-gpu` after edits |
 
 Check it:
 
@@ -183,6 +187,47 @@ On an 8 GB GPU, `LLM_NUM_CTX=8192` (the default) keeps the LLM entirely in VRAM.
 16k window, set `OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0` for the Ollama
 server first: measured on an RTX 4060, 16k then fits at full speed, while without them
 it spills to CPU at half speed (numbers in `planning.md` §1.3; tools in `scripts/`).
+
+## The API and background jobs
+
+The API (`services/api`) is a thin HTTP layer. Real work runs in Celery workers
+(`services/worker`), one per queue: `index` (parse and persist, 2 at a time) and `gpu`
+(embedding and reviews, one at a time, so two jobs never compete for VRAM). The API
+enqueues tasks by name (`core/jobs.py`) and returns `202` at once.
+
+Every `/api/v1` route needs a bearer token (HS256, signed with `API_JWT_SECRET`, at least
+32 bytes). With no secret set, the API refuses them all. Mint a development token with:
+
+```bash
+uv run python -m api.token --login me          # uses API_JWT_SECRET from .env
+```
+
+| Method | Path | What |
+|---|---|---|
+| GET | `/api/v1/repos`, `/api/v1/repos/{id}` | repos, with the latest index run |
+| POST | `/api/v1/repos/{id}/index` | re-index, then embed what changed (`202`) |
+| GET | `/api/v1/repos/{id}/index-runs`, `/api/v1/repos/{id}/reviews` | history, newest first (`?cursor=&limit=`; reviews also `?status=`) |
+| POST | `/api/v1/reviews` | queue a review `{"repo_id", "base", "head"}` (`202 {review_id}`) |
+| GET | `/api/v1/reviews/{id}` | a review and its findings (`?include_dropped=true` for the rejected ones) |
+
+Errors always have the shape `{"error": {"code", "message", "details"}}`. With
+`DEMO_MODE=true`, every mutating route returns `403`.
+
+Until the GitHub App lands, re-indexing and manual reviews work on repos indexed from a
+local checkout (`core.index`). The API and the worker must both read that path, so run them
+on the host, with Postgres and Redis from compose:
+
+```bash
+docker compose up -d postgres redis
+uv run uvicorn api.main:app --port 8000
+uv run celery -A worker.celery_app worker -Q index,gpu --pool=solo   # --pool=solo on Windows
+```
+
+```bash
+curl -X POST localhost:8000/api/v1/reviews -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" -d '{"repo_id": 1, "base": "main", "head": "my-feature"}'
+curl localhost:8000/api/v1/reviews/1 -H "Authorization: Bearer $TOKEN"
+```
 
 ## Parser (inspect the code graph)
 

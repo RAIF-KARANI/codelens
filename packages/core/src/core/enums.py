@@ -53,7 +53,7 @@ class Severity(StrEnum):
 
 class ReviewSource(StrEnum):
     GITHUB = "github"  # a pull request
-    CLI = "cli"  # `python -m core.review` on a local branch
+    CLI = "cli"  # a local branch: `python -m core.review`, or POST /api/v1/reviews
     EVAL = "eval"  # an evaluation run (Phase 3)
 
 

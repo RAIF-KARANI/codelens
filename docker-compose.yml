@@ -22,6 +22,25 @@ x-api-build: &api-build
   context: .
   dockerfile: services/api/Dockerfile
 
+# Two workers from one image, one per queue (planning.md §5.10, D88): `index`
+# runs CPU work two at a time; `gpu` runs embedding and reviews one at a time,
+# so two jobs never compete for the GPU's memory.
+x-worker: &worker
+  <<: *python-env
+  build:
+    context: .
+    dockerfile: services/worker/Dockerfile
+  # Celery has no auto-reload; run `docker compose restart worker worker-gpu` after edits.
+  volumes:
+    - ./services/worker/src:/app/services/worker/src
+    - ./packages/core/src:/app/packages/core/src
+    - ./configs:/app/configs
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+    redis:
+      condition: service_healthy
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -88,19 +107,12 @@ services:
       start_period: 10s
 
   worker:
-    <<: *python-env
-    build:
-      context: .
-      dockerfile: services/worker/Dockerfile
-    # Celery has no auto-reload; run `docker compose restart worker` after edits.
-    volumes:
-      - ./services/worker/src:/app/services/worker/src
-      - ./packages/core/src:/app/packages/core/src
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
+    <<: *worker
+    command: celery -A worker.celery_app worker -Q index -c 2 -n index@%h --loglevel=INFO
+
+  worker-gpu:
+    <<: *worker
+    command: celery -A worker.celery_app worker -Q gpu -c 1 -n gpu@%h --loglevel=INFO
 
 volumes:
   pgdata:

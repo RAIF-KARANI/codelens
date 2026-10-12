@@ -107,9 +107,13 @@ async def run_review(
     context_window: int,
     source: ReviewSource = ReviewSource.CLI,
     progress: ProgressFn | None = None,
+    review_id: int | None = None,
 ) -> ReviewResult:
     """Review head against its merge-base with base. `context_window` is the
-    LLM's num_ctx: every prompt is fitted to it, minus the output reserve."""
+    LLM's num_ctx: every prompt is fitted to it, minus the output reserve.
+
+    With `review_id`, the review row already exists (the API queued it) and is
+    claimed instead of inserted; `source` is then the row's own."""
     say = progress or (lambda _: None)
     seconds: dict[str, float] = {}
 
@@ -140,6 +144,7 @@ async def run_review(
             head_sha=changes.head_sha,
             model=providers.llm.model,
             config=config,
+            review_id=review_id,
         )
         usage = Usage()
         try:
