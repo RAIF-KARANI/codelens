@@ -2,6 +2,7 @@
 
 import json
 import math
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -16,8 +17,8 @@ from evals.metrics import (
     percentile,
     score_case,
 )
-from evals.records import CaseRecord, Prediction, Retrieved, RunInfo
-from evals.report import build_scorecard, render_markdown
+from evals.records import CaseRecord, Prediction, Retrieved, RunInfo, append_case, write_run
+from evals.report import build_scorecard, render_markdown, write_scorecard
 
 EXPECTED = ExpectedFinding(
     file="a.py", line_start=10, line_end=10, category="api-contract", severity="critical"
@@ -200,3 +201,46 @@ def test_scorecard_is_strict_json_and_renders() -> None:
     text = render_markdown(card)
     assert "| f1 | 1.000 |" in text and "drop_param" in text
     assert text.isascii()  # Windows consoles print it
+
+
+def test_completed_only_view_drops_cases_a_run_failed(tmp_path: Path) -> None:
+    """A failed review posts nothing, which on a counterfactual looks like a
+    correct "no alarm". The completed-only view must not count it."""
+    info = RunInfo(
+        name="r",
+        config={"name": "x"},
+        llm_model="m",
+        embed_model="e",
+        model_digests={},
+        context_window=8192,
+        temperature=0.1,
+        seed=42,
+        codelens_commit=None,
+        dataset_hash="h",
+        cases=2,
+        filters={},
+        started_at="now",
+    )
+    safe = {"kind": "counterfactual", "operator": "drop_param_cf", "expected": []}
+    runs = {
+        "candidate": [record("bug", [pred()]), record("safe", [], status="failed", **safe)],
+        "baseline": [record("bug", [pred()]), record("safe", [pred()], **safe)],
+    }
+    for name, records in runs.items():
+        write_run(tmp_path / name, info)
+        for r in records:
+            append_case(tmp_path / name, r)
+
+    write_scorecard(tmp_path / "candidate", baseline=tmp_path / "baseline", resamples=20)
+    write_scorecard(
+        tmp_path / "candidate", baseline=tmp_path / "baseline", resamples=20, completed_only=True
+    )
+
+    full = json.loads((tmp_path / "candidate" / "scorecard.json").read_text(encoding="utf-8"))
+    kept = json.loads(
+        (tmp_path / "candidate" / "scorecard-completed.json").read_text(encoding="utf-8")
+    )
+    # Full view: the failure "wins" the counterfactual. Completed-only: it's gone.
+    assert full["baseline"]["deltas"]["false_alarms_per_counterfactual"]["delta"] == -1.0
+    assert full["cases"]["failed_reviews"] == 1
+    assert kept["baseline"]["paired_cases"] == 1 and kept["cases"]["counterfactual"] == 0

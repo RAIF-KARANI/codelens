@@ -33,6 +33,56 @@ python -m evals.report evals/results/<run> --baseline evals/results/<baseline-ru
 | Phase 4 step 2 | split diff (Q12) | dev: −0.006 [−0.072, +0.052], noise +0.50 | rejected on dev |
 | Phase 4 step 2 | caller-aware context (Q13) | dev +0.029 [0.000, +0.072]; **test +0.006 [−0.056, +0.069]** | rejected |
 | Phase 4 step 2 | split + callers | dev: 0.000 [−0.052, +0.054], noise +0.25 | rejected on dev |
+| Phase 4 step 3 | U6 thinking (output reserve 3000) | dev +0.092 [+0.030, +0.165]; **test +0.050 [−0.035, +0.138]**, 13% of reviews truncated | not adopted (yet) |
+
+---
+
+## Phase 4 step 3: thinking mode (U6), not adopted as configured
+
+**What changed:** `generation.think: true` (Qwen3 thinking) in `default_think.yaml`. The output reserve went from 1,500 to 3,000 tokens.
+- **Why the reserve grew:** thinking tokens count against `num_predict` and the 8k window.
+- **How 3,000 was chosen:** a probe on 8 dev cases measured 551–2,157 output tokens.
+- **The trade-off:** the bigger reserve shrinks the prompt budget.
+- **Runtime setting:** runs used `LLM_TIMEOUT_S=900`, a machine setting rather than a config one. The power-capped GPU pushed some calls past the default 300 s.
+
+**Latency budget (D84):** p95 ≤ 10 minutes per review.
+
+### Dev (41 cases, paired against the default)
+
+- **F1:** 0.814 → 0.906, **+0.092 [+0.030, +0.165]**.
+- **Precision:** +0.142.
+- **Noise:** 0.75 → 0.00.
+- **Counterfactual false alarms:** 1.00 → 0.56.
+- **Recall:** unchanged.
+- **Failures:** 1 review truncated, plus 4 Ollama timeouts that were retried with `--retry-failed`.
+
+### Test (83 cases, paired against the default)
+
+**11 reviews failed (13%), all truncated:** thinking ran past the 3,000-token reserve before the JSON ended. That was 6 seeded and 5 counterfactual cases. When thinking does finish, it needs a median of 742 output tokens (p90 1,830, max 2,617).
+
+A failed review posts nothing. On a seeded case that's a miss; on a counterfactual it *looks* like a correct "no alarm". So both views are reported. The second is `python -m evals.report … --completed-only`, which keeps only the cases both runs reviewed.
+
+| metric | default | thinking (all 83) | Δ (95% CI) | thinking (72 both completed) | Δ (95% CI) |
+|---|---|---|---|---|---|
+| **F1** | 0.767 | 0.816 | +0.050 [−0.035, +0.138] | 0.870 | +0.058 [−0.011, +0.136] |
+| precision | 0.648 | 0.816 | +0.168 [+0.078, +0.267] | 0.816 | **+0.109 [+0.025, +0.202]** |
+| recall | 0.939 | 0.816 | **−0.122 [−0.229, −0.018]** | 0.930 | −0.023 [−0.098, +0.056] |
+| noise per clean PR | 0.438 | 0.062 | −0.375 | 0.062 | **−0.375 [−0.636, −0.143]** |
+| false alarms per counterfactual | 1.000 | 0.389 | −0.611 (flattered) | 0.538 | **−0.462 [−0.750, −0.200]** |
+| latency p50 / p95 | 13 / 24 s | 28 / 93 s | | 26 / 66 s | |
+
+**Gate:** F1's CI includes 0 in both views, so thinking is **not adopted as configured**. Latency is well inside the budget.
+
+### What this says
+
+1. **Thinking is the first change that makes the model use context.** On completed reviews:
+   - it clears about half the counterfactuals (false alarms 1.00 → 0.54), the first movement on them in Phase 4;
+   - it nearly eliminates noise on clean PRs;
+   - it keeps recall.
+
+   The significant precision and noise gains are real. Prompting (step 2) didn't get there; reasoning does.
+2. **Its loss is mechanical.** 13% of reviews run out of output budget. That costs recall (the 6 seeded failures) and makes the F1 gain non-significant.
+3. **The fix is a bigger output reserve, which the 8k window can't afford.** Reserving 5,000+ tokens leaves too little prompt for the diff and context. At 16k, the reserve fits without shrinking the prompt. The catch: Ollama must run with flash attention and a q8_0 KV cache (`OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`). D66 measured that as free in VRAM and speed on this GPU. It's a server setting on the user's machine (Q15).
 
 ---
 
