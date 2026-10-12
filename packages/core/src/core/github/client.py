@@ -86,6 +86,14 @@ class GitHubClient:
         """A repository: default branch, visibility, ..."""
         return await self._request("GET", f"/repos/{full_name}", token=token)
 
+    async def create_review(
+        self, full_name: str, number: int, review: dict[str, Any], token: str
+    ) -> dict[str, Any]:
+        """Post a pull request review (body + inline comments) in one call."""
+        return await self._request(
+            "POST", f"/repos/{full_name}/pulls/{number}/reviews", token=token, json=review
+        )
+
     # --- unauthenticated
 
     async def convert_manifest(self, code: str) -> dict[str, Any]:
@@ -93,9 +101,9 @@ class GitHubClient:
         with for the new App's id, private key and webhook secret."""
         return await self._request("POST", f"/app-manifests/{code}/conversions", token=None)
 
-    async def _request(self, method: str, path: str, *, token: str | None) -> Any:
+    async def _request(self, method: str, path: str, *, token: str | None, json: Any = None) -> Any:
         headers = {"Authorization": f"Bearer {token}"} if token else {}
-        response = await self._http.request(method, path, headers=headers)
+        response = await self._http.request(method, path, headers=headers, json=json)
         if response.is_error:
             raise GitHubError(response.status_code, _message(response), method=method, path=path)
         return response.json() if response.content else None

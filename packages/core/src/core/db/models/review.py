@@ -40,6 +40,9 @@ class Review(IdMixin, CreatedAtMixin, Base):
     # The exact pipeline config used, so any review (and eval) is reproducible.
     pipeline_config: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
     error: Mapped[str | None]
+    # The review CodeLens posted on the pull request, once posted. Findings of
+    # posted reviews are what a later push's review checks for repeats.
+    github_review_id: Mapped[int | None] = mapped_column(BigInteger)
 
     findings: Mapped[list["Finding"]] = relationship(
         back_populates="review", lazy="raise", passive_deletes=True
@@ -71,6 +74,9 @@ class Finding(IdMixin, Base):
     # Stable identity of "the same finding" across pushes, so a re-review
     # doesn't post it twice: file + category + the changed code it points at.
     fingerprint: Mapped[str | None]
+    # The function the finding is about, by name and content (D104): a later
+    # push of the same PR doesn't comment again on an unchanged function.
+    topic: Mapped[str | None]
     status: Mapped[FindingStatus] = mapped_column(
         str_enum(FindingStatus, "finding_status"), server_default=FindingStatus.POSTED.value
     )

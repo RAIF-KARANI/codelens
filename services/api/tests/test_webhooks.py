@@ -24,7 +24,7 @@ Sql = Callable[..., list[Any]]
 
 class RecordingQueue:
     def __init__(self, *, down: bool = False) -> None:
-        self.jobs: list[tuple[str, int]] = []
+        self.jobs: list[tuple[Any, ...]] = []
         self.down = down
 
     async def index_repo(self, repo_id: int) -> None:
@@ -32,8 +32,10 @@ class RecordingQueue:
             raise QueueUnavailable("connection refused")
         self.jobs.append(("index_repo", repo_id))
 
-    async def review(self, review_id: int, base: str) -> None:
-        raise AssertionError("webhooks don't queue reviews until step 3b")
+    async def review(self, review_id: int, base: str, *, title: str | None = None) -> None:
+        if self.down:
+            raise QueueUnavailable("connection refused")
+        self.jobs.append(("review", review_id, base, title))
 
 
 @contextmanager
@@ -205,9 +207,10 @@ def test_a_delivery_that_failed_halfway_is_handled_again(settings: Settings, sql
 
 
 @pytest.mark.integration
-def test_other_events_are_recorded_until_step_3(settings: Settings, sql: Sql) -> None:
+def test_events_with_nothing_to_do_are_recorded(settings: Settings, sql: Sql) -> None:
+    # A pull request on a repo the App doesn't cover: recorded, no work.
     secret = settings.github_webhook_secret.get_secret_value()
-    payload = {"action": "opened", "installation": {"id": 99}, "number": 1}
+    payload = pr_event("opened", repo_github_id=12345)
     with client(settings) as c:
         response = deliver(c, secret, "pull_request", payload, delivery="pr-1")
 
@@ -338,3 +341,102 @@ def test_jobs_lost_to_a_broker_outage_come_back_on_redelivery(settings: Settings
     assert redelivered.json()["status"] == "processed"
     assert len(queue.jobs) == 1
     assert sql("SELECT processed_at FROM webhook_deliveries")[0].processed_at is not None
+
+
+# --- pull requests (step 3b)
+
+
+def pr_event(
+    action: str,
+    *,
+    head: str = "a" * 40,
+    draft: bool = False,
+    state: str = "open",
+    repo_github_id: int = 1,
+) -> dict[str, Any]:
+    return {
+        "action": action,
+        "number": 7,
+        "installation": {"id": 99},
+        "repository": repo_payload(repo_github_id, "octo/api"),
+        "pull_request": {
+            "number": 7,
+            "title": "Make @admin happy",
+            "state": state,
+            "draft": draft,
+            "head": {"sha": head},
+            "base": {"sha": "b" * 40, "ref": "main"},
+        },
+    }
+
+
+@pytest.fixture
+def installed(settings: Settings) -> str:
+    """octo/api installed (repo github id 1); returns the webhook secret."""
+    secret = settings.github_webhook_secret.get_secret_value()
+    payload = {**installation("created"), "repositories": [repo_payload(1, "octo/api")]}
+    with client(settings) as c:
+        deliver(c, secret, "installation", payload, delivery="install")
+    return secret
+
+
+@pytest.mark.integration
+def test_a_pull_request_queues_a_review(settings: Settings, sql: Sql, installed: str) -> None:
+    queue = RecordingQueue()
+    with client(settings, queue) as c:
+        response = deliver(c, installed, "pull_request", pr_event("opened"), delivery="pr")
+
+    assert response.json()["status"] == "processed"
+    [review] = sql("SELECT id, source, pr_number, head_sha, status FROM reviews")
+    assert (review.source, review.pr_number, review.head_sha, review.status) == (
+        "github",
+        7,
+        "a" * 40,
+        "queued",
+    )
+    # The base is the PR's base tip; the worker diffs against its merge-base.
+    assert queue.jobs == [("review", review.id, "b" * 40, "Make @admin happy")]
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "event",
+    [
+        pr_event("opened", draft=True),  # drafts wait for ready_for_review
+        pr_event("closed", state="closed"),
+        pr_event("edited"),  # title or description only: no new code
+        pr_event("labeled"),
+    ],
+    ids=["draft", "closed", "edited", "labeled"],
+)
+def test_pull_request_events_without_new_code_are_ignored(
+    settings: Settings, sql: Sql, installed: str, event: dict[str, Any]
+) -> None:
+    queue = RecordingQueue()
+    with client(settings, queue) as c:
+        response = deliver(c, installed, "pull_request", event, delivery="pr")
+
+    assert response.json()["status"] == "ignored"
+    assert queue.jobs == []
+    assert sql("SELECT id FROM reviews") == []
+
+
+@pytest.mark.integration
+def test_a_head_is_reviewed_once_and_newer_pushes_supersede(
+    settings: Settings, sql: Sql, installed: str
+) -> None:
+    queue = RecordingQueue()
+    with client(settings, queue) as c:
+        deliver(c, installed, "pull_request", pr_event("opened"), delivery="1")
+        # Reopened without new commits (or a new delivery of the same push).
+        same = deliver(c, installed, "pull_request", pr_event("reopened"), delivery="2")
+        newer = deliver(
+            c, installed, "pull_request", pr_event("synchronize", head="c" * 40), delivery="3"
+        )
+
+    assert same.json()["status"] == "ignored"
+    assert newer.json()["status"] == "processed"
+    rows = sql("SELECT head_sha, status, error FROM reviews ORDER BY id")
+    assert [(r.head_sha[0], r.status) for r in rows] == [("a", "superseded"), ("c", "queued")]
+    assert "superseded by a push of ccccccc" in rows[0].error
+    assert [job[0] for job in queue.jobs] == ["review", "review"]

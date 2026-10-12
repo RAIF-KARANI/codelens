@@ -91,7 +91,7 @@ settings page → **Advanced** → **Recent deliveries** lists every delivery, a
 docker compose exec postgres psql -U codelens -c "SELECT github_installation_id, account_login FROM installations"
 ```
 
-## What the webhook endpoint does (Phase 5 steps 2–3a)
+## What the webhook endpoint does (Phase 5 steps 2–3b)
 
 `POST /webhooks/github`:
 
@@ -110,11 +110,25 @@ docker compose exec postgres psql -U codelens -c "SELECT github_installation_id,
    repos are detached (their data stays).
 6. **Re-indexes on push** to a repo's default branch. Pushes to other branches are
    recorded as `ignored`.
-7. **Records `pull_request` events** as `ignored` for now; step 3b reviews them.
+7. **Reviews pull requests:** opening a PR (or pushing to it, reopening it, or marking
+   a draft ready) queues a review of its head. The worker fetches the PR into the
+   mirror, reviews it with the local model, and posts **one comment review**: inline
+   comments, plus a summary even when there's nothing new.
+   - A push made while an older one waits or runs supersedes it.
+   - Comments on a function that's unchanged since an earlier push aren't repeated.
+   - Drafts wait until they're marked ready.
 
 So after installing the App on a test repo (with the API, both workers and the smee
-client running), `GET /api/v1/repos` lists the repo, and its index run appears under
-`/api/v1/repos/{id}/index-runs` within a minute or so.
+client running):
+- `GET /api/v1/repos` lists the repo, and its index run appears under
+  `/api/v1/repos/{id}/index-runs` within a minute or so.
+- Opening a pull request that changes Python, JavaScript or TypeScript code gets a review
+  from `<your-app>[bot]`, typically within a minute on an 8 GB GPU.
+- Files in other languages are not reviewed; a PR touching only those still gets a summary.
+
+On Windows without a global `uv`, run the commands with the repo's interpreter instead:
+`.venv\Scripts\python.exe -m core.github register ...`. The worker needs
+`--pool=solo` on Windows.
 
 ## Troubleshooting
 

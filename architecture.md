@@ -2,7 +2,7 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-12: Phases 1–4 and Phase 5 steps 1–3a.
+> follows. It describes `main` as of 2026-10-12: Phases 1–4 and Phase 5 steps 1–3b.
 >
 > | File | Answers |
 > |---|---|
@@ -77,7 +77,8 @@ and code and prompts never leave the machine (D20).
 | Celery jobs and the first REST endpoints | ✅ Phase 5 step 1 |
 | GitHub App credentials, verified webhook endpoint, installations | ✅ Phase 5 step 2 |
 | GitHub repos from webhook events: bare mirrors, indexed from git objects on install and push | ✅ Phase 5 step 3a |
-| Reviewing pull requests and posting comments, SSE | ⏭ Phase 5 steps 3b–5 |
+| Reviewing pull requests and posting the reviews on GitHub | ✅ Phase 5 step 3b |
+| Live review progress over SSE; end-to-end check | ⏭ Phase 5 steps 4–5 |
 | Dashboard | Phase 6 (`apps/web` is an empty Next.js app) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
@@ -165,7 +166,7 @@ codelens/
 | `providers/` | `Embedder` / `LLM` / `Reranker` protocols, Ollama implementations, deterministic fakes | `python -m core.providers` |
 | `diff/` | `git.py` (read-only git plumbing), `unified.py` (diff parser) | `python -m core.changes` |
 | `review/` | The review pipeline, one module per stage (§7) | `python -m core.review` |
-| `github/` | The GitHub App: REST client, App JWT and installation tokens, manifest and registration, bare mirrors (`mirror.py`), webhook signatures and events → state + jobs (`webhooks.py`; §5.5, §10.1) | `python -m core.github register \| check` |
+| `github/` | The GitHub App: REST client, App JWT and installation tokens, manifest and registration, bare mirrors (`mirror.py`), webhook signatures and events → state + jobs (`webhooks.py`), a finished review → one GitHub review (`publish.py`) (§5.5, §7 S11, §10.1) | `python -m core.github register \| check` |
 
 ### 3.2 `api` and `worker`
 
@@ -185,8 +186,8 @@ codelens/
 
 ## 4. Data model
 
-One Postgres 16 database with pgvector 0.8. Five migrations so far (D29: one per phase,
-never edited once applied); head is `f93b1ce2b1ca`.
+One Postgres 16 database with pgvector 0.8. Six migrations so far (D29: one per phase,
+never edited once applied); head is `e53885814355`.
 
 ```mermaid
 erDiagram
@@ -282,11 +283,12 @@ erDiagram
         int pr_number "nullable"
         text base_sha "merge-base"
         text head_sha
-        varchar status "queued | running | completed | failed"
+        varchar status "queued | running | completed | failed | superseded"
         text model
         jsonb token_usage
         jsonb pipeline_config "exact config used"
         text error
+        bigint github_review_id "the review posted on the PR"
     }
     findings {
         bigint id PK
@@ -300,7 +302,8 @@ erDiagram
         text explanation
         bigint_array evidence_node_ids
         float confidence
-        text fingerprint
+        text fingerprint "within one review: duplicates"
+        text topic "across pushes: file + function + its hash (D104)"
         varchar status "posted | dropped"
         text drop_reason
     }
@@ -700,6 +703,28 @@ step 4), and a crash leaves everything recorded up to that point.
 | `findings` | posted and dropped, with reasons |
 | `reviews` finish | status, `token_usage` (input/output tokens, LLM ms), error |
 
+### S11 Publish: a pull request review on GitHub (`github/publish.py`, Phase 5 step 3b)
+
+Only for GitHub reviews that completed; the worker does it after the pipeline (§9.4).
+
+- **One `COMMENT` review per reviewed push** (never `REQUEST_CHANGES`, D13), posted in a
+  single API call, so the author is notified once.
+- **Inline comments** for posted findings, on the RIGHT side of the diff. A multi-line
+  range is used only when both ends sit in one hunk; otherwise the comment goes on the
+  last line. A finding on no diff line is listed in the body instead. If GitHub still
+  refuses a placement (422), the review is posted again with every finding in the body.
+- **The summary body, always, even with nothing new** (the user's choice, D101): the
+  model's chunk summaries, the counts by severity, and how many were left out as
+  repeats, plus a footer with the files reviewed and the local model.
+- **No repeats across pushes** (D104): a finding is left out when an earlier posted
+  review of the PR had one with the same *topic*. The topic is the file, the innermost
+  function at the finding's first line, and that function's content hash. The finer
+  fingerprint failed on a real PR: the same concern moved from line 167 to 167–168 and
+  was posted twice.
+- **Untrusted text:** the model's output can be steered by the code under review, so
+  `@mentions` are defused with a zero-width space before posting. GitHub sanitises the
+  Markdown itself.
+
 ---
 
 ## 8. Model providers
@@ -779,9 +804,41 @@ stateDiagram-v2
     running --> completed: at least one chunk reviewed
     running --> failed: every chunk failed, or an exception
     running --> running: redelivered after a crash<br/>(partial rows cleared, restart)
-    completed --> [*]
+    [*] --> queued: pull_request webhook<br/>(GitHub PR, one per head)
+    queued --> superseded: a newer push of the same PR<br/>(webhook, or worker before running)
+    completed --> superseded: a newer push arrived during the review<br/>(findings kept, not posted)
+    completed --> [*]: (GitHub) review posted on the PR
     failed --> [*]
+    superseded --> [*]
 ```
+
+### 9.4 A pull request, end to end (Phase 5 step 3b)
+
+```mermaid
+sequenceDiagram
+    participant GH as GitHub
+    participant A as API (webhook)
+    participant PG as Postgres
+    participant W as worker-gpu
+    participant O as Ollama
+    GH->>A: pull_request opened / synchronize (signed)
+    A->>PG: supersede queued reviews of this PR; INSERT review (queued, head_sha)
+    A->>W: review(review_id, base_sha, title) via Redis
+    A-->>GH: 202
+    W->>PG: still the newest review of this PR? (else superseded)
+    W->>GH: installation token
+    W->>GH: git fetch refs/pull/N/head + branches into the mirror
+    W->>O: embed seed queries, generate per chunk
+    W->>PG: findings (with fingerprints and topics), trace, events
+    W->>PG: still the newest? topics already posted on this PR?
+    W->>GH: POST /pulls/N/reviews (COMMENT: summary + inline comments)
+    W->>PG: github_review_id, "published" event
+```
+
+Measured on a real PR (fashion-store #1, JavaScript, 2026-10-12): the review was posted
+38 s after the PR opened. qwen3:8b caught the planted bug (a new required parameter
+none of the 5 callers pass) as "null reference if `gridId` is not provided", but graded
+it a warning and didn't cite the callers (Phase 4's finding, again).
 
 ### 9.3 A manual review, end to end
 
@@ -910,7 +967,8 @@ flowchart TB
 | `installation` deleted | installation row removed; its repos keep their data, `installation_id → NULL` | none |
 | `installation_repositories` | added repos attached, removed repos detached | index the added |
 | `push` to the default branch | the repo's default branch | re-index it |
-| everything else (incl. `pull_request` until 3b) | recorded | none |
+| `pull_request` opened / synchronize / reopened / ready_for_review (open, not draft) | a queued review of the head; older queued reviews of the PR superseded; a head already queued, running or reviewed is skipped | review (§9.4) |
+| everything else (other PR actions, issues, …) | recorded | none |
 
 Only a *handled* delivery counts as seen (D95), and the three steps run in order (D98).
 A broker outage at step 2 leaves the delivery unprocessed, so "Redeliver" in the App's
@@ -1091,12 +1149,10 @@ latency with identical tokens, so latency is only compared between back-to-back 
 
 **Next, Phase 5** (`planning.md` §9):
 
-1. **Step 3b:** review on `pull_request` (the PR head from `refs/pull/N/head`), post one
-   `COMMENT` review with inline comments and a summary even when nothing new was found,
-   skip findings already posted on the PR, and supersede reviews of older pushes.
-2. **Step 4:** Redis pub/sub of `review_events` and an SSE endpoint with `Last-Event-ID`
+1. **Step 4:** Redis pub/sub of `review_events` and an SSE endpoint with `Last-Event-ID`
    replay.
-3. **Step 5:** end to end on a real test repo.
+2. **Step 5:** end to end on a real test repo, and the latency budget re-checked;
+   decide Q17 (GPU queue priorities) and Q18 (review only a push's incremental diff?).
 
 **Deferred upgrades:** FTS + RRF (U1), graph expansion (U2), a cross-encoder reranker (U3),
 a PageRank prior (U4) and anti-patterns (U5). Their schema columns (`tsv`, `centrality`,
@@ -1112,5 +1168,8 @@ a PageRank prior (U4) and anti-patterns (U5). Their schema columns (`tsv`, `cent
 - Local-path reviews need the API and worker on the host (D92).
 - `apps/web` is still empty.
 - `webhook_deliveries` grows without pruning.
+- Every push re-reviews the whole PR diff (Q18); topics stop repeated comments, but the
+  model re-reads unchanged code, and its output varies from push to push.
+- A failed review posts nothing on the PR; nothing tells the author it failed.
 - Out-of-order `installation` events (e.g. `deleted` arriving before `created` on a quick
   reinstall) aren't reconciled.

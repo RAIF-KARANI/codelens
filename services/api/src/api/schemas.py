@@ -88,6 +88,8 @@ class ReviewSummary(_FromRow):
     started_at: datetime | None
     finished_at: datetime | None
     error: str | None
+    # The review posted on the pull request (github source only), once posted.
+    github_review_id: int | None = None
     counts: SeverityCounts = Field(default_factory=SeverityCounts)
 
 

@@ -389,3 +389,34 @@ def test_generation_sampling_lists_only_the_overrides_that_are_set() -> None:
         "temperature": 0.6,
         "top_k": 20,
     }
+
+
+def test_topic_is_the_function_not_the_exact_lines() -> None:
+    # D104: the model words and places one concern differently from push to
+    # push. The topic (file + innermost function + its code hash) stays put.
+    config = ValidationConfig(max_comments=5)
+    narrow, wide, relabelled, in_tax = validate(
+        [
+            (
+                pricing_chunk(),
+                [
+                    finding(line_start=2, line_end=2, evidence=[]),
+                    finding(line_start=2, line_end=3, evidence=[], title="wider"),
+                    finding(line_start=3, line_end=3, evidence=[], category=Category.API_CONTRACT),
+                    finding(line_start=7, line_end=7, evidence=[], title="in tax()"),
+                ],
+            )
+        ],
+        config,
+    )
+    assert narrow.fingerprint != wide.fingerprint  # the fine identity differs...
+    assert narrow.topic == wide.topic == relabelled.topic  # ...the topic doesn't
+    assert in_tax.topic != narrow.topic  # another function, another topic
+
+    # Once discount() itself changes again, a finding on it is a new topic.
+    edited = file_change(
+        "shop/pricing.py", PRICING_OLD, PRICING_NEW.replace("return None", "return 0")
+    )
+    chunk = ReviewChunk(0, (edited,), "", (), (), ())
+    [after] = validate([(chunk, [finding(line_start=2, line_end=2, evidence=[])])], config)
+    assert after.topic != narrow.topic

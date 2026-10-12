@@ -22,7 +22,7 @@ class QueueUnavailable(Exception):
 class JobQueue(Protocol):
     async def index_repo(self, repo_id: int) -> None: ...
 
-    async def review(self, review_id: int, base: str) -> None: ...
+    async def review(self, review_id: int, base: str, *, title: str | None = None) -> None: ...
 
 
 class CeleryJobQueue:
@@ -49,8 +49,12 @@ class CeleryJobQueue:
         )
         await self._send(job.apply_async)
 
-    async def review(self, review_id: int, base: str) -> None:
-        await self._send(lambda: self._celery.send_task(jobs.REVIEW, args=(review_id, base)))
+    async def review(self, review_id: int, base: str, *, title: str | None = None) -> None:
+        await self._send(
+            lambda: self._celery.send_task(
+                jobs.REVIEW, args=(review_id, base), kwargs={"title": title}
+            )
+        )
 
     async def _send(self, publish: Callable[[], object]) -> None:
         try:
