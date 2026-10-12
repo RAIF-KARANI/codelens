@@ -19,3 +19,13 @@ def test_embed_dim_rejects_values_hnsw_cannot_index(monkeypatch: pytest.MonkeyPa
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_jwt_secret_is_empty_or_at_least_32_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert Settings(_env_file=None).api_jwt_secret.get_secret_value() == ""  # unset: API refuses
+    monkeypatch.setenv("API_JWT_SECRET", "x" * 32)
+    assert Settings(_env_file=None).api_jwt_secret.get_secret_value() == "x" * 32
+
+    monkeypatch.setenv("API_JWT_SECRET", "too-short")
+    with pytest.raises(ValidationError, match="at least 32 bytes"):
+        Settings(_env_file=None)

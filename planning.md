@@ -5,8 +5,9 @@
 > two disagree, **this file wins**. It supersedes `idea.md` §14 (roadmap) and adds
 > decisions D18+.
 
-**Last updated:** 2026-10-11 · **Current position:** Phases 1–4 complete. Phase 4 adopted anchoring (test F1 0.654 → 0.767); every
-change aimed at making qwen3:8b reason over context was rejected (D83, D85–D87). Next: Phase 5 (GitHub App).
+**Last updated:** 2026-10-12 · **Current position:** Phases 1–4 complete. Phase 4 adopted anchoring (test F1 0.654 → 0.767); every
+change aimed at making qwen3:8b reason over context was rejected (D83, D85–D87). Phase 5 (GitHub App) in progress:
+step 1 (Celery jobs and the first API endpoints) is in review.
 
 ---
 
@@ -430,14 +431,21 @@ index_repo(repo_id, sha) = chain(
 review_pr(review_id) = single task running the query pipeline (§6), queue: review
 ```
 
+**As built (Phase 5 step 1, D88–D91):** the core jobs are not split that finely yet
+(`index_repository` does parse, persist and re-link in one call; tsv and PageRank arrive
+with U1/U4), so a re-index is `chain(index_repo, embed_repo)`, and a review is one task.
+Names and routes live in `core/jobs.py`.
+
 | Queue | Concurrency | Tasks |
 |---|---|---|
-| `index` | 2 | sync, parse, relink, tsv, pagerank |
-| `gpu` | **1** | embedding batches and LLM generation. Serialising them prevents VRAM thrash |
-| `review` | 2 | review orchestration (it awaits `gpu` work) |
+| `index` | 2 | `index_repo` (parse, persist, re-link), `ping` |
+| `gpu` | **1** | `embed_repo` and whole reviews (`review`). Serialising them prevents VRAM thrash |
 
-Each repo has a lock (a Redis `SET NX` with a TTL), so two index runs never overlap
-on the same repo.
+There is no separate `review` queue (D88): a review is GPU-bound end to end, and a task
+that waits on another task's result can deadlock the pool.
+
+Each repo has a lock: the Postgres advisory lock the indexer already takes (D41), not a
+Redis `SET NX` with a TTL (D89). An index task that finds it held retries every 30 s.
 
 ### 5.11 Anti-pattern library
 - **Sources:** global patterns in `anti_patterns/*.yml` (in this repo); team patterns
@@ -542,18 +550,21 @@ schemas in `api/schemas/`. Errors use the shape
 (HS256, shared `API_JWT_SECRET`, 5-minute expiry, claims: `sub` = GitHub user ID,
 `login`). The API checks repo access against installation membership. Webhooks are
 authenticated by HMAC. With `DEMO_MODE=true`, all mutating endpoints return `403`.
+*As built in 5.1 (D92):* tokens are verified (secret ≥ 32 bytes; unset = every request is
+refused), and `python -m api.token` mints one for development. The per-repo access check
+waits for installations (5.3); until then any valid token sees every repo.
 
 | Method | Path | Auth | Purpose | Phase |
 |---|---|---|---|---|
 | GET | `/health` | none | Readiness: DB + Redis (+ Ollama, reranker once used) | ✅ 1 |
 | POST | `/webhooks/github` | HMAC | `installation*`, `push`, `pull_request` events → `202` + enqueue | 5 |
-| GET | `/api/v1/repos` | JWT | Repos visible to the user (status, last index, last review) | 5 |
-| GET | `/api/v1/repos/{repo_id}` | JWT | Repo detail + latest index stats | 5 |
-| POST | `/api/v1/repos/{repo_id}/index` | JWT | Trigger a re-index → `202 {index_run_id}` | 5 |
-| GET | `/api/v1/repos/{repo_id}/index-runs` | JWT | Index history | 5 |
-| GET | `/api/v1/repos/{repo_id}/reviews` | JWT | Paginated reviews (`?status=&cursor=`) | 5 |
-| POST | `/api/v1/reviews` | JWT | Manual review `{repo_id, pr_number}` or `{repo_id, base, head}` → `202 {review_id}` | 5 |
-| GET | `/api/v1/reviews/{review_id}` | JWT | Review + findings (posted; `?include_dropped=true`) | 5 |
+| GET | `/api/v1/repos` | JWT | Repos visible to the user (status, last index, last review) | ✅ 5.1 |
+| GET | `/api/v1/repos/{repo_id}` | JWT | Repo detail + latest index stats | ✅ 5.1 |
+| POST | `/api/v1/repos/{repo_id}/index` | JWT | Trigger a re-index, then embed → `202 {repo_id, status}` (the run row is created when the job starts; poll index-runs) | ✅ 5.1 (local repos) |
+| GET | `/api/v1/repos/{repo_id}/index-runs` | JWT | Index history (`?cursor=&limit=`) | ✅ 5.1 |
+| GET | `/api/v1/repos/{repo_id}/reviews` | JWT | Paginated reviews (`?status=&cursor=&limit=`), with posted counts by severity | ✅ 5.1 |
+| POST | `/api/v1/reviews` | JWT | Manual review `{repo_id, pr_number}` or `{repo_id, base, head}` → `202 {review_id}` | ✅ 5.1 `{repo_id, base, head}` (local repos); `pr_number` in 5.3 |
+| GET | `/api/v1/reviews/{review_id}` | JWT | Review + findings (posted; `?include_dropped=true`) | ✅ 5.1 |
 | GET | `/api/v1/reviews/{review_id}/events` | JWT | **SSE** stream (replay + live; `Last-Event-ID`) | 5 |
 | GET | `/api/v1/reviews/{review_id}/diff` | JWT | Unified diff for the viewer | 6 |
 | GET | `/api/v1/reviews/{review_id}/graph` | JWT | Nodes + edges around the seeds for React Flow `{nodes:[{id,label,kind,depth,centrality,is_seed}], edges:[{src,dst,kind,resolved}]}` | 6 |
@@ -656,14 +667,14 @@ codelens/
 ├── services/
 │   ├── api/src/api/
 │   │   ├── main.py checks.py dependencies.py   ✅
-│   │   ├── routes/health.py        ✅
-│   │   ├── routes/{webhooks,repos,reviews,anti_patterns,search}.py   📋4–6
-│   │   ├── schemas/                📋5 Pydantic I/O models
-│   │   ├── auth.py                 📋5 JWT verification
+│   │   ├── routes/{health,repos,reviews}.py    ✅ (5.1)
+│   │   ├── routes/{webhooks,anti_patterns,search}.py   📋5–6
+│   │   ├── schemas.py queries.py   ✅ (5.1) Pydantic I/O models, shared reads
+│   │   ├── auth.py token.py errors.py   ✅ (5.1) JWT verification, dev tokens, error shape
+│   │   ├── queue.py                ✅ (5.1) enqueue by task name (core/jobs.py)
 │   │   └── sse.py                  📋5 Redis pub/sub → SSE
 │   ├── worker/src/worker/
-│   │   ├── celery_app.py tasks.py  ✅ (ping)
-│   │   └── tasks/{index,embed,review,graph}.py   📋5
+│   │   └── celery_app.py tasks.py  ✅ (5.1) ping, index_repo, embed_repo, review
 │   └── reranker/                   📋4 FastAPI + sentence-transformers CrossEncoder (CPU)
 └── evals/
     ├── datasets/{seeded,clean}/<case_id>/{case.yaml, patch.diff}   ✅ (golden/ later)
@@ -742,6 +753,14 @@ pub/sub → SSE, migration (`installations`, `webhook_deliveries`). Local webhoo
 delivery uses a tunnel (smee.io or `gh webhook forward`).
 **Exit:** opening a PR on a test repo yields inline comments within the latency
 budget; a re-push doesn't duplicate comments.
+
+| Step | Deliverable | User action |
+|---|---|---|
+| 1 🔍 | Celery jobs and queues (`index`, `gpu`; D88): `index_repo` → `embed_repo` chain, `review`; advisory-lock retry (D89); queued reviews claimed by the worker (D90); the API enqueues by name (D91); API: repos, index-runs, reviews (manual, local repos), JWT auth + `DEMO_MODE` + one error shape (D92) | none |
+| 2 | GitHub App: manifest + setup doc; App JWT (RS256) → installation tokens; httpx GitHub client; `POST /webhooks/github` with HMAC SHA-256 and delivery dedupe; migration (`installations`, `webhook_deliveries`) | register the App |
+| 3 | Events: on `installation`, mirror-clone and index; on push to the default branch, re-index; on `pull_request` opened/synchronize, review and post a GitHub review with inline comments; no duplicates on re-push (fingerprints); per-repo access checks | none |
+| 4 | Redis pub/sub of `review_events` + `GET /api/v1/reviews/{id}/events` (SSE: replay from `Last-Event-ID`, then live) | none |
+| 5 | End to end on a real test repo via `gh webhook forward` (or smee); re-check the latency budget (D84) | install the App on a test repo |
 
 ### Phase 6: Dashboard
 Auth.js (GitHub) → JWT to the API; pages: repos, repo, reviews, **review detail**
@@ -1099,6 +1118,11 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D85 | Thinking mode (8k window, 3,000-token output reserve) is not adopted; kept as `default_think.yaml` | Adopt on the dev result, or on the completed-only view | Test, paired: F1 +0.050 [−0.035, +0.138] (all cases) and +0.058 [−0.011, +0.136] (72 both completed), so the gate fails either way. 11/83 reviews (13%) ran out of output budget, costing recall −0.122. On completed reviews it is the first change that makes the model use context: precision +0.109, noise 0.44 → 0.06, counterfactual false alarms 1.00 → 0.54, all significant. The fix is room to think (Q15), not a different idea. Failed reviews would flatter a config on counterfactual/clean cases, so `--completed-only` reports the view without them |
 | D86 | Thinking is not adopted at 16k either. Its failures are repetition loops at low temperature (a chain of thought re-reading a moved line forever; 128 completed reviews never exceeded 2,617 tokens), not too small a budget. Qwen's sampling (0.6/0.95/20) stops the loops but loses recall (dev F1 −0.021); temp 0.1 with a 3,500 budget plus `think_fallback` (redo the chunk without thinking) fails nothing but gains nothing (dev +0.008). Kept: per-config sampling, `think_fallback`, truncation errors that say where the tokens went | Keep tuning thinking | Four measurements disagree (8k dev +0.08, 8k test +0.06 n.s., 16k dev ±0.01) at ~4× latency. More GPU hours on thinking at 8B have diminishing returns |
 | D87 | Reject the verification pass; close Phase 4 at anchoring and move to Phase 5; U1–U5 deferred until a model that uses context (Q2) | Keep iterating on 8B prompting | Test, paired: F1 +0.026 [−0.048, +0.104], precision +0.089, recall −0.082. It cleared 4/8 real reorder bugs and 3/8 safe twins, so it cannot tell them apart. Lesson kept: in structured output, the reasoning field must come before the verdict (Ollama generates fields in schema order); verdict-first, it confirmed 31/31 while its own reasons said safe |
+| D88 | Two Celery queues: `index` (CPU, concurrency 2) and `gpu` (concurrency 1), and a whole review runs on `gpu` | §5.10's third `review` queue, whose tasks await LLM subtasks on `gpu` | A review is GPU-bound end to end (query embeddings, then generation at ~30 tok/s). A task that blocks on another task's result holds its worker slot while it waits, and deadlocks once every slot is waiting; Celery's docs forbid it. One `gpu` worker gives the same VRAM guarantee with no waiting. Cost: a review queued behind a long embedding job waits for it (FIFO; Q17) |
+| D89 | The per-repo lock stays the Postgres advisory lock (D41); an index task that finds it held retries every 30 s, for up to 30 min | A Redis `SET NX` lock with a TTL (§5.10) | Postgres releases an advisory lock as soon as its connection drops, so a crashed worker can never leave a repo locked. A TTL lock needs a TTL longer than the longest run yet short enough to recover from a crash. A retry keeps the task's place in its chain, so the embed step still follows |
+| D90 | The API queues a review by inserting a `queued` row (refs resolved to SHAs) and sending its id; the worker claims the row. A redelivered task skips a finished review and restarts a `running` one (a crashed attempt), clearing its partial events, trace and findings | The worker creates the row; pass the refs as given | `POST` can answer `202 {review_id}` at once, so the client can follow the review. A bad ref is a 422 now, not a failed review later. The review is pinned to the commits named when it was asked for. Acks are late (redelivery after a crash), so the task must be idempotent |
+| D91 | The API enqueues tasks by name through a producer-only Celery client; task names and routes live in `core/jobs.py`. A re-index is `chain(index_repo, embed_repo)` | Import the worker's task functions into the API | The API image doesn't contain the worker (or tree-sitter, or model clients), and shouldn't need them to put a message on a queue. One shared module keeps both sides' names and queues from drifting. The chain embeds only after a successful index |
+| D92 | API auth from the first endpoint: HS256 JWT on all of `/api/v1` (`alg` pinned, `exp` and `sub` required, secret ≥ 32 bytes), refusing every request when `API_JWT_SECRET` is unset; `DEMO_MODE` → 403 on mutations; one error shape for every error. Per-repo access checks wait for installations (5.3) | Add auth with the GitHub App in step 2 or 3 | The endpoints exist from now on, and shouldn't exist unauthenticated, even on a laptop. An unconfigured server fails closed, not open. HS256 keys shorter than the hash can be brute-forced offline from one token (RFC 7518 §3.2). Manual reviews and re-indexing need a local checkout the API and worker can both read, so in step 1 they run on the host, as the evals do |
 
 ---
 
@@ -1139,6 +1163,7 @@ PR overlay, migrate service, host port 5433). New decisions:
 | Q14 | ~~Which lever next?~~ **Answered 2026-10-12: thinking mode first** (user's choice; D85). Was: The 8B model reacts to a diff's shape and ignores the callers that show a change is safe, even tagged and with a rule (D83). Which lever next: U6 thinking mode (a toggle already), Q2 a stronger model (qwen3:14b, partly on CPU), or a verification pass (for each api-contract finding, a short second call with only the change and its callers: "does any caller break?")? | Before Phase 4 step 3 |
 | Q15 | ~~16k window for thinking?~~ **Answered 2026-10-12:** measured (Ollama now runs with flash attention + q8_0 KV); thinking still not adopted (D86). Was: Thinking needs a bigger output reserve than the 8k window can spare (13% of test reviews truncated at 3,000). Run Ollama with flash attention + q8_0 KV (`OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`, D66: free on this GPU) and evaluate thinking at a 16k window with a ~6,000-token reserve? A server setting on the user's machine | Before Phase 4 step 4 |
 | Q16 | ~~How to continue Phase 4?~~ **Answered 2026-10-12: (b) a verification pass, then (d) Phase 5** (user's choice; verification rejected, D87). Was: How to continue Phase 4, now that prompting (D83) and thinking (D86) don't get qwen3:8b to use context: (a) the retrieval upgrades U1–U5 as planned, accepting that F1 may not move; (b) a verification pass (a second, narrow call per API-contract finding); (c) a stronger model (Q2: qwen3:14b, partly on CPU); or (d) stop Phase 4 at anchoring and move to Phase 5 (GitHub App) | Now |
+| Q17 | Should the `gpu` queue put reviews ahead of bulk embedding (Celery priorities, or a third queue that the GPU worker drains first)? Today it is FIFO, so a PR opened while a new repo is embedding (~8–9 min for 14k nodes, §5.7) waits for it (D88) | Phase 5 step 5 (measure end to end) |
 
 ---
 

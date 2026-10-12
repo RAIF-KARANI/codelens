@@ -4,9 +4,10 @@ All services import `get_settings()` from here, so config lives in exactly one p
 """
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -62,6 +63,26 @@ class Settings(BaseSettings):
     # Only worth it on GPUs too small to hold both models.
     embed_query_on_cpu: bool = False
     embed_timeout_s: float = Field(default=120.0, gt=0)
+
+    # The pipeline the worker reviews with. Relative paths resolve against the
+    # working directory: the repo root locally, /app in the containers.
+    pipeline_config: Path = Path("configs/pipeline/default.yaml")
+
+    # --- API (planning.md §7)
+    # Signs the dashboard's HS256 tokens. Unset means the API refuses every
+    # /api/v1 request: an unconfigured server must fail closed, not open.
+    api_jwt_secret: SecretStr = SecretStr("")
+    # A public read-only instance (§15): every mutating endpoint returns 403.
+    demo_mode: bool = False
+
+    @field_validator("api_jwt_secret")
+    @classmethod
+    def _secret_long_enough(cls, secret: SecretStr) -> SecretStr:
+        # HS256 keys shorter than the hash (32 bytes) can be brute-forced
+        # offline from any one token (RFC 7518 §3.2).
+        if 0 < len(secret.get_secret_value().encode()) < 32:
+            raise ValueError("API_JWT_SECRET must be at least 32 bytes")
+        return secret
 
 
 @lru_cache

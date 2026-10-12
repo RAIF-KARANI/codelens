@@ -8,6 +8,9 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "redis>=5.2",
+    # Producer only: the API enqueues tasks by name (api/queue.py).
+    "celery[redis]>=5.4",
+    "pyjwt>=2.10",
 ]
 
 [tool.uv.sources]
