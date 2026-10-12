@@ -7,8 +7,8 @@
 
 **Last updated:** 2026-10-12 · **Current position:** Phases 1–4 complete. Phase 4 adopted anchoring (test F1 0.654 → 0.767); every
 change aimed at making qwen3:8b reason over context was rejected (D83, D85–D87). Phase 5 (GitHub App) in progress:
-steps 1 (#20), 2 (#22) and 3a (#23) are done, and the App is registered and installed on a real repo;
-step 3b (review pull requests and post the reviews on GitHub) is in review.
+steps 1 (#20), 2 (#22), 3a (#23) and 3b (#24) are done: the App reviews real pull requests;
+step 4 (live review events over SSE) is in review.
 
 ---
 
@@ -570,7 +570,7 @@ in the JWT. Until then any valid token sees every repo.
 | GET | `/api/v1/repos/{repo_id}/reviews` | JWT | Paginated reviews (`?status=&cursor=&limit=`), with posted counts by severity | ✅ 5.1 |
 | POST | `/api/v1/reviews` | JWT | Manual review `{repo_id, pr_number}` or `{repo_id, base, head}` → `202 {review_id}` | ✅ 5.1 `{repo_id, base, head}` (local repos); `pr_number` in 5.3 |
 | GET | `/api/v1/reviews/{review_id}` | JWT | Review + findings (posted; `?include_dropped=true`) | ✅ 5.1 |
-| GET | `/api/v1/reviews/{review_id}/events` | JWT | **SSE** stream (replay + live; `Last-Event-ID`) | 5 |
+| GET | `/api/v1/reviews/{review_id}/events` | JWT | **SSE** stream (replay + live; `Last-Event-ID` or `?after=`) | ✅ 5.4 |
 | GET | `/api/v1/reviews/{review_id}/diff` | JWT | Unified diff for the viewer | 6 |
 | GET | `/api/v1/reviews/{review_id}/graph` | JWT | Nodes + edges around the seeds for React Flow `{nodes:[{id,label,kind,depth,centrality,is_seed}], edges:[{src,dst,kind,resolved}]}` | 6 |
 | GET | `/api/v1/reviews/{review_id}/trace` | JWT | Per-chunk context items with all stage scores; dropped findings with reasons | 6 |
@@ -590,6 +590,22 @@ in the JWT. Until then any valid token sees every repo.
 | `error` | `{code, message}` |
 
 A heartbeat comment line is sent every 15 s.
+
+*As built (5.4):* the stream forwards the `review_events` rows exactly as recorded, so the
+event names are the recorder's. The `finding` and `progress` events above don't exist:
+findings are fetched with `GET /reviews/{id}` once the review is done.
+
+| event | data |
+|---|---|
+| `stage` | `{stage: "seeds", files, seeds}` · `{stage: "packed", chunks, budgets, left_out}` · `{stage: "generating", chunk, of, prompt_tokens}` |
+| `chunk_done` | `{chunk, findings, input_tokens, output_tokens, llm_ms, estimated_prompt_tokens}` |
+| `chunk_failed` / `think_fallback` | `{chunk, error}` |
+| `verified` | the verification pass's verdict per finding (off by default) |
+| `done` | `{status, posted, dropped}`: the pipeline finished |
+| `published` | `{github_review_id, new, repeated, inline}` (GitHub PRs) |
+| `superseded` | `{by_review, when}` |
+| `error` | `{message}`: the worker's review failed |
+| `end` | `{status}`: the last event of every review; the server closes the stream after it (D106) |
 
 **CLIs** (the internal "API" for Phases 1–4; all go through the same `core` code):
 
@@ -678,7 +694,7 @@ codelens/
 │   │   ├── schemas.py queries.py   ✅ (5.1) Pydantic I/O models, shared reads
 │   │   ├── auth.py token.py errors.py   ✅ (5.1) JWT verification, dev tokens, error shape
 │   │   ├── queue.py                ✅ (5.1) enqueue by task name (core/jobs.py)
-│   │   └── sse.py                  📋5 Redis pub/sub → SSE
+│   │   └── sse.py                  ✅ (5.4) review events over SSE (Redis doorbell, D105)
 │   ├── worker/src/worker/
 │   │   └── celery_app.py tasks.py  ✅ (5.1) ping, index_repo, embed_repo, review
 │   └── reranker/                   📋4 FastAPI + sentence-transformers CrossEncoder (CPU)
@@ -765,8 +781,8 @@ budget; a re-push doesn't duplicate comments.
 | 1 ✅ #20 | Celery jobs and queues (`index`, `gpu`; D88): `index_repo` → `embed_repo` chain, `review`; advisory-lock retry (D89); queued reviews claimed by the worker (D90); the API enqueues by name (D91); API: repos, index-runs, reviews (manual, local repos), JWT auth + `DEMO_MODE` + one error shape (D92) | none |
 | 2 ✅ #22 | GitHub App: manifest + `python -m core.github register` (D93) and `check`, `docs/github-app.md`; App JWT (RS256) → cached installation tokens (D96); httpx GitHub client; `POST /webhooks/github` with HMAC SHA-256, delivery dedupe (D95), `installation` events mirrored (D97); migration (`installations`, `webhook_deliveries`, `repos.installation_id`) | register the App (`docs/github-app.md`) |
 | 3a ✅ #23 | Repos from events (D101): `installation` created and `installation_repositories` attach repos (keyed by GitHub id) and queue indexing; removed repos are detached; a push to the default branch re-indexes. Bare mirrors refreshed with an installation token (D99); indexing straight from git objects (`parse_revision`, `index_revision`; D100); webhook state → jobs → processed, in that order (D98) | none |
-| 3b 🔍 | Pull requests (D102): `opened`/`synchronize`/`reopened`/`ready_for_review` (open, not drafts) queue a review of the PR head (`refs/pull/N/head`) against its base, with the PR title in the prompt; one `COMMENT` review per push: inline comments plus a summary even when nothing new (D101); a newer push supersedes older reviews (D103); no repeats on unchanged functions (topics, D104). Verified on a real PR | none |
-| 4 | Redis pub/sub of `review_events` + `GET /api/v1/reviews/{id}/events` (SSE: replay from `Last-Event-ID`, then live) | none |
+| 3b ✅ #24 | Pull requests (D102): `opened`/`synchronize`/`reopened`/`ready_for_review` (open, not drafts) queue a review of the PR head (`refs/pull/N/head`) against its base, with the PR title in the prompt; one `COMMENT` review per push: inline comments plus a summary even when nothing new (D101); a newer push supersedes older reviews (D103); no repeats on unchanged functions (topics, D104). Verified on a real PR | none |
+| 4 🔍 | `GET /api/v1/reviews/{id}/events` (SSE): replay after `Last-Event-ID`, then live through a Redis doorbell over the `review_events` rows (D105), until an `end` event (D106); heartbeats every 15 s. Verified live on a real PR | none |
 | 5 | End to end on a real test repo via smee (D94); re-check the latency budget (D84) | install the App on a test repo |
 
 ### Phase 6: Dashboard
@@ -1143,6 +1159,8 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D102 | Pull request reviews: queued from `opened`, `synchronize`, `reopened`, `ready_for_review` on open, non-draft PRs of attached repos, once per head (a failed one may be retried). The worker fetches `refs/pull/N/head` plus the branches into the mirror and reviews the head against its merge-base with the PR's base SHA, with the PR's title in the prompt. Posted as one `COMMENT` review: inline comments on the RIGHT side (a range only within one hunk) and a summary body. If GitHub refuses a placement (422), it is posted again with every finding in the body. The model's `@mentions` are defused (a zero-width space); failed reviews post nothing | Review on every event; `REQUEST_CHANGES`; one comment per finding as separate API calls | `refs/pull/N/head` also covers PRs from forks. One review call is atomic and notifies once. A bot shouldn't block merges (D13). The model's text is steerable by the code under review, and an @mention would notify a real person |
 | D103 | A newer push supersedes older reviews of the same PR: queued ones are marked `superseded` when its webhook arrives, and the worker re-checks before running and again before posting (a push during a review leaves its findings recorded but unposted). New review status `superseded` (migration `e53885814355`) | Review every head; cancel running tasks | Only the latest head matters to the author, and the GPU queue is FIFO (Q17): superseding queued work saves it. Killing a running GPU task is messier than letting it finish and not posting |
 | D104 | Across pushes, a finding is a repeat if an earlier posted review of the PR had a finding with the same *topic*: file + innermost node at its first line + that node's content hash. Validation's within-review dedupe keeps the fingerprint (eval behaviour unchanged) | The fingerprint (file + category + the code in its exact lines) | Measured on a real PR: the same concern ("null if `gridId` is not provided") came back on lines 167–168 instead of 167, got a new fingerprint, and was posted twice, alongside three rewordings. With topics, a README-only push posted "No new findings; 2 more on code already commented on". Trade-off: a different second issue in an unchanged function isn't posted on later pushes; the first review of that code had its chance |
+| D105 | Live events: Postgres is the mailbox, Redis the doorbell. Each event is a `review_events` row, committed first; then the worker publishes a bare notification on `review:<id>`. A stream subscribes, *then* reads the rows after `Last-Event-ID`, then re-reads on every ring and at every 15 s heartbeat. Notification failures never fail a review | Publish the events themselves on Redis; poll Postgres only | Subscribing before reading closes the gap between replay and live. A lost ring (pub/sub stores nothing) costs one heartbeat of delay, never an event, and live and replayed streams are the same rows. Polling alone would delay every event by up to its interval. Measured live on a real PR: every event reached the client the moment it was committed |
+| D106 | Every review's last event is `end` (`{status}`), and the stream closes after it. The pipeline writes it for CLI and eval reviews; the worker writes it itself, after posting to GitHub or after any failure. Reviews from before this step have no `end`: once finished and quiet for 30 s, the stream sends a synthetic one (no id) | Close on `done`, or when the status turns final | For a GitHub review, `done` (pipeline finished) comes before `published`, and the status turns `completed` before posting. Only the writer of the last event knows it is last. An EventSource reconnects when a stream closes, so the client needs `end` to know to stop |
 
 ---
 

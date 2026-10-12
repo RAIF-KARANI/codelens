@@ -23,6 +23,12 @@ def get_redis(request: Request) -> Redis:
     return request.app.state.redis
 
 
+def get_events_redis(request: Request) -> Redis:
+    """Redis for event streams (pub/sub), without a read timeout: a stream
+    waits on its subscription for up to a heartbeat (api/sse.py)."""
+    return request.app.state.events_redis
+
+
 def get_queue(request: Request) -> JobQueue:
     return request.app.state.queue
 

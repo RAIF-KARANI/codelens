@@ -1,0 +1,122 @@
+"""Server-Sent Events for a review's timeline (planning.md §7, D105, D106).
+
+The stream replays `review_events` after the client's `Last-Event-ID`, then
+follows new ones live, and stops after the `end` event. The order of steps
+is what makes it lossless:
+
+1. **Subscribe** to the review's Redis channel (the doorbell);
+2. **read** the new rows from Postgres and send them;
+3. **wait** for the doorbell, or the heartbeat timeout, then go back to 2.
+
+An event committed between steps 1 and 2 is read at step 2. One committed
+later rings the bell at step 3. If that ring is lost (pub/sub keeps
+nothing), the next heartbeat's read still finds the row. Rows are only read
+from the database, so what a client sees live is exactly what it would see
+on replay.
+"""
+
+import asyncio
+import json
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
+
+from redis.asyncio import Redis
+from redis.asyncio.client import PubSub
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from core.db.models import Review, ReviewEvent
+from core.enums import ReviewStatus
+from core.review.events import END, channel
+
+# A comment line this often keeps proxies from closing an idle connection;
+# each one also re-reads the database, in case a doorbell was lost.
+HEARTBEAT_SECONDS = 15.0
+# Reviews finished before `end` events existed (Phase 5 step 4) never get
+# one: a finished review this quiet has nothing more to say.
+QUIET_AFTER_FINISH = timedelta(seconds=30)
+_FINISHED = (ReviewStatus.COMPLETED, ReviewStatus.FAILED, ReviewStatus.SUPERSEDED)
+
+
+def frame(seq: int | None, event: str, data: dict[str, object]) -> str:
+    """One SSE message. JSON never contains a raw newline, so `data` is one
+    line, as the format requires."""
+    head = f"id: {seq}\n" if seq is not None else ""
+    return f"{head}event: {event}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
+
+
+async def review_stream(
+    engine: AsyncEngine,
+    redis: Redis,
+    review_id: int,
+    after: int,
+    *,
+    heartbeat: float = HEARTBEAT_SECONDS,
+) -> AsyncIterator[str]:
+    pubsub = redis.pubsub()
+    await pubsub.subscribe(channel(review_id))
+    try:
+        last = after
+        while True:
+            events, status, last_activity = await _read(engine, review_id, last)
+            for seq, type_, payload in events:
+                yield frame(seq, type_, payload)
+                last = seq
+                if type_ == END:
+                    return
+            if (
+                not events
+                and status in _FINISHED
+                and datetime.now(UTC) - last_activity > QUIET_AFTER_FINISH
+            ):
+                yield frame(None, END, {"status": str(status)})  # no id: not a stored event
+                return
+            if not await _doorbell(pubsub, heartbeat):
+                yield ": keep-alive\n\n"
+    finally:
+        await pubsub.unsubscribe()
+        await pubsub.aclose()
+
+
+async def _doorbell(pubsub: PubSub, seconds: float) -> bool:
+    """True when the doorbell rings, False after `seconds` of silence.
+
+    get_message returns None early for a message it skips: right after
+    subscribing, the subscription's own confirmation. Measured live, that
+    produced a "heartbeat" 0.3 s into every stream. So the wait continues
+    until the full timeout has passed."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + seconds
+    while (remaining := deadline - loop.time()) > 0:
+        if await pubsub.get_message(ignore_subscribe_messages=True, timeout=remaining):
+            return True
+    return False
+
+
+async def _read(
+    engine: AsyncEngine, review_id: int, after: int
+) -> tuple[list[tuple[int, str, dict[str, object]]], ReviewStatus | None, datetime]:
+    """Events after `after`, the review's status, and when it last changed."""
+    async with engine.connect() as conn:
+        rows = (
+            await conn.execute(
+                select(ReviewEvent.seq, ReviewEvent.type, ReviewEvent.payload)
+                .where(ReviewEvent.review_id == review_id, ReviewEvent.seq > after)
+                .order_by(ReviewEvent.seq)
+            )
+        ).all()
+        review = (
+            await conn.execute(
+                select(
+                    Review.status,
+                    func.greatest(
+                        Review.created_at,
+                        Review.finished_at,
+                        select(func.max(ReviewEvent.created_at))
+                        .where(ReviewEvent.review_id == review_id)
+                        .scalar_subquery(),
+                    ),
+                ).where(Review.id == review_id)
+            )
+        ).one()
+    return [(r.seq, r.type, r.payload) for r in rows], review[0], review[1]

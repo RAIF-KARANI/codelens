@@ -210,6 +210,7 @@ uv run python -m api.token --login me          # uses API_JWT_SECRET from .env
 | GET | `/api/v1/repos/{id}/index-runs`, `/api/v1/repos/{id}/reviews` | history, newest first (`?cursor=&limit=`; reviews also `?status=`) |
 | POST | `/api/v1/reviews` | queue a review `{"repo_id", "base", "head"}` (`202 {review_id}`) |
 | GET | `/api/v1/reviews/{id}` | a review and its findings (`?include_dropped=true` for the rejected ones) |
+| GET | `/api/v1/reviews/{id}/events` | the review's progress as Server-Sent Events: replay after `Last-Event-ID`, then live, until `end` |
 
 Errors always have the shape `{"error": {"code", "message", "details"}}`. With
 `DEMO_MODE=true`, every mutating route returns `403`.

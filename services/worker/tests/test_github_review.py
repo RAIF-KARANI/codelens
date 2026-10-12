@@ -72,9 +72,11 @@ def test_a_pull_request_review_is_posted(
 
     [row] = sql("SELECT status, github_review_id FROM reviews WHERE id = :id", id=review_id)
     assert (row.status, row.github_review_id) == ("completed", 9001)
-    [event] = sql("SELECT type, payload FROM review_events ORDER BY seq DESC LIMIT 1")
-    assert event.type == "published"
-    assert event.payload == {"github_review_id": 9001, "new": 1, "repeated": 0, "inline": 1}
+    end, published = sql("SELECT type, payload FROM review_events ORDER BY seq DESC LIMIT 2")
+    assert published.type == "published"
+    assert published.payload == {"github_review_id": 9001, "new": 1, "repeated": 0, "inline": 1}
+    # Posting came after the pipeline, so the worker, not the pipeline, ends it.
+    assert (end.type, end.payload) == ("end", {"status": "completed"})
 
 
 def test_a_new_push_does_not_repeat_findings(
@@ -123,6 +125,8 @@ def test_a_review_of_an_older_push_is_superseded(
     [row] = sql("SELECT status, error FROM reviews WHERE id = :id", id=older)
     assert row.status == "superseded"
     assert "before it ran" in row.error
+    events = sql("SELECT type FROM review_events WHERE review_id = :id ORDER BY seq", id=older)
+    assert [e.type for e in events] == ["superseded", "end"]
 
 
 def test_a_push_during_the_review_stops_it_being_posted(
