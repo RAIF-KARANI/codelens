@@ -7,7 +7,8 @@
 
 **Last updated:** 2026-10-12 · **Current position:** Phases 1–4 complete. Phase 4 adopted anchoring (test F1 0.654 → 0.767); every
 change aimed at making qwen3:8b reason over context was rejected (D83, D85–D87). Phase 5 (GitHub App) in progress:
-step 1 (Celery jobs and the first API endpoints) is in review.
+step 1 (Celery jobs and the first API endpoints) is done (#20); step 2 (the GitHub App: credentials,
+webhook endpoint) is in review.
 
 ---
 
@@ -262,8 +263,8 @@ repos ─┬─< files ─< code_nodes >─< code_edges (src_node_id, dst_node_i
 | 2 | **`review_context_items`** | `review_id, chunk_index, item_type (node/anti_pattern), item_id, stage_scores JSONB (vector_rank, fts_rank, rrf, graph_depth, rerank, final), included BOOL, token_cost INT` | The "why was this context used?" trace; eval analysis |
 | 2 | **`review_events`** | `id, review_id, seq, type, payload JSONB, created_at` | SSE replay and the progress timeline |
 | 4 | `anti_patterns` | + `slug TEXT` (unique per repo/global), + `language?`, + `category` | Upsert from YAML; filtering |
-| 5 | **`installations`** | `id, github_installation_id, account_login, account_type, created_at, suspended_at?` + `repos.installation_id` | GitHub App |
-| 5 | **`webhook_deliveries`** | `delivery_id PK, event, received_at, processed_at?` | Idempotent webhook handling |
+| 5 ✅ | **`installations`** | `id, github_installation_id, account_id, account_login, account_type, repository_selection?, suspended_at?`, timestamps + `repos.installation_id` (`SET NULL`) (migration `f93b1ce2b1ca`) | GitHub App |
+| 5 ✅ | **`webhook_deliveries`** | `delivery_id PK, event, action?, installation_id?, received_at, processed_at?` | Idempotent webhook handling (D95) |
 | 6 | **`finding_feedback`** | `finding_id, github_user_id, vote (+1/-1), created_at`; unique per user | 👍/👎 and suppression |
 
 ### 4.3 Invariants (enforced by constraints or tests)
@@ -557,7 +558,7 @@ waits for installations (5.3); until then any valid token sees every repo.
 | Method | Path | Auth | Purpose | Phase |
 |---|---|---|---|---|
 | GET | `/health` | none | Readiness: DB + Redis (+ Ollama, reranker once used) | ✅ 1 |
-| POST | `/webhooks/github` | HMAC | `installation*`, `push`, `pull_request` events → `202` + enqueue | 5 |
+| POST | `/webhooks/github` | HMAC | `installation*`, `push`, `pull_request` events → `202` + enqueue | ✅ 5.2 (verify, dedupe, mirror `installation`; others recorded) · enqueue in 5.3 |
 | GET | `/api/v1/repos` | JWT | Repos visible to the user (status, last index, last review) | ✅ 5.1 |
 | GET | `/api/v1/repos/{repo_id}` | JWT | Repo detail + latest index stats | ✅ 5.1 |
 | POST | `/api/v1/repos/{repo_id}/index` | JWT | Trigger a re-index, then embed → `202 {repo_id, status}` (the run row is created when the job starts; poll index-runs) | ✅ 5.1 (local repos) |
@@ -659,7 +660,7 @@ codelens/
 │   │   │   └── trace.py            review_context_items + events writer
 │   │   ├── graph/                  📋4 pagerank.py
 │   │   ├── anti_patterns/          📋4 yaml loader + sync
-│   │   ├── github/                 📋5 app auth, client, webhook verification, review posting
+│   │   ├── github/                 ✅ (5.2) app auth, client, manifest + register/check CLI, webhook verification · 📋5.3 review posting
 │   │   └── review_cli.py           📋2 `python -m core.review`
 │   └── tests/
 │       ├── fixtures/repos/         🔜1 py_basic/, js_basic/, ts_basic/ (+ expected.json)
@@ -668,8 +669,8 @@ codelens/
 ├── services/
 │   ├── api/src/api/
 │   │   ├── main.py checks.py dependencies.py   ✅
-│   │   ├── routes/{health,repos,reviews}.py    ✅ (5.1)
-│   │   ├── routes/{webhooks,anti_patterns,search}.py   📋5–6
+│   │   ├── routes/{health,repos,reviews}.py    ✅ (5.1), routes/webhooks.py ✅ (5.2)
+│   │   ├── routes/{anti_patterns,search}.py   📋6
 │   │   ├── schemas.py queries.py   ✅ (5.1) Pydantic I/O models, shared reads
 │   │   ├── auth.py token.py errors.py   ✅ (5.1) JWT verification, dev tokens, error shape
 │   │   ├── queue.py                ✅ (5.1) enqueue by task name (core/jobs.py)
@@ -751,17 +752,17 @@ App registration doc (manifest), webhook endpoint (HMAC, delivery dedupe),
 installation tokens, mirror clone, Celery tasks and queues (§5.10), index on
 install/push, review on PR events, posting reviews (§9.1 of `idea.md`), Redis
 pub/sub → SSE, migration (`installations`, `webhook_deliveries`). Local webhook
-delivery uses a tunnel (smee.io or `gh webhook forward`).
+delivery uses a tunnel: smee.io (D94; `gh webhook forward` can't forward an App's webhook).
 **Exit:** opening a PR on a test repo yields inline comments within the latency
 budget; a re-push doesn't duplicate comments.
 
 | Step | Deliverable | User action |
 |---|---|---|
-| 1 🔍 | Celery jobs and queues (`index`, `gpu`; D88): `index_repo` → `embed_repo` chain, `review`; advisory-lock retry (D89); queued reviews claimed by the worker (D90); the API enqueues by name (D91); API: repos, index-runs, reviews (manual, local repos), JWT auth + `DEMO_MODE` + one error shape (D92) | none |
-| 2 | GitHub App: manifest + setup doc; App JWT (RS256) → installation tokens; httpx GitHub client; `POST /webhooks/github` with HMAC SHA-256 and delivery dedupe; migration (`installations`, `webhook_deliveries`) | register the App |
+| 1 ✅ #20 | Celery jobs and queues (`index`, `gpu`; D88): `index_repo` → `embed_repo` chain, `review`; advisory-lock retry (D89); queued reviews claimed by the worker (D90); the API enqueues by name (D91); API: repos, index-runs, reviews (manual, local repos), JWT auth + `DEMO_MODE` + one error shape (D92) | none |
+| 2 🔍 | GitHub App: manifest + `python -m core.github register` (D93) and `check`, `docs/github-app.md`; App JWT (RS256) → cached installation tokens (D96); httpx GitHub client; `POST /webhooks/github` with HMAC SHA-256, delivery dedupe (D95), `installation` events mirrored (D97); migration (`installations`, `webhook_deliveries`, `repos.installation_id`) | register the App (`docs/github-app.md`) |
 | 3 | Events: on `installation`, mirror-clone and index; on push to the default branch, re-index; on `pull_request` opened/synchronize, review and post a GitHub review with inline comments; no duplicates on re-push (fingerprints); per-repo access checks | none |
 | 4 | Redis pub/sub of `review_events` + `GET /api/v1/reviews/{id}/events` (SSE: replay from `Last-Event-ID`, then live) | none |
-| 5 | End to end on a real test repo via `gh webhook forward` (or smee); re-check the latency budget (D84) | install the App on a test repo |
+| 5 | End to end on a real test repo via smee (D94); re-check the latency budget (D84) | install the App on a test repo |
 
 ### Phase 6: Dashboard
 Auth.js (GitHub) → JWT to the API; pages: repos, repo, reviews, **review detail**
@@ -1124,6 +1125,11 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D90 | The API queues a review by inserting a `queued` row (refs resolved to SHAs) and sending its id; the worker claims the row. A redelivered task skips a finished review and restarts a `running` one (a crashed attempt), clearing its partial events, trace and findings | The worker creates the row; pass the refs as given | `POST` can answer `202 {review_id}` at once, so the client can follow the review. A bad ref is a 422 now, not a failed review later. The review is pinned to the commits named when it was asked for. Acks are late (redelivery after a crash), so the task must be idempotent |
 | D91 | The API enqueues tasks by name through a producer-only Celery client; task names and routes live in `core/jobs.py`. A re-index is `chain(index_repo, embed_repo)` | Import the worker's task functions into the API | The API image doesn't contain the worker (or tree-sitter, or model clients), and shouldn't need them to put a message on a queue. One shared module keeps both sides' names and queues from drifting. The chain embeds only after a successful index |
 | D92 | API auth from the first endpoint: HS256 JWT on all of `/api/v1` (`alg` pinned, `exp` and `sub` required, secret ≥ 32 bytes), refusing every request when `API_JWT_SECRET` is unset; `DEMO_MODE` → 403 on mutations; one error shape for every error. Per-repo access checks wait for installations (5.3) | Add auth with the GitHub App in step 2 or 3 | The endpoints exist from now on, and shouldn't exist unauthenticated, even on a laptop. An unconfigured server fails closed, not open. HS256 keys shorter than the hash can be brute-forced offline from one token (RFC 7518 §3.2). Manual reviews and re-indexing need a local checkout the API and worker can both read, so in step 1 they run on the host, as the evals do |
+| D93 | The GitHub App is created from a manifest in code (`core/github/manifest.py`) by `python -m core.github register`: a one-shot local page POSTs it to GitHub, and the redirect's one-time code is traded for the App's id, private key and webhook secret, written to gitignored `secrets/` (0600 where supported), never printed. Permissions: contents read, metadata read, pull requests write; events: `push`, `pull_request` | Fill in GitHub's App form by hand | The permissions live in code and are reviewed like code; anyone can recreate an identical App in one click; credentials go straight to files instead of being copied around. A random `state` must round-trip, so a forged callback can't make the command save anything |
+| D94 | Local webhook delivery goes through smee.io (`npx smee-client`) | `gh webhook forward` | `gh webhook forward` forwards repository and organisation webhooks only; an App's webhook is configured on the App. smee is what GitHub's own App tooling (Probot) uses |
+| D95 | A webhook delivery counts as seen only once handled: it is upserted by `X-GitHub-Delivery` with `processed_at` NULL, and a row already processed means `duplicate`. Recording and handling share one transaction | Insert-or-skip on the delivery id alone | GitHub doesn't retry failed App deliveries by itself; a person redelivers from the App's settings with the *same* id. Skip-on-insert would make a delivery that crashed halfway impossible to redeliver. Same-transaction handling means a failure leaves nothing half-done. Cost: the table grows (pruning later) |
+| D96 | App JWT: RS256, `iat` backdated 60 s, 9-minute lifetime. Installation tokens cached in process memory until 5 minutes before they expire; no lock (two concurrent mints are harmless) | Mint per request; cache in Redis or the DB | GitHub caps the JWT at 10 minutes and tolerates small clock drift only into the past. Minting per call costs a round trip each time. Tokens are credentials, so they stay out of storage and logs. An asyncio lock would bind the cache to one event loop, and each Celery task runs its own |
+| D97 | The webhook endpoint fails closed (503 without `GITHUB_WEBHOOK_SECRET`, 403 in `DEMO_MODE`), verifies the HMAC on the raw body in constant time before parsing, and in step 2 only mirrors `installation` events into `installations` (every action but `deleted` carries the current state, so it upserts; `deleted` removes the row and `SET NULL`s its repos). Other events are recorded as `ignored` until step 3 queues work for them | Act on every event now | No real work in the request: GitHub times out after 10 s. Mirroring installations is a few-row write, and step 3's access checks need the table. Settings now treat empty env values as unset, so `GITHUB_APP_ID=` from `.env.example` loads |
 
 ---
 

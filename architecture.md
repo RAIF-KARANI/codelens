@@ -2,7 +2,7 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-12: Phases 1–4 and Phase 5 step 1.
+> follows. It describes `main` as of 2026-10-12: Phases 1–4 and Phase 5 steps 1–2.
 >
 > | File | Answers |
 > |---|---|
@@ -75,7 +75,8 @@ and code and prompts never leave the machine (D20).
 | Review pipeline (CLI, eval runner, worker) | ✅ Phase 2, plus A1 anchoring adopted in Phase 4 |
 | Evaluation harness, 124 cases, paired bootstrap CIs | ✅ Phase 3 |
 | Celery jobs and the first REST endpoints | ✅ Phase 5 step 1 |
-| GitHub App, webhooks, posting reviews, SSE | ⏭ Phase 5 steps 2–5 |
+| GitHub App credentials, verified webhook endpoint, installations | ✅ Phase 5 step 2 |
+| Acting on GitHub events (clone, index, review, post comments), SSE | ⏭ Phase 5 steps 3–5 |
 | Dashboard | Phase 6 (`apps/web` is an empty Next.js app) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
@@ -97,6 +98,7 @@ flowchart TB
             WG["worker-gpu<br/>celery -Q gpu -c 1"]
         end
     end
+    GH(["GitHub"]) -- webhooks --> SMEE(["smee.io relay"]) -- "smee-client" --> API
     MIG --> PG
     API --> PG
     API -- enqueue --> RD
@@ -113,7 +115,8 @@ flowchart TB
 | **postgres** | The only datastore: relational, vectors (pgvector HNSW), full-text (tsvector/GIN), graph (edges table) | One store, one transaction boundary (D1). Host port 5433 because a native Postgres owns 5432 (D17) |
 | **redis** | Celery broker and result backend; later, SSE pub/sub | |
 | **migrate** | Runs Alembic once, then exits; `api` and the workers wait for it | App code never runs against an old schema (D16) |
-| **api** | Thin HTTP layer: `/health`, `/api/v1/*` | No heavy work in requests; enqueues jobs by name (D91) |
+| **api** | Thin HTTP layer: `/health`, `/api/v1/*`, `/webhooks/github` | No heavy work in requests; enqueues jobs by name (D91) |
+| **smee.io + `smee-client`** | Relays GitHub's webhooks to the laptop in development | `gh webhook forward` can't forward an App's webhook (D94); `docs/github-app.md` |
 | **worker** | Celery, queue `index`: parse and persist | Concurrency 2 |
 | **worker-gpu** | Celery, queue `gpu`: embedding and whole reviews | Concurrency 1, so two jobs never compete for VRAM (D88) |
 
@@ -139,6 +142,7 @@ codelens/
 ├── services/worker/src/worker/  Celery app (`worker`)
 ├── evals/                       evaluation harness (a plain package at the repo root)
 ├── configs/pipeline/*.yaml      pipeline configs: the default and every measured ablation
+├── docs/github-app.md           creating, installing and checking the GitHub App
 ├── scripts/                     GPU benchmarks (bench_llm.py, bench_embed.py)
 ├── apps/web/                    Next.js dashboard (Phase 6)
 └── docker-compose.yml, .env.example, .github/workflows/ci.yml
@@ -160,6 +164,7 @@ codelens/
 | `providers/` | `Embedder` / `LLM` / `Reranker` protocols, Ollama implementations, deterministic fakes | `python -m core.providers` |
 | `diff/` | `git.py` (read-only git plumbing), `unified.py` (diff parser) | `python -m core.changes` |
 | `review/` | The review pipeline, one module per stage (§7) | `python -m core.review` |
+| `github/` | The GitHub App: REST client, App JWT and installation tokens, manifest and registration, webhook signatures and `installation` events (§10.1) | `python -m core.github register \| check` |
 
 ### 3.2 `api` and `worker`
 
@@ -167,6 +172,7 @@ codelens/
 |---|---|
 | `api/main.py` | App factory, lifespan (engine, session factory, Redis, job queue), router registration |
 | `api/routes/{health,repos,reviews}.py` | Endpoints (§10) |
+| `api/routes/webhooks.py` | `POST /webhooks/github` (§10.1) |
 | `api/auth.py`, `api/token.py` | JWT verification, `DEMO_MODE` guard; dev-token CLI |
 | `api/errors.py` | One error shape for every error |
 | `api/queue.py` | `JobQueue` protocol + `CeleryJobQueue` (producer-only, sends tasks by name) |
@@ -178,8 +184,8 @@ codelens/
 
 ## 4. Data model
 
-One Postgres 16 database with pgvector 0.8. Four migrations so far (D29: one per phase,
-never edited once applied); head is `df9649628e74`.
+One Postgres 16 database with pgvector 0.8. Five migrations so far (D29: one per phase,
+never edited once applied); head is `f93b1ce2b1ca`.
 
 ```mermaid
 erDiagram
@@ -187,6 +193,7 @@ erDiagram
     repos ||--o{ index_runs : "history"
     repos ||--o{ reviews : "reviewed by"
     repos ||--o{ anti_patterns : "team patterns (unused yet)"
+    installations |o--o{ repos : "reviewed through (SET NULL)"
     files ||--o{ code_nodes : defines
     code_nodes ||--o{ code_edges : "src"
     code_nodes |o--o{ code_edges : "dst (nullable)"
@@ -204,6 +211,24 @@ erDiagram
         text default_branch
         text last_indexed_sha
         varchar status "pending | indexing | ready | failed"
+        bigint installation_id FK "nullable"
+    }
+    installations {
+        bigint id PK
+        bigint github_installation_id UK
+        bigint account_id
+        text account_login
+        text account_type "User | Organization"
+        text repository_selection "all | selected"
+        timestamptz suspended_at
+    }
+    webhook_deliveries {
+        text delivery_id PK "X-GitHub-Delivery"
+        text event
+        text action
+        bigint installation_id "GitHub's id, no FK"
+        timestamptz received_at
+        timestamptz processed_at "NULL until handled"
     }
     files {
         bigint id PK
@@ -317,8 +342,9 @@ erDiagram
 - **`EMBED_DIM` is fixed when the migration runs** (D8; HNSW needs a fixed dimension, at
   most 2000). Changing the embedding model's dimension means a new migration.
 
-**Phase 5 adds** (planned in `planning.md` §4.2): `installations` and `webhook_deliveries`
-(step 2), and later `finding_feedback` (Phase 6).
+**Phase 5 step 2 added** `installations` (mirrored from `installation` webhook events),
+`webhook_deliveries` (the delivery log that makes webhooks idempotent) and
+`repos.installation_id`. Still planned: `finding_feedback` (Phase 6).
 
 ---
 
@@ -774,7 +800,8 @@ whose row doesn't exist yet. Refs are resolved in the API, so a typo is an immed
 
 ## 10. The HTTP API
 
-FastAPI (`services/api`). `/health` is public; everything under `/api/v1` needs a token.
+FastAPI (`services/api`). `/health` is public; everything under `/api/v1` needs a token;
+`/webhooks/github` is authenticated by GitHub's signature instead (§10.1).
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -786,6 +813,7 @@ FastAPI (`services/api`). `/health` is public; everything under `/api/v1` needs 
 | GET | `/api/v1/repos/{id}/reviews` | Reviews, newest first, `?status=`, with posted counts by severity |
 | POST | `/api/v1/reviews` | Queue a manual review `{repo_id, base, head}`; `202 {review_id, status, head_sha}` |
 | GET | `/api/v1/reviews/{id}` | A review: summary, counts, token usage, exact pipeline config, findings (`?include_dropped=true`) |
+| POST | `/webhooks/github` | GitHub's events (HMAC-signed); `202 {delivery_id, event, status}` (§10.1) |
 
 **Conventions:**
 
@@ -811,6 +839,46 @@ FastAPI (`services/api`). `/health` is public; everything under `/api/v1` needs 
 - **Blocking work** (git, broker publishes) runs in `asyncio.to_thread`, never on the event
   loop.
 
+### 10.1 GitHub: the App and its webhook
+
+CodeLens acts on GitHub as a **GitHub App** (`core/github/`), with two identities:
+
+- **The App:** a JWT signed with the App's private key (RS256, `iat` backdated 60 s, 9-minute
+  life). It can only list installations and mint installation tokens.
+- **An installation** (an account that installed the App): a token minted with that JWT,
+  scoped to the repos and permissions the account granted, valid one hour.
+  `InstallationTokens` caches each in process memory until 5 minutes before it expires
+  (D96). Tokens are never stored or logged.
+
+**Creating the App** (D93): the manifest in `core/github/manifest.py` fixes the
+permissions (contents read, metadata read, pull requests write) and events (`push`,
+`pull_request`). `python -m core.github register` serves a one-shot local page that POSTs
+the manifest to GitHub. GitHub's redirect brings back a one-time code, which is traded for
+the App's id, private key and webhook secret and written to gitignored `secrets/`.
+`python -m core.github check` walks the chain (JWT → App → a token per installation).
+Step by step: `docs/github-app.md`.
+
+**`POST /webhooks/github`** (D95, D97):
+
+```mermaid
+flowchart TB
+    IN["delivery: raw body + headers"] --> CFG{"secret set?<br/>not DEMO_MODE?"}
+    CFG -- no --> R503["503 / 403"]
+    CFG -- yes --> SIG{"HMAC-SHA256(body)<br/>== X-Hub-Signature-256?<br/>(constant time)"}
+    SIG -- no --> R401["401 invalid_signature<br/>(body never parsed)"]
+    SIG -- yes --> CLAIM["upsert webhook_deliveries<br/>by X-GitHub-Delivery<br/>where processed_at IS NULL"]
+    CLAIM -- "already processed" --> DUP["202 duplicate"]
+    CLAIM -- claimed --> EV{"event"}
+    EV -- installation --> INST["upsert / delete installations"]
+    EV -- "push, pull_request, …" --> IGN["recorded only<br/>(step 3 queues work)"]
+    INST --> DONE["processed_at = now(), commit<br/>202 processed / ignored"]
+    IGN --> DONE
+```
+
+Recording and handling share one transaction, and only a *handled* delivery counts as
+seen. So a delivery that failed halfway can be redelivered from the App's settings page
+(GitHub doesn't retry App deliveries by itself) and is handled again.
+
 ---
 
 ## 11. Configuration
@@ -825,9 +893,11 @@ FastAPI (`services/api`). `/health` is public; everything under `/api/v1` needs 
 | Embedder | `EMBED_MODEL` (qwen3-embedding:0.6b), `EMBED_BATCH_SIZE` (32), `EMBED_MAX_TOKENS` (1024), `EMBED_NUM_CTX` (2048), `EMBED_QUERY_ON_CPU` (false), `EMBED_TIMEOUT_S` |
 | Pipeline | `PIPELINE_CONFIG` (`configs/pipeline/default.yaml`) |
 | API | `API_JWT_SECRET` (empty = refuse all; else ≥ 32 bytes), `DEMO_MODE` |
+| GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH` (`secrets/github-app.pem`), `GITHUB_WEBHOOK_SECRET` (empty = refuse every delivery), `GITHUB_API_URL` |
 
-Compose overrides the URLs for containers (service hostnames, and
-`host.docker.internal` for Ollama).
+Empty values count as unset (`env_ignore_empty`), so lines copied empty from
+`.env.example` fall back to their defaults. Compose overrides the URLs for containers
+(service hostnames, and `host.docker.internal` for Ollama).
 
 ### 11.2 Pipeline config (`review/config.py`, `configs/pipeline/*.yaml`)
 
@@ -905,13 +975,13 @@ rejected: caller tags, split diffs, thinking at 8k and 16k, and a verification p
 | Prompt injection from the code under review | Untrusted text only inside tagged blocks that the system prompt declares to be data; our own closing tags neutralised inside content (`</context>` → `</ context>`); no tools; schema-constrained output, then validation. Worst case: one bad finding, never an action (D61) |
 | Malicious repo content on workers | Never executes repo code. git runs with argument lists (no shell), `--no-ext-diff --no-textconv`, option-like revisions rejected; reads git objects only. The worker image runs as non-root |
 | Forged API calls | HS256 JWT with a pinned algorithm, required `exp` and `sub`, a minimum key length, and fail-closed when unconfigured |
+| Forged or replayed webhooks | HMAC-SHA256 of the raw body under the webhook secret, compared in constant time, before parsing; fail-closed without a secret; deliveries deduplicated by id (D95, D97) |
+| GitHub credentials | The App's key and webhook secret come from the manifest flow straight into gitignored `secrets/` (0600 where supported), never printed; the callback needs a random `state`; installation tokens live in memory only (D93, D96) |
 | Leaking internals | `/health` and broker errors expose only exception class names; details go to the server log |
 | Secrets | `.env` and `secrets/` are gitignored; `SecretStr` for the JWT key; pre-commit `detect-private-key` |
 | Cross-repo leakage | Every retrieval query is scoped by `repo_id` |
 
-Planned for Phase 5: webhook HMAC with a constant-time compare, delivery-id dedupe,
-installation tokens kept in memory, per-repo access checks, and mirror clones with hooks
-disabled.
+Planned for Phase 5 step 3: per-repo access checks, and mirror clones with hooks disabled.
 
 ### 13.2 Observability
 
@@ -979,14 +1049,12 @@ latency with identical tokens, so latency is only compared between back-to-back 
 
 **Next, Phase 5** (`planning.md` §9):
 
-1. **Step 2:** the GitHub App (manifest, App JWT → installation tokens, `POST /webhooks/github`
-   with HMAC and delivery dedupe, the `installations` / `webhook_deliveries` migration).
-2. **Step 3:** event handling: mirror-clone and index on install, re-index on push, review
+1. **Step 3:** event handling: mirror-clone and index on install, re-index on push, review
    on `pull_request` and post one `COMMENT` review with inline comments, no duplicates on
    re-push, and per-repo access checks.
-3. **Step 4:** Redis pub/sub of `review_events` and an SSE endpoint with `Last-Event-ID`
+2. **Step 4:** Redis pub/sub of `review_events` and an SSE endpoint with `Last-Event-ID`
    replay.
-4. **Step 5:** end to end on a real test repo.
+3. **Step 5:** end to end on a real test repo.
 
 **Deferred upgrades:** FTS + RRF (U1), graph expansion (U2), a cross-encoder reranker (U3),
 a PageRank prior (U4) and anti-patterns (U5). Their schema columns (`tsv`, `centrality`,
@@ -1001,3 +1069,6 @@ a PageRank prior (U4) and anti-patterns (U5). Their schema columns (`tsv`, `cent
 - The `gpu` queue is FIFO (Q17).
 - Local-path reviews need the API and worker on the host (D92).
 - `apps/web` is still empty.
+- `webhook_deliveries` grows without pruning.
+- Out-of-order `installation` events (e.g. `deleted` arriving before `created` on a quick
+  reinstall) aren't reconciled.

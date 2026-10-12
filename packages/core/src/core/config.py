@@ -12,7 +12,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # env_ignore_empty: `GITHUB_APP_ID=` (as copied from .env.example) means
+    # "not set", i.e. the default, instead of failing to parse "" as a number.
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
 
     # Async driver URL; SQLAlchemy uses asyncpg through the `+asyncpg` dialect.
     database_url: str = "postgresql+asyncpg://codelens:codelens@localhost:5433/codelens"
@@ -74,6 +76,15 @@ class Settings(BaseSettings):
     api_jwt_secret: SecretStr = SecretStr("")
     # A public read-only instance (§15): every mutating endpoint returns 403.
     demo_mode: bool = False
+
+    # --- GitHub App (docs/github-app.md). `python -m core.github register` creates
+    # the App and writes these to secrets/github-app.env.
+    github_app_id: int | None = None
+    github_app_private_key_path: Path = Path("secrets/github-app.pem")
+    # Signs every webhook delivery (HMAC SHA-256). Unset means the webhook
+    # endpoint refuses everything, like the API without its JWT secret.
+    github_webhook_secret: SecretStr = SecretStr("")
+    github_api_url: str = "https://api.github.com"
 
     @field_validator("api_jwt_secret")
     @classmethod
