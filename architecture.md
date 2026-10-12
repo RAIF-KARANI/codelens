@@ -2,7 +2,7 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-12: Phases 1–4 and Phase 5 steps 1–2.
+> follows. It describes `main` as of 2026-10-12: Phases 1–4 and Phase 5 steps 1–3a.
 >
 > | File | Answers |
 > |---|---|
@@ -76,7 +76,8 @@ and code and prompts never leave the machine (D20).
 | Evaluation harness, 124 cases, paired bootstrap CIs | ✅ Phase 3 |
 | Celery jobs and the first REST endpoints | ✅ Phase 5 step 1 |
 | GitHub App credentials, verified webhook endpoint, installations | ✅ Phase 5 step 2 |
-| Acting on GitHub events (clone, index, review, post comments), SSE | ⏭ Phase 5 steps 3–5 |
+| GitHub repos from webhook events: bare mirrors, indexed from git objects on install and push | ✅ Phase 5 step 3a |
+| Reviewing pull requests and posting comments, SSE | ⏭ Phase 5 steps 3b–5 |
 | Dashboard | Phase 6 (`apps/web` is an empty Next.js app) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
@@ -156,7 +157,7 @@ codelens/
 | `enums.py` | Domain enums shared by DB, parser and API (StrEnum: compare equal to their values) | |
 | `jobs.py` | The API ↔ worker contract: task names, queues, routes (D91) | |
 | `db/` | SQLAlchemy 2 async models, Alembic migrations, engine/session factories | |
-| `parser/` | Walk a repo, extract nodes and edges with tree-sitter, resolve references | `python -m core.parser` |
+| `parser/` | Walk a repo (or read a commit's git objects: `parse_revision`), extract nodes and edges with tree-sitter, resolve references | `python -m core.parser` |
 | `indexing/` | Persist a parse result incrementally; re-link; advisory lock; `index_runs` | `python -m core.index` |
 | `text/` | Chunk text for embedding (`chunks.py`), token estimates (`tokens.py`) | |
 | `embedding/` | Embed stale nodes, page by page | `python -m core.embed` |
@@ -164,7 +165,7 @@ codelens/
 | `providers/` | `Embedder` / `LLM` / `Reranker` protocols, Ollama implementations, deterministic fakes | `python -m core.providers` |
 | `diff/` | `git.py` (read-only git plumbing), `unified.py` (diff parser) | `python -m core.changes` |
 | `review/` | The review pipeline, one module per stage (§7) | `python -m core.review` |
-| `github/` | The GitHub App: REST client, App JWT and installation tokens, manifest and registration, webhook signatures and `installation` events (§10.1) | `python -m core.github register \| check` |
+| `github/` | The GitHub App: REST client, App JWT and installation tokens, manifest and registration, bare mirrors (`mirror.py`), webhook signatures and events → state + jobs (`webhooks.py`; §5.5, §10.1) | `python -m core.github register \| check` |
 
 ### 3.2 `api` and `worker`
 
@@ -452,6 +453,28 @@ the share of calls resolved: overall, and excluding calls into third-party code.
 run, so two indexers never interleave. Postgres releases it when the connection drops, so
 a crashed worker can't leave a repo locked (D89).
 
+### 5.5 GitHub repos: from a bare mirror, at a commit (Phase 5 step 3a)
+
+Local repos are indexed from their working tree (`index_repository`). GitHub repos are
+indexed **from git objects**, with no checkout (`index_revision`, D100):
+
+1. **Mirror** (`github/mirror.py`, D99): one bare repository per repo at
+   `DATA_DIR/repos/<repo_id>.git`, created once with `git init --bare --template=`, then
+   refreshed with `git fetch --prune --no-tags <url> +refs/heads/*:refs/heads/*`.
+   - The installation token reaches git only through environment config
+     (`GIT_CONFIG_*` → `http.extraHeader`), so it is never in the URL, the command line
+     or the repo's config file.
+   - Credential helpers are reset and prompts are off, so nothing pops up or stores it.
+2. **Parse the default branch's commit** (`parse_revision`):
+   - `git ls-tree -r -l -z` lists the files with their sizes, so oversized files are
+     skipped unread, and symlinks and submodules are dropped.
+   - One `git cat-file --batch` process reads every blob that is left.
+   - The walker's usual rules then apply (vendored directories, minified, binary).
+3. **Write** through the same locked, incremental path as the working-tree indexer.
+
+The golden fixtures parse and index to **identical graphs** both ways (tests). Only the
+default branch is indexed; a PR's code is read straight from git when it's reviewed (§7 S1).
+
 ---
 
 ## 6. Embedding: code graph → vectors
@@ -726,7 +749,7 @@ engine (D7): each task runs its own event loop, and a pooled connection can't cr
 
 | Task | Queue | Does | Returns |
 |---|---|---|---|
-| `worker.index_repo(repo_id)` | `index` | `index_repository` on the repo's local checkout | run id, commit, whether it wrote |
+| `worker.index_repo(repo_id)` | `index` | local repo: `index_repository` on its checkout. GitHub repo: installation token → `GET /repos/{name}` (default branch) → mirror fetch → `index_revision` (§5.5) | run id, commit, whether it wrote |
 | `worker.embed_repo(repo_id)` | `gpu` | `embed_repository` | embedded / up-to-date counts |
 | `worker.review(review_id, base)` | `gpu` | `run_review`, claiming the queued row | status, posted count |
 | `worker.ping()` | `index` (default) | smoke test | `"pong"` |
@@ -869,15 +892,30 @@ flowchart TB
     SIG -- yes --> CLAIM["upsert webhook_deliveries<br/>by X-GitHub-Delivery<br/>where processed_at IS NULL"]
     CLAIM -- "already processed" --> DUP["202 duplicate"]
     CLAIM -- claimed --> EV{"event"}
-    EV -- installation --> INST["upsert / delete installations"]
-    EV -- "push, pull_request, …" --> IGN["recorded only<br/>(step 3 queues work)"]
-    INST --> DONE["processed_at = now(), commit<br/>202 processed / ignored"]
-    IGN --> DONE
+    EV -- "installation,<br/>installation_repositories" --> INST["upsert installation;<br/>attach added repos, detach removed"]
+    EV -- "push to the<br/>default branch" --> PUSH["note the default branch"]
+    EV -- "anything else" --> IGN["recorded only"]
+    INST --> COMMIT["commit (1)"]
+    PUSH --> COMMIT
+    IGN --> COMMIT
+    COMMIT --> JOBS["queue index_repo → embed_repo<br/>per new or pushed repo (2)"]
+    JOBS --> DONE["processed_at = now(), commit (3)<br/>202 processed / ignored"]
+    JOBS -- "broker down" --> R503Q["503: delivery stays unprocessed"]
 ```
 
-Recording and handling share one transaction, and only a *handled* delivery counts as
-seen. So a delivery that failed halfway can be redelivered from the App's settings page
-(GitHub doesn't retry App deliveries by itself) and is handled again.
+| Event | State | Jobs |
+|---|---|---|
+| `installation` created | the installation + the repos it covers (keyed by GitHub repo id) | index each repo |
+| `installation` suspend / unsuspend / new permissions | the installation's current state | none |
+| `installation` deleted | installation row removed; its repos keep their data, `installation_id → NULL` | none |
+| `installation_repositories` | added repos attached, removed repos detached | index the added |
+| `push` to the default branch | the repo's default branch | re-index it |
+| everything else (incl. `pull_request` until 3b) | recorded | none |
+
+Only a *handled* delivery counts as seen (D95), and the three steps run in order (D98).
+A broker outage at step 2 leaves the delivery unprocessed, so "Redeliver" in the App's
+settings queues the jobs again. GitHub doesn't retry App deliveries by itself. Re-handling
+is safe: the upserts and every job are idempotent.
 
 ---
 
@@ -893,7 +931,8 @@ seen. So a delivery that failed halfway can be redelivered from the App's settin
 | Embedder | `EMBED_MODEL` (qwen3-embedding:0.6b), `EMBED_BATCH_SIZE` (32), `EMBED_MAX_TOKENS` (1024), `EMBED_NUM_CTX` (2048), `EMBED_QUERY_ON_CPU` (false), `EMBED_TIMEOUT_S` |
 | Pipeline | `PIPELINE_CONFIG` (`configs/pipeline/default.yaml`) |
 | API | `API_JWT_SECRET` (empty = refuse all; else ≥ 32 bytes), `DEMO_MODE` |
-| GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH` (`secrets/github-app.pem`), `GITHUB_WEBHOOK_SECRET` (empty = refuse every delivery), `GITHUB_API_URL` |
+| GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH` (`secrets/github-app.pem`), `GITHUB_WEBHOOK_SECRET` (empty = refuse every delivery), `GITHUB_API_URL`, `GITHUB_WEB_URL` (clone URLs) |
+| Storage | `DATA_DIR` (`data`): bare mirrors in `DATA_DIR/repos/`. Compose mounts `./data` and `./secrets` (read-only) into the workers |
 
 Empty values count as unset (`env_ignore_empty`), so lines copied empty from
 `.env.example` fall back to their defaults. Compose overrides the URLs for containers
@@ -981,7 +1020,10 @@ rejected: caller tags, split diffs, thinking at 8k and 16k, and a verification p
 | Secrets | `.env` and `secrets/` are gitignored; `SecretStr` for the JWT key; pre-commit `detect-private-key` |
 | Cross-repo leakage | Every retrieval query is scoped by `repo_id` |
 
-Planned for Phase 5 step 3: per-repo access checks, and mirror clones with hooks disabled.
+Mirrors (D99, D100): bare repos read as git objects, so nothing from a repo is checked
+out or executed; the installation token reaches git only through environment variables.
+Per-repo access checks for API users moved to Phase 6, with the dashboard's GitHub login
+(D101).
 
 ### 13.2 Observability
 
@@ -1049,9 +1091,9 @@ latency with identical tokens, so latency is only compared between back-to-back 
 
 **Next, Phase 5** (`planning.md` §9):
 
-1. **Step 3:** event handling: mirror-clone and index on install, re-index on push, review
-   on `pull_request` and post one `COMMENT` review with inline comments, no duplicates on
-   re-push, and per-repo access checks.
+1. **Step 3b:** review on `pull_request` (the PR head from `refs/pull/N/head`), post one
+   `COMMENT` review with inline comments and a summary even when nothing new was found,
+   skip findings already posted on the PR, and supersede reviews of older pushes.
 2. **Step 4:** Redis pub/sub of `review_events` and an SSE endpoint with `Last-Event-ID`
    replay.
 3. **Step 5:** end to end on a real test repo.

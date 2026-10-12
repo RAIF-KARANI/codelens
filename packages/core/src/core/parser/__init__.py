@@ -4,7 +4,7 @@ from core.parser import parse_repository
 result = parse_repository(Path("path/to/repo"))
 """
 
-from core.parser.repository import ParseStats, parse_repository, summarize
+from core.parser.repository import ParseStats, parse_repository, parse_revision, summarize
 from core.parser.types import (
     NodeRef,
     ParsedEdge,
@@ -23,5 +23,6 @@ __all__ = [
     "ParsedNode",
     "SkippedFile",
     "parse_repository",
+    "parse_revision",
     "summarize",
 ]

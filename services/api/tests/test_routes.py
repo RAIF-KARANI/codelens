@@ -96,7 +96,7 @@ def test_index_queues_a_job(
     assert queued.status_code == 202
     assert queued.json() == {"repo_id": shop.repo_id, "status": "queued"}
     assert refused.status_code == 409
-    assert refused.json()["error"]["code"] == "unsupported_source"
+    assert refused.json()["error"]["code"] == "not_indexable"
     assert queue.jobs == [("index_repo", shop.repo_id)]
 
 

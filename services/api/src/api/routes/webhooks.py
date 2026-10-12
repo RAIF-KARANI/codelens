@@ -1,9 +1,9 @@
 """POST /webhooks/github: where GitHub tells us something happened.
 
 Authenticated by the delivery's HMAC signature, not a JWT. The handler only
-verifies, records and (for `installation` events) mirrors state: any real
-work is queued for the worker (step 3), so GitHub always gets its answer well
-within its 10-second timeout.
+verifies, records the state an event describes, and queues the jobs it calls
+for (core.github.webhooks.apply_event); the worker does the real work, so
+GitHub always gets its answer well within its 10-second timeout.
 """
 
 import json
@@ -15,15 +15,16 @@ from sqlalchemy import func, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.dependencies import get_session, get_settings
+from api.dependencies import get_queue, get_session, get_settings
 from api.errors import ApiError
+from api.queue import JobQueue
 from core.config import Settings
 from core.db.models import WebhookDelivery
 from core.github.webhooks import (
     DELIVERY_HEADER,
     EVENT_HEADER,
     SIGNATURE_HEADER,
-    apply_installation_event,
+    apply_event,
     verify_signature,
 )
 
@@ -45,6 +46,7 @@ async def github_webhook(
     request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[AsyncSession, Depends(get_session)],
+    queue: Annotated[JobQueue, Depends(get_queue)],
 ) -> WebhookAck:
     if settings.demo_mode:
         raise ApiError(403, "demo_mode", "this instance does not accept webhooks")
@@ -75,8 +77,7 @@ async def github_webhook(
 
     # Claim the delivery. A redelivery of one already handled finds a row with
     # processed_at set and does nothing; one that failed halfway (no
-    # processed_at) is handled again (D95). Recording and handling share one
-    # transaction, so a failure leaves no half-handled delivery behind.
+    # processed_at) is handled again (D95).
     conn = await session.connection()
     claimed = await conn.scalar(
         insert(deliveries_t)
@@ -94,16 +95,20 @@ async def github_webhook(
         await session.rollback()
         return WebhookAck(delivery_id=delivery_id, event=event, status="duplicate")
 
-    outcome: Literal["processed", "ignored"] = "ignored"
-    if event == "installation" and installation_id is not None:
-        await apply_installation_event(conn, action, payload)
-        outcome = "processed"
-    # push, pull_request, installation_repositories, ping: recorded only until
-    # step 3 queues work for them.
-    await conn.execute(
+    # Three steps, in this order, so no failure loses work (D98):
+    # 1. the claim and the state the event describes, committed together;
+    # 2. the jobs it calls for (a broker failure here is a 503, and the
+    #    delivery stays unprocessed, so a redelivery queues them again; every
+    #    job is idempotent);
+    # 3. only then, mark the delivery processed.
+    outcome = await apply_event(conn, event, action, payload)
+    await session.commit()
+    for repo_id in outcome.index:
+        await queue.index_repo(repo_id)
+    await session.execute(
         update(deliveries_t)
         .where(deliveries_t.c.delivery_id == delivery_id)
         .values(processed_at=func.now())
     )
     await session.commit()
-    return WebhookAck(delivery_id=delivery_id, event=event, status=outcome)
+    return WebhookAck(delivery_id=delivery_id, event=event, status=outcome.status)

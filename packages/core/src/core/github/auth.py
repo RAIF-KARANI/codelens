@@ -55,20 +55,27 @@ def app_jwt(app_id: int, private_key: str, *, now: datetime | None = None) -> st
 class InstallationTokens:
     """Installation tokens, each cached until shortly before it expires.
 
-    One per process. No lock: two coroutines asking for the same installation
-    at once may both mint a token, which is harmless (both are valid), while
-    an asyncio lock would tie this cache to one event loop, and every Celery
-    task runs its own (D7).
+    No lock: two coroutines asking for the same installation at once may both
+    mint a token, which is harmless (both are valid), while an asyncio lock
+    would tie this cache to one event loop, and every Celery task runs its own
+    (D7). For the same reason a worker passes a process-wide `cache` dict: a
+    token outlives the task, but the HTTP client that minted it doesn't.
     """
 
     def __init__(
-        self, client: GitHubClient, app_id: int, private_key: str, *, clock: Clock = _utcnow
+        self,
+        client: GitHubClient,
+        app_id: int,
+        private_key: str,
+        *,
+        clock: Clock = _utcnow,
+        cache: dict[int, InstallationToken] | None = None,
     ) -> None:
         self._client = client
         self._app_id = app_id
         self._private_key = private_key
         self._clock = clock
-        self._cache: dict[int, InstallationToken] = {}
+        self._cache = {} if cache is None else cache
 
     async def get(self, installation_id: int) -> str:
         now = self._clock()

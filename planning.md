@@ -7,8 +7,8 @@
 
 **Last updated:** 2026-10-12 · **Current position:** Phases 1–4 complete. Phase 4 adopted anchoring (test F1 0.654 → 0.767); every
 change aimed at making qwen3:8b reason over context was rejected (D83, D85–D87). Phase 5 (GitHub App) in progress:
-step 1 (Celery jobs and the first API endpoints) is done (#20); step 2 (the GitHub App: credentials,
-webhook endpoint) is in review.
+steps 1 (Celery jobs, first API endpoints, #20) and 2 (GitHub App credentials, webhook endpoint, #22) are done;
+step 3a (mirror-clone and index GitHub repos from webhook events) is in review.
 
 ---
 
@@ -296,6 +296,9 @@ source ─► walk & filter ─► parse (tree-sitter) ─► resolve ─► per
   `DATA_DIR/repos/<repo_id>.git`. It runs `git fetch` with an installation token, then
   reads blobs at a SHA (no working tree, so no hooks or checkout side effects). Clone
   flags: `--mirror --filter=blob:none`, no submodules, `core.hooksPath=/dev/null`.
+  *As built (5.3a, D99):* `git init --bare --template=` once, then
+  `git fetch --prune --no-tags <url> +refs/heads/*:refs/heads/*` with all objects (no
+  partial clone); the token travels in `GIT_CONFIG_*` environment variables only.
 
 ### 5.2 Walk and filter
 - Respect `.gitignore` (use `git ls-files` when it's a git repo; otherwise apply
@@ -553,7 +556,8 @@ schemas in `api/schemas/`. Errors use the shape
 authenticated by HMAC. With `DEMO_MODE=true`, all mutating endpoints return `403`.
 *As built in 5.1 (D92):* tokens are verified (secret ≥ 32 bytes; unset = every request is
 refused), and `python -m api.token` mints one for development. The per-repo access check
-waits for installations (5.3); until then any valid token sees every repo.
+moved to Phase 6 (D101): the dashboard's GitHub login will put the user's installation ids
+in the JWT. Until then any valid token sees every repo.
 
 | Method | Path | Auth | Purpose | Phase |
 |---|---|---|---|---|
@@ -561,7 +565,7 @@ waits for installations (5.3); until then any valid token sees every repo.
 | POST | `/webhooks/github` | HMAC | `installation*`, `push`, `pull_request` events → `202` + enqueue | ✅ 5.2 (verify, dedupe, mirror `installation`; others recorded) · enqueue in 5.3 |
 | GET | `/api/v1/repos` | JWT | Repos visible to the user (status, last index, last review) | ✅ 5.1 |
 | GET | `/api/v1/repos/{repo_id}` | JWT | Repo detail + latest index stats | ✅ 5.1 |
-| POST | `/api/v1/repos/{repo_id}/index` | JWT | Trigger a re-index, then embed → `202 {repo_id, status}` (the run row is created when the job starts; poll index-runs) | ✅ 5.1 (local repos) |
+| POST | `/api/v1/repos/{repo_id}/index` | JWT | Trigger a re-index, then embed → `202 {repo_id, status}` (the run row is created when the job starts; poll index-runs) | ✅ 5.1 (local repos), 5.3a (GitHub repos of an installation) |
 | GET | `/api/v1/repos/{repo_id}/index-runs` | JWT | Index history (`?cursor=&limit=`) | ✅ 5.1 |
 | GET | `/api/v1/repos/{repo_id}/reviews` | JWT | Paginated reviews (`?status=&cursor=&limit=`), with posted counts by severity | ✅ 5.1 |
 | POST | `/api/v1/reviews` | JWT | Manual review `{repo_id, pr_number}` or `{repo_id, base, head}` → `202 {review_id}` | ✅ 5.1 `{repo_id, base, head}` (local repos); `pr_number` in 5.3 |
@@ -759,13 +763,15 @@ budget; a re-push doesn't duplicate comments.
 | Step | Deliverable | User action |
 |---|---|---|
 | 1 ✅ #20 | Celery jobs and queues (`index`, `gpu`; D88): `index_repo` → `embed_repo` chain, `review`; advisory-lock retry (D89); queued reviews claimed by the worker (D90); the API enqueues by name (D91); API: repos, index-runs, reviews (manual, local repos), JWT auth + `DEMO_MODE` + one error shape (D92) | none |
-| 2 🔍 | GitHub App: manifest + `python -m core.github register` (D93) and `check`, `docs/github-app.md`; App JWT (RS256) → cached installation tokens (D96); httpx GitHub client; `POST /webhooks/github` with HMAC SHA-256, delivery dedupe (D95), `installation` events mirrored (D97); migration (`installations`, `webhook_deliveries`, `repos.installation_id`) | register the App (`docs/github-app.md`) |
-| 3 | Events: on `installation`, mirror-clone and index; on push to the default branch, re-index; on `pull_request` opened/synchronize, review and post a GitHub review with inline comments; no duplicates on re-push (fingerprints); per-repo access checks | none |
+| 2 ✅ #22 | GitHub App: manifest + `python -m core.github register` (D93) and `check`, `docs/github-app.md`; App JWT (RS256) → cached installation tokens (D96); httpx GitHub client; `POST /webhooks/github` with HMAC SHA-256, delivery dedupe (D95), `installation` events mirrored (D97); migration (`installations`, `webhook_deliveries`, `repos.installation_id`) | register the App (`docs/github-app.md`) |
+| 3a 🔍 | Repos from events (D101): `installation` created and `installation_repositories` attach repos (keyed by GitHub id) and queue indexing; removed repos are detached; a push to the default branch re-indexes. Bare mirrors refreshed with an installation token (D99); indexing straight from git objects (`parse_revision`, `index_revision`; D100); webhook state → jobs → processed, in that order (D98) | none |
+| 3b | Pull requests: `opened`/`synchronize`/`reopened`/`ready_for_review` (not drafts) queue a review of the PR head (`refs/pull/N/head`) against its base; post one `COMMENT` review with inline comments; skip findings already posted on the PR (fingerprints); a newer push supersedes a queued review; a summary review even when nothing new was found (D101) | none |
 | 4 | Redis pub/sub of `review_events` + `GET /api/v1/reviews/{id}/events` (SSE: replay from `Last-Event-ID`, then live) | none |
 | 5 | End to end on a real test repo via smee (D94); re-check the latency budget (D84) | install the App on a test repo |
 
 ### Phase 6: Dashboard
-Auth.js (GitHub) → JWT to the API; pages: repos, repo, reviews, **review detail**
+Auth.js (GitHub) → JWT to the API, carrying the user's installation ids, and per-repo
+access checks in the API (moved from Phase 5, D101); pages: repos, repo, reviews, **review detail**
 (diff + inline findings + live SSE + evidence drawer + 👍/👎), **graph** (React Flow),
 **trace** (stage scores), anti-patterns CRUD.
 **Exit:** watch a review stream live and click any finding through to its evidence and
@@ -1130,6 +1136,10 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D95 | A webhook delivery counts as seen only once handled: it is upserted by `X-GitHub-Delivery` with `processed_at` NULL, and a row already processed means `duplicate`. Recording and handling share one transaction | Insert-or-skip on the delivery id alone | GitHub doesn't retry failed App deliveries by itself; a person redelivers from the App's settings with the *same* id. Skip-on-insert would make a delivery that crashed halfway impossible to redeliver. Same-transaction handling means a failure leaves nothing half-done. Cost: the table grows (pruning later) |
 | D96 | App JWT: RS256, `iat` backdated 60 s, 9-minute lifetime. Installation tokens cached in process memory until 5 minutes before they expire; no lock (two concurrent mints are harmless) | Mint per request; cache in Redis or the DB | GitHub caps the JWT at 10 minutes and tolerates small clock drift only into the past. Minting per call costs a round trip each time. Tokens are credentials, so they stay out of storage and logs. An asyncio lock would bind the cache to one event loop, and each Celery task runs its own |
 | D97 | The webhook endpoint fails closed (503 without `GITHUB_WEBHOOK_SECRET`, 403 in `DEMO_MODE`), verifies the HMAC on the raw body in constant time before parsing, and in step 2 only mirrors `installation` events into `installations` (every action but `deleted` carries the current state, so it upserts; `deleted` removes the row and `SET NULL`s its repos). Other events are recorded as `ignored` until step 3 queues work for them | Act on every event now | No real work in the request: GitHub times out after 10 s. Mirroring installations is a few-row write, and step 3's access checks need the table. Settings now treat empty env values as unset, so `GITHUB_APP_ID=` from `.env.example` loads |
+| D98 | A webhook delivery is handled in three steps: (1) the claim and the state the event describes, committed together; (2) the jobs it calls for; (3) only then `processed_at`. Refines D95 | One transaction with the enqueue inside | A broker outage at step 2 returns 503 and leaves the delivery unprocessed, so "Redeliver" queues the jobs again; with the enqueue inside one transaction, either a committed state loses its jobs or a rolled-back state has queued jobs. Re-handling is safe: the upserts and every job are idempotent |
+| D99 | GitHub repos are bare mirrors at `DATA_DIR/repos/<id>.git`: `git init --bare --template=` once, then `fetch --prune --no-tags` of `refs/heads/*` (PR heads per review, 3b) with all objects. The installation token reaches git only through `GIT_CONFIG_*` env vars (an `http.extraHeader`), with credential helpers reset and prompts off | `clone --mirror --filter=blob:none` (§5.1); the token in the remote URL | A partial clone fetches blobs lazily, i.e. over the network, with a token that may have expired, in the middle of parsing. `--mirror` would also fetch every `refs/pull/*`. A token in the URL is written to the repo's config and shows in process lists; an env var is in neither, and it expires within the hour anyway. Reset helpers: on Windows, Git Credential Manager would otherwise pop up a login window |
+| D100 | Indexing from git objects: `parse_revision(git_dir, rev)` lists files with `ls-tree -r -l -z` (sizes known before reading; symlinks and submodules dropped) and reads every blob through one `cat-file --batch`, then applies the walker's rules; `index_revision` shares the lock and incremental writes with the working-tree indexer. Only the default branch is indexed; GitHub repo rows are keyed by GitHub's repo id | Check out a temporary worktree and reuse the walker | No checkout means no file from the repo is written and nothing in it runs (filters, LFS, hooks). One batch process instead of a `git show` per file. The golden fixtures parse and index to identical graphs both ways (tests). Keying by GitHub id makes a renamed repo an update, not a new repo |
+| D101 | User decisions (2026-10-12): step 3 is split into 3a (repos from events, mirrors, indexing) and 3b (PR reviews and posting); in 3b, every reviewed push gets one `COMMENT` review, a short summary when nothing new was found; per-repo access checks move to Phase 6 | One step 3; stay silent when nothing new; access checks in 3 | Two reviewable PRs instead of one large one. Authors can see CodeLens ran on each push. Real users (and their installations) only exist once the dashboard has GitHub login; a check against dev tokens would guard nothing |
 
 ---
 

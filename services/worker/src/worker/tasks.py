@@ -12,16 +12,25 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from core import jobs
 from core.config import Settings, get_settings
 from core.db import create_engine
-from core.db.models import Repo, Review
+from core.db.models import Installation, Repo, Review
+from core.diff.git import GitError
 from core.embedding import embed_repository
 from core.enums import RepoSource, ReviewStatus
-from core.indexing import IndexingError, IndexLocked, index_repository
+from core.github import (
+    GitHubClient,
+    GitHubError,
+    InstallationToken,
+    InstallationTokens,
+    load_private_key,
+)
+from core.github.mirror import clone_url, mirror_path, sync_mirror
+from core.indexing import IndexingError, IndexLocked, IndexReport, index_repository, index_revision
 from core.providers import open_providers
 from core.review.config import PipelineConfig
 from core.review.pipeline import ReviewError, run_review
@@ -34,6 +43,10 @@ logger = logging.getLogger(__name__)
 # retry every 30 s, for up to 30 minutes, before giving up.
 LOCK_RETRY_SECONDS = 30
 LOCK_MAX_RETRIES = 60
+
+# Installation tokens live an hour, longer than any task, so they are cached
+# per worker process (D96). The HTTP client that mints them is per task.
+_TOKEN_CACHE: dict[int, InstallationToken] = {}
 
 
 @celery_app.task(name=jobs.PING)
@@ -70,10 +83,12 @@ async def _index(settings: Settings, repo_id: int) -> dict[str, Any]:
     engine = create_engine(settings.database_url, pooled=False)
     try:
         repo = await _load_repo(engine, repo_id)
-        if repo.source is not RepoSource.LOCAL or not repo.local_path:
-            # GitHub repos are indexed from a mirror clone (Phase 5 step 3).
+        if repo.source is RepoSource.GITHUB:
+            report = await _index_github(settings, engine, repo_id, repo)
+        elif repo.local_path:
+            report = await index_repository(engine, Path(repo.local_path), name=repo.full_name)
+        else:
             raise IndexingError(f"{repo.full_name} has no local checkout to index")
-        report = await index_repository(engine, Path(repo.local_path), name=repo.full_name)
     finally:
         await engine.dispose()
     return {
@@ -82,6 +97,43 @@ async def _index(settings: Settings, repo_id: int) -> dict[str, Any]:
         "commit_sha": report.commit_sha,
         "wrote_graph": report.wrote_graph,
     }
+
+
+async def _index_github(
+    settings: Settings, engine: AsyncEngine, repo_id: int, repo: Any
+) -> IndexReport:
+    """Refresh the repo's bare mirror, then index its default branch from git
+    objects (no checkout; planning §5.1)."""
+    if repo.github_installation_id is None:
+        raise IndexingError(f"{repo.full_name} is not covered by any installation of the App")
+    try:
+        async with github_client(settings) as gh:
+            token = await _installation_token(settings, gh, repo.github_installation_id)
+            default_branch = (await gh.get_repo(repo.full_name, token))["default_branch"]
+        mirror = mirror_path(settings.data_dir, repo_id)
+        url = clone_url(settings.github_web_url, repo.full_name)
+        await asyncio.to_thread(sync_mirror, mirror, url, token)
+    except (GitHubError, GitError) as exc:
+        raise IndexingError(f"{repo.full_name}: {exc}") from exc
+    async with engine.begin() as conn:
+        await conn.execute(
+            update(Repo).where(Repo.id == repo_id).values(default_branch=default_branch)
+        )
+    return await index_revision(engine, mirror, f"refs/heads/{default_branch}", name=repo.full_name)
+
+
+async def _installation_token(settings: Settings, gh: GitHubClient, installation_id: int) -> str:
+    if settings.github_app_id is None:
+        raise IndexingError("the GitHub App is not configured: GITHUB_APP_ID is not set")
+    key = load_private_key(settings.github_app_private_key_path)
+    tokens = InstallationTokens(gh, settings.github_app_id, key, cache=_TOKEN_CACHE)
+    return await tokens.get(installation_id)
+
+
+def github_client(settings: Settings) -> GitHubClient:
+    """A client per task: its connections belong to the task's event loop.
+    (A seam for tests, which give it a mock transport.)"""
+    return GitHubClient(settings.github_api_url)
 
 
 async def _embed(settings: Settings, repo_id: int) -> dict[str, Any]:
@@ -153,7 +205,14 @@ async def _load_repo(engine: AsyncEngine, repo_id: int) -> Any:
     async with engine.connect() as conn:
         row = (
             await conn.execute(
-                select(Repo.full_name, Repo.source, Repo.local_path).where(Repo.id == repo_id)
+                select(
+                    Repo.full_name,
+                    Repo.source,
+                    Repo.local_path,
+                    Installation.github_installation_id,
+                )
+                .outerjoin(Installation, Installation.id == Repo.installation_id)
+                .where(Repo.id == repo_id)
             )
         ).first()
     if row is None:

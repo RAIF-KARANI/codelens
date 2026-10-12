@@ -15,6 +15,7 @@ from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from core.db.models import IndexRun, Repo
+from core.diff import git
 from core.enums import IndexRunStatus, RepoSource, RepoStatus
 from core.indexing.persist import (
     FileWrite,
@@ -27,6 +28,7 @@ from core.indexing.persist import (
     write_file,
 )
 from core.parser import ParseResult, ParseStats, parse_repository, summarize
+from core.parser.repository import parse_revision
 from core.parser.types import NodeRef, ParsedEdge
 
 logger = logging.getLogger(__name__)
@@ -117,14 +119,42 @@ class IndexReport:
 async def index_repository(
     engine: AsyncEngine, root: Path, *, name: str | None = None
 ) -> IndexReport:
+    """Index a working tree (the CLI's local repos). The repo row is created
+    on the first run, as `local/<dir name>` unless `name` is given."""
     # Parse first, outside any transaction: it's the slowest part, and we don't
     # want to hold DB locks while it runs. It is blocking file I/O + CPU, so it
     # runs in a worker thread rather than stalling the event loop.
     started = time.perf_counter()
     root, result = await asyncio.to_thread(_resolve_and_parse, root)
     parse_seconds = time.perf_counter() - started
-    full_name = name or f"local/{root.name}"
+    commit_sha = await asyncio.to_thread(_git_head, root)
+    return await _index(
+        engine, result, name or f"local/{root.name}", commit_sha, root, parse_seconds
+    )
 
+
+async def index_revision(engine: AsyncEngine, git_dir: Path, rev: str, *, name: str) -> IndexReport:
+    """Index a commit straight from git objects, e.g. a GitHub repo's bare
+    mirror at its default branch: no checkout. The repo row must already
+    exist (GitHub repos are created from webhook events)."""
+    started = time.perf_counter()
+    try:
+        commit_sha = await asyncio.to_thread(git.resolve, git_dir, rev)
+        result = await asyncio.to_thread(parse_revision, git_dir, commit_sha)
+    except git.GitError as exc:
+        raise IndexingError(str(exc)) from exc
+    parse_seconds = time.perf_counter() - started
+    return await _index(engine, result, name, commit_sha, None, parse_seconds)
+
+
+async def _index(
+    engine: AsyncEngine,
+    result: ParseResult,
+    full_name: str,
+    commit_sha: str | None,
+    local_path: Path | None,
+    parse_seconds: float,
+) -> IndexReport:
     async with engine.connect() as lock_conn:
         # A session-level advisory lock, held on this connection for the whole
         # run, so two indexers never interleave writes for the same repo.
@@ -134,7 +164,7 @@ async def index_repository(
         if not locked:
             raise IndexLocked(f"another index run for {full_name} is in progress")
         try:
-            report = await _index_locked(engine, root, full_name, result)
+            report = await _index_locked(engine, full_name, result, commit_sha, local_path)
         finally:
             await lock_conn.execute(
                 text("SELECT pg_advisory_unlock(hashtext(:key))"), {"key": f"index:{full_name}"}
@@ -144,11 +174,14 @@ async def index_repository(
 
 
 async def _index_locked(
-    engine: AsyncEngine, root: Path, full_name: str, result: ParseResult
+    engine: AsyncEngine,
+    full_name: str,
+    result: ParseResult,
+    commit_sha: str | None,
+    local_path: Path | None,
 ) -> IndexReport:
-    commit_sha = _git_head(root)
     async with engine.begin() as conn:
-        repo_id = await _get_or_create_repo(conn, full_name, root)
+        repo_id = await _get_or_create_repo(conn, full_name, local_path)
         await conn.execute(
             update(repos_t)
             .where(repos_t.c.id == repo_id)
@@ -242,12 +275,16 @@ async def _write_transaction(conn: AsyncConnection) -> AsyncIterator[None]:
         yield
 
 
-async def _get_or_create_repo(conn: AsyncConnection, full_name: str, root: Path) -> int:
+async def _get_or_create_repo(conn: AsyncConnection, full_name: str, root: Path | None) -> int:
     row = (
         await conn.execute(
             select(repos_t.c.id, repos_t.c.local_path).where(repos_t.c.full_name == full_name)
         )
     ).first()
+    if root is None:  # indexing a revision: the repo row comes from elsewhere
+        if row is None:
+            raise IndexingError(f"no repo named {full_name!r}")
+        return row.id
     if row is not None:
         if row.local_path is not None and row.local_path != str(root):
             raise IndexingError(
@@ -308,4 +345,4 @@ def _git_head(root: Path) -> str | None:
     return out.stdout.strip() or None
 
 
-__all__ = ["IndexLocked", "IndexReport", "IndexingError", "index_repository"]
+__all__ = ["IndexLocked", "IndexReport", "IndexingError", "index_repository", "index_revision"]

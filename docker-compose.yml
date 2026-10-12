@@ -35,6 +35,10 @@ x-worker: &worker
     - ./services/worker/src:/app/services/worker/src
     - ./packages/core/src:/app/packages/core/src
     - ./configs:/app/configs
+    # Bare mirrors of GitHub repos (DATA_DIR=data, relative to /app).
+    - ./data:/app/data
+    # The GitHub App's private key (docs/github-app.md), read-only.
+    - ./secrets:/app/secrets:ro
   depends_on:
     migrate:
       condition: service_completed_successfully
