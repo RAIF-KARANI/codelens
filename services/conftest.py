@@ -30,6 +30,7 @@ FIXTURE = ROOT / "packages" / "core" / "tests" / "fixtures" / "repos" / "py_shop
 REPO_NAME = "local/shop"
 BRANCH = "reject-bad-discounts"
 JWT_SECRET = "test-secret-test-secret-test-secre"  # >= 32 bytes, as Settings requires
+WEBHOOK_SECRET = "webhook-test-secret"
 
 
 def git(repo: Path, *args: str) -> str:
@@ -64,6 +65,7 @@ def settings(migrated_database_url: str) -> Settings:
         llm_provider="fake",
         embed_provider="fake",
         api_jwt_secret=JWT_SECRET,
+        github_webhook_secret=WEBHOOK_SECRET,
         pipeline_config=ROOT / "configs" / "pipeline" / "default.yaml",
     )
 

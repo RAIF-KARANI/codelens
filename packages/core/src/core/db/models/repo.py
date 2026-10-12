@@ -27,6 +27,11 @@ class Repo(IdMixin, TimestampMixin, Base):
     status: Mapped[RepoStatus] = mapped_column(
         str_enum(RepoStatus, "repo_status"), server_default=RepoStatus.PENDING.value
     )
+    # The GitHub App installation this repo is reviewed through. SET NULL on
+    # uninstall: the indexed graph and past reviews stay.
+    installation_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("installations.id", ondelete="SET NULL"), index=True
+    )
 
     # lazy="raise": async sessions can't lazy-load anyway, so make any accidental
     # attribute access fail loudly. Load explicitly with selectinload() instead.

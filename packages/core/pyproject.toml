@@ -20,6 +20,8 @@ dependencies = [
     "tree-sitter-typescript>=0.23.2",
     "pathspec>=1.1.1",
     "httpx>=0.27",
+    # [crypto]: RS256, for the GitHub App's JWT (core/github/auth.py).
+    "pyjwt[crypto]>=2.10",
     "pyyaml>=6.0",
 ]
 

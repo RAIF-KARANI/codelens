@@ -29,3 +29,12 @@ def test_jwt_secret_is_empty_or_at_least_32_bytes(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("API_JWT_SECRET", "too-short")
     with pytest.raises(ValidationError, match="at least 32 bytes"):
         Settings(_env_file=None)
+
+
+def test_empty_variables_mean_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    # As in .env.example: `GITHUB_APP_ID=` must not fail to parse as a number.
+    monkeypatch.setenv("GITHUB_APP_ID", "")
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", "")
+    settings = Settings(_env_file=None)
+    assert settings.github_app_id is None
+    assert settings.github_webhook_secret.get_secret_value() == ""

@@ -8,7 +8,7 @@ from redis.asyncio import Redis
 
 from api.errors import install_error_handlers
 from api.queue import CeleryJobQueue
-from api.routes import health, repos, reviews
+from api.routes import health, repos, reviews, webhooks
 from core.config import Settings, get_settings
 from core.db import create_engine, create_session_factory
 
@@ -39,6 +39,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router)
     app.include_router(repos.router)
     app.include_router(reviews.router)
+    app.include_router(webhooks.router)
     return app
 
 

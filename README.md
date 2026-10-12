@@ -230,6 +230,18 @@ curl -X POST localhost:8000/api/v1/reviews -H "Authorization: Bearer $TOKEN" \
 curl localhost:8000/api/v1/reviews/1 -H "Authorization: Bearer $TOKEN"
 ```
 
+## The GitHub App
+
+CodeLens reaches GitHub as a GitHub App, created from a manifest in this repo with one
+command, and receives its webhooks at `POST /webhooks/github` (signature-checked,
+deduplicated). Setup, including the local webhook tunnel and a connection check, is in
+[`docs/github-app.md`](docs/github-app.md):
+
+```bash
+uv run python -m core.github register --name "CodeLens (you)" --webhook-url https://smee.io/<channel>
+uv run python -m core.github check
+```
+
 ## Parser (inspect the code graph)
 
 `core.parser` turns a repo into nodes (modules, classes, functions, methods) and edges

@@ -22,6 +22,8 @@ SCHEMA_TABLES = {
     "index_runs",
     "review_context_items",
     "review_events",
+    "installations",
+    "webhook_deliveries",
 }
 
 
