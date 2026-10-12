@@ -59,6 +59,7 @@ class CaseRecord(BaseModel):
     output_tokens: int = 0
     chunks: int = 0
     failed_chunks: int = 0
+    fallback_chunks: int = 0  # thinking ran out; the chunk was reviewed again without it
     findings: list[Prediction] = []
     retrieved: list[Retrieved] = []
 

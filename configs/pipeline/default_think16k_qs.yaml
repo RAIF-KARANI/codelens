@@ -1,0 +1,32 @@
+# Phase 4 step 3b, variant measured on dev (D86): thinking at 16k with Qwen's
+# recommended thinking sampling (0.6 / 0.95 / 20). It stops the repetition
+# loops (0/41 failures) but lowers quality (dev F1 0.792 vs 0.814), so the
+# candidate keeps 0.1 and falls back instead (default_think16k.yaml).
+# Run with LLM_NUM_CTX=16384.
+name: default_think16k_qs
+retrieval:
+  enabled: true
+  vector_k: 8
+  max_seeds: 24
+packing:
+  diff_share: 0.4
+  changed_share: 0.25
+  context_share: 0.35
+  diff_tokens: 4000
+  changed_node_tokens: 3500
+  context_tokens: 4000
+  max_chunks: 4
+  degrade_to_signature: true
+  test_file_weight: 0.25
+generation:
+  think: true
+  max_output_tokens: 6000
+  max_findings_per_chunk: 8
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+validation:
+  min_confidence: 0.6
+  max_comments: 5
+  anchor_window: 3
+  anchor_deletions: true

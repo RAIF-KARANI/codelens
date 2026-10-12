@@ -1,0 +1,35 @@
+# Phase 4 step 3b (Q15, D86): the default + Qwen3 thinking, with a fallback.
+# Run with LLM_NUM_CTX=16384 (Ollama with OLLAMA_FLASH_ATTENTION=1 and
+# OLLAMA_KV_CACHE_TYPE=q8_0, D66).
+# At temperature 0.1, thinking either finishes or loops: across 128 completed
+# reviews the longest used 2,617 output tokens, while ~10% loop to any limit.
+# So: a 3,500-token budget (no real reasoning lost, little time wasted on a
+# loop), and when thinking runs out the chunk is reviewed again without
+# thinking (think_fallback). Qwen's 0.6 sampling stops the loops but costs
+# quality (default_think16k_qs.yaml).
+# Measured against default.yaml (8k) in evals/RESULTS.md.
+name: default_think16k
+retrieval:
+  enabled: true
+  vector_k: 8
+  max_seeds: 24
+packing:
+  diff_share: 0.4
+  changed_share: 0.25
+  context_share: 0.35
+  diff_tokens: 4000
+  changed_node_tokens: 3500
+  context_tokens: 4000
+  max_chunks: 4
+  degrade_to_signature: true
+  test_file_weight: 0.25
+generation:
+  think: true
+  max_output_tokens: 3500
+  max_findings_per_chunk: 8
+  think_fallback: true
+validation:
+  min_confidence: 0.6
+  max_comments: 5
+  anchor_window: 3
+  anchor_deletions: true

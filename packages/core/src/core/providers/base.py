@@ -5,7 +5,7 @@ providers (Ollama today; anything with an HTTP API tomorrow) and the
 deterministic fakes used in tests are interchangeable behind them.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal, Protocol
@@ -85,8 +85,10 @@ class LLM(Protocol):
         *,
         think: bool = False,
         max_output_tokens: int | None = None,
+        sampling: Mapping[str, float] | None = None,
     ) -> LLMResult[T]:
-        """Generate a response constrained to `schema` and validated against it."""
+        """Generate a response constrained to `schema` and validated against it.
+        `sampling` overrides the provider's defaults (temperature, top_p, top_k)."""
         ...
 
 
@@ -101,6 +103,7 @@ class ProviderUnavailableError(ProviderError):
 class StructuredOutputError(ProviderError):
     """The model's output didn't validate against the schema, even after a repair attempt."""
 
-    def __init__(self, message: str, raw: str) -> None:
+    def __init__(self, message: str, raw: str, *, truncated: bool = False) -> None:
         super().__init__(message)
         self.raw = raw
+        self.truncated = truncated  # hit the output-token limit before the JSON ended

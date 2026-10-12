@@ -207,6 +207,7 @@ def to_record(case: Case, result: ReviewResult, seconds: float) -> CaseRecord:
         output_tokens=result.usage.output_tokens,
         chunks=len(result.chunks),
         failed_chunks=len(result.failed_chunks),
+        fallback_chunks=len(result.fallback_chunks),
         findings=findings,
         retrieved=[r for _, r in ranked],
     )

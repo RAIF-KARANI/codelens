@@ -18,9 +18,16 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from core.db.models import Repo
 from core.diff import git
 from core.enums import FindingStatus, ReviewSource, ReviewStatus
-from core.providers import Message, ProviderError, Providers, Usage
+from core.providers import (
+    LLMResult,
+    Message,
+    ProviderError,
+    Providers,
+    StructuredOutputError,
+    Usage,
+)
 from core.review.changes import ChangeSet, collect_changes
-from core.review.config import PipelineConfig
+from core.review.config import GenerationConfig, PipelineConfig
 from core.review.packing import ReviewChunk, build_chunks, fit_to_window
 from core.review.prompts import build_messages, system_prompt
 from core.review.recorder import ReviewRecorder
@@ -46,6 +53,7 @@ class ReviewResult:
     failed_chunks: list[tuple[int, str]]
     usage: Usage
     seconds: dict[str, float] = field(default_factory=dict)
+    fallback_chunks: list[int] = field(default_factory=list)  # thinking ran out, retried without
 
     @property
     def posted(self) -> list[CheckedFinding]:
@@ -59,6 +67,31 @@ _WINDOW_MARGIN_TOKENS = 300
 # The PR header, block tags/attributes and closing instruction around the
 # diff, changed code and context (measured on real prompts: ~150-350).
 _PROMPT_OVERHEAD_TOKENS = 400
+
+
+class _ThinkingRanOut(Exception):
+    """Thinking used up the output budget; the chunk can be retried without it."""
+
+
+# The no-thinking generation a fallback uses: B0's output reserve and sampling.
+_FAST = GenerationConfig()
+
+
+async def _generate(
+    providers: Providers, messages: list[Message], generation: GenerationConfig
+) -> LLMResult[ReviewOut]:
+    try:
+        return await providers.llm.generate_structured(
+            messages,
+            ReviewOut,
+            think=generation.think,
+            max_output_tokens=generation.max_output_tokens,
+            sampling=generation.sampling(),
+        )
+    except StructuredOutputError as exc:
+        if generation.think and generation.think_fallback and exc.truncated:
+            raise _ThinkingRanOut(str(exc)) from exc
+        raise
 
 
 async def run_review(
@@ -153,6 +186,7 @@ async def run_review(
             raw: list[tuple[ReviewChunk, list[FindingOut]]] = []
             summaries: list[str] = []
             failed: list[tuple[int, str]] = []
+            fallbacks: list[int] = []  # chunks reviewed again without thinking
             title = head if not head.startswith("HEAD") else "local changes"
             prompt_budget = (
                 context_window - config.generation.max_output_tokens - _WINDOW_MARGIN_TOKENS
@@ -188,12 +222,19 @@ async def run_review(
                 say(f"generating chunk {chunk.index + 1}/{len(chunks)} ({', '.join(chunk.paths)})")
                 messages = render(chunk)
                 try:
-                    result = await providers.llm.generate_structured(
-                        messages,
-                        ReviewOut,
-                        think=config.generation.think,
-                        max_output_tokens=config.generation.max_output_tokens,
-                    )
+                    result = await _generate(providers, messages, config.generation)
+                except _ThinkingRanOut as exc:
+                    # The chunk is reviewed again without thinking (D86).
+                    fallbacks.append(chunk.index)
+                    await recorder.event("think_fallback", chunk=chunk.index, error=str(exc))
+                    try:
+                        result = await _generate(providers, messages, _FAST)
+                    except ProviderError as retry_exc:
+                        failed.append((chunk.index, str(retry_exc)))
+                        await recorder.event(
+                            "chunk_failed", chunk=chunk.index, error=str(retry_exc)
+                        )
+                        continue
                 except ProviderError as exc:
                     # One failed chunk shouldn't sink the whole review.
                     failed.append((chunk.index, str(exc)))
@@ -244,6 +285,7 @@ async def run_review(
         summaries=summaries,
         findings=checked,
         failed_chunks=failed,
+        fallback_chunks=fallbacks,
         usage=usage,
         seconds=seconds,
     )

@@ -33,7 +33,49 @@ python -m evals.report evals/results/<run> --baseline evals/results/<baseline-ru
 | Phase 4 step 2 | split diff (Q12) | dev: −0.006 [−0.072, +0.052], noise +0.50 | rejected on dev |
 | Phase 4 step 2 | caller-aware context (Q13) | dev +0.029 [0.000, +0.072]; **test +0.006 [−0.056, +0.069]** | rejected |
 | Phase 4 step 2 | split + callers | dev: 0.000 [−0.052, +0.054], noise +0.25 | rejected on dev |
-| Phase 4 step 3 | U6 thinking (output reserve 3000) | dev +0.092 [+0.030, +0.165]; **test +0.050 [−0.035, +0.138]**, 13% of reviews truncated | not adopted (yet) |
+| Phase 4 step 3 | U6 thinking (output reserve 3000) | dev +0.092 [+0.030, +0.165]; **test +0.050 [−0.035, +0.138]**, 13% of reviews truncated | not adopted |
+| Phase 4 step 3b | thinking at 16k, Qwen sampling (0.6) | dev −0.021 [−0.115, +0.069], 0 failures | rejected on dev |
+| Phase 4 step 3b | thinking at 16k, temp 0.1 + fallback | dev +0.008 [−0.050, +0.061], 0 failures, 7 fallbacks | rejected on dev |
+
+---
+
+## Phase 4 step 3b: thinking with room to think (Q15), rejected
+
+**Setup:** Ollama now runs with `OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0`, so a 16k window fits in 8 GB. Measured with the embedder loaded: the LLM is 5.8 GiB, 7.26 of 8.19 GB is used in total, everything is 100% on the GPU, and it decodes at 29 tok/s. Runs use `LLM_NUM_CTX=16384`.
+
+### Why thinking reviews fail: repetition loops
+
+The 8k runs blamed the failures on the 3,000-token budget. At 16k with a 6,000-token budget, about 11% of reviews still failed (4 of 36 on dev). The new error message shows where the tokens went: *thinking 24,058 characters, JSON 0*.
+
+A failing case reproduced deterministically with a direct call. The chain of thought re-reads the diff in a loop: *"Wait … the line with 'encoding' was duplicated … Wait, no, looking at the diff…"*. It repeats the same signature line 31 times and never answers. The trigger is a moved parameter, the same `-`/`+` confusion as Q12.
+
+- **The split diff doesn't stop it.** The loop just changes wording; one phrase appeared 84 times.
+- **Qwen's recommended thinking sampling does.** With temperature 0.6, top-p 0.95 and top-k 20, the same case finishes in 2,899 tokens.
+- **There's no middle ground in length.** Across 128 completed reviews at temperature 0.1, the longest used 2,617 output tokens. A review either finishes or loops.
+
+### Results (dev, 41 cases, paired against the default at 8k)
+
+| config | F1 | Δ (95% CI) | recall | noise | false alarms per counterfactual | failed | fallbacks |
+|---|---|---|---|---|---|---|---|
+| default at 16k (window only) | 0.828 | +0.014 [0.000, +0.045] | 1.000 | 0.75 | 1.00 | 0 | |
+| thinking at 16k, Qwen sampling, 6,000 budget | 0.792 | −0.021 [−0.115, +0.069] | **0.875** | 0.13 | 0.78 | **0** | |
+| thinking at 16k, temp 0.1, 3,500 budget + fallback | 0.821 | +0.008 [−0.050, +0.061] | 0.958 | 0.38 | 0.89 | **0** | 7 |
+
+- **Qwen's sampling fixes the loops but costs quality:** recall falls to 0.875 (3 bugs missed).
+- **The fallback** (`generation.think_fallback`) handles each loop by reviewing the chunk again without thinking. No reviews failed, and all 7 fallbacks were real loops (14–16k characters of thinking, no JSON). But at 16k the thinking itself no longer adds anything over the default.
+- **The 16k window alone is neutral** (+0.014).
+
+### Thinking across all runs
+
+| run | F1 Δ vs the default |
+|---|---|
+| 8k, dev (completed reviews only) | +0.078 [+0.017, +0.150] |
+| 8k, test (completed reviews only) | +0.058 [−0.011, +0.136] |
+| 16k + fallback, dev | +0.008 [−0.050, +0.061] |
+
+**Not adopted (D86).** Thinking's effect at qwen3:8b is inconsistent: positive at 8k on dev, not significant on test, absent at 16k. It also costs about 4× the latency (p50 ~55 s, p95 ~170 s) and loops on 10–17% of reviews.
+
+Two things are kept, both off by default: the loop diagnosis, and the `think_fallback` mechanism for any later thinking config. The configs are `default_think16k.yaml` (fallback) and `default_think16k_qs.yaml`.
 
 ---
 

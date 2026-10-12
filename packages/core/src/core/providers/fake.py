@@ -7,7 +7,7 @@ identifiers land close together. That's enough to exercise retrieval plumbing
 
 import hashlib
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from pydantic import BaseModel
@@ -67,6 +67,7 @@ class FakeCall:
     messages: tuple[Message, ...]
     schema: type[BaseModel]
     think: bool
+    sampling: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -85,8 +86,9 @@ class FakeLLM:
         *,
         think: bool = False,
         max_output_tokens: int | None = None,
+        sampling: Mapping[str, float] | None = None,
     ) -> LLMResult[T]:
-        self.calls.append(FakeCall(tuple(messages), schema, think))
+        self.calls.append(FakeCall(tuple(messages), schema, think, dict(sampling or {})))
         produced = self.responder(messages, schema) if self.responder else {}
         if isinstance(produced, str):
             output = schema.model_validate_json(produced)

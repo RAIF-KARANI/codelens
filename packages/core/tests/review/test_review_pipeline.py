@@ -225,3 +225,33 @@ def test_caller_aware_context_tags_callers_and_adds_the_rule(
     assert tagged, "retrieval found no caller to tag"
     for name, relation in tagged:
         assert relation == "calls the changed code" and name in callers, (name, relation)
+
+
+@pytest.mark.parametrize("fallback", [True, False])
+def test_thinking_that_runs_out_falls_back_to_a_plain_review(
+    shop: Path, migrated_database_url: str, fallback: bool
+) -> None:
+    def loops_when_thinking(messages: Sequence[Message], schema: type[BaseModel]) -> Any:
+        if len(llm.calls) == 1:  # the thinking call: its chain of thought never ends
+            raise StructuredOutputError("output hit the 3500-token limit", raw="", truncated=True)
+        return {"summary": "ok", "findings": []}
+
+    llm = FakeLLM(responder=loops_when_thinking)
+    config = PipelineConfig(
+        name="think",
+        generation=GenerationConfig(
+            think=True, max_output_tokens=3500, temperature=0.6, think_fallback=fallback
+        ),
+    )
+
+    result = review(migrated_database_url, shop, llm, config)
+
+    if not fallback:  # without the fallback, the chunk (and so the review) fails
+        assert result.status is ReviewStatus.FAILED and len(llm.calls) == 1
+        return
+    assert result.status is ReviewStatus.COMPLETED and result.fallback_chunks == [0]
+    thinking, plain = llm.calls
+    assert (thinking.think, thinking.sampling) == (True, {"temperature": 0.6})
+    assert (plain.think, plain.sampling) == (False, {})  # B0's generation settings
+    types = [r.type for r in query(migrated_database_url, "SELECT type FROM review_events")]
+    assert "think_fallback" in types and "chunk_failed" not in types
