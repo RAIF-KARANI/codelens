@@ -105,6 +105,8 @@ async def github_webhook(
     await session.commit()
     for repo_id in outcome.index:
         await queue.index_repo(repo_id)
+    for review in outcome.reviews:
+        await queue.review(review.review_id, review.base_sha, title=review.title)
     await session.execute(
         update(deliveries_t)
         .where(deliveries_t.c.delivery_id == delivery_id)

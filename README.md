@@ -234,7 +234,9 @@ curl localhost:8000/api/v1/reviews/1 -H "Authorization: Bearer $TOKEN"
 
 CodeLens reaches GitHub as a GitHub App, created from a manifest in this repo with one
 command, and receives its webhooks at `POST /webhooks/github` (signature-checked,
-deduplicated). Setup, including the local webhook tunnel and a connection check, is in
+deduplicated). Installed on a repo, it mirrors and indexes the repo, re-indexes on pushes
+to the default branch, and reviews every pull request push, posting one comment review
+with inline findings. Setup, including the local webhook tunnel and a connection check, is in
 [`docs/github-app.md`](docs/github-app.md):
 
 ```bash

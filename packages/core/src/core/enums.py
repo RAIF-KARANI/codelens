@@ -67,3 +67,6 @@ class ReviewStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    # A newer push to the same pull request arrived first: this head is stale,
+    # so it isn't reviewed (or, if already reviewed, isn't posted).
+    SUPERSEDED = "superseded"

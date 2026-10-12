@@ -17,12 +17,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
-from sqlalchemy import delete, func, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from core.db.models import Installation, Repo
-from core.enums import RepoSource
+from core.db.models import Installation, Repo, Review
+from core.enums import RepoSource, ReviewSource, ReviewStatus
 
 SIGNATURE_HEADER = "X-Hub-Signature-256"
 EVENT_HEADER = "X-GitHub-Event"
@@ -30,6 +30,7 @@ DELIVERY_HEADER = "X-GitHub-Delivery"
 
 installations_t = Installation.__table__
 repos_t = Repo.__table__
+reviews_t = Review.__table__
 
 
 def sign(secret: str, body: bytes) -> str:
@@ -45,10 +46,23 @@ def verify_signature(secret: str, body: bytes, header: str | None) -> bool:
     return hmac.compare_digest(sign(secret, body), header)
 
 
+@dataclass(frozen=True, slots=True)
+class QueuedReview:
+    review_id: int
+    base_sha: str  # the PR's base branch tip; the diff is against its merge-base
+    title: str | None  # the pull request's title, for the prompt
+
+
 @dataclass
 class EventOutcome:
     status: Literal["processed", "ignored"]
     index: list[int] = field(default_factory=list)  # repo ids to (re-)index
+    reviews: list[QueuedReview] = field(default_factory=list)
+
+
+# The actions that put new code (or a newly reviewable PR) in front of us.
+# Drafts wait for ready_for_review; closed and edited PRs need nothing.
+REVIEWED_ACTIONS = frozenset({"opened", "synchronize", "reopened", "ready_for_review"})
 
 
 async def apply_event(
@@ -62,9 +76,9 @@ async def apply_event(
     | `installation` other actions | the installation's state; `deleted` drops it | none |
     | `installation_repositories` | added repos attached, removed detached | index the added |
     | `push` to a default branch | the default branch | re-index that repo |
+    | `pull_request` with new code | a queued review (older queued ones superseded) | review |
 
-    Everything else (and pushes to other branches) is ignored. Pull requests
-    arrive in step 3b.
+    Everything else (pushes to other branches, drafts, ...) is ignored.
     """
     if event in ("installation", "installation_repositories") and "installation" in payload:
         installation_id = await apply_installation_event(conn, action, payload)
@@ -82,6 +96,8 @@ async def apply_event(
         return EventOutcome("processed", ids if wants_index else [])
     if event == "push":
         return await _push(conn, payload)
+    if event == "pull_request":
+        return await _pull_request(conn, action, payload)
     return EventOutcome("ignored")
 
 
@@ -180,6 +196,62 @@ async def _push(conn: AsyncConnection, payload: dict[str, Any]) -> EventOutcome:
     if repo_id is None:  # a repo the App doesn't (or no longer) cover
         return EventOutcome("ignored")
     return EventOutcome("processed", [repo_id])
+
+
+async def _pull_request(
+    conn: AsyncConnection, action: str | None, payload: dict[str, Any]
+) -> EventOutcome:
+    pr = payload.get("pull_request") or {}
+    if action not in REVIEWED_ACTIONS or pr.get("draft") or pr.get("state") != "open":
+        return EventOutcome("ignored")
+    repo_id = await conn.scalar(
+        select(repos_t.c.id).where(
+            repos_t.c.github_id == (payload.get("repository") or {}).get("id"),
+            repos_t.c.installation_id.is_not(None),
+        )
+    )
+    if repo_id is None:
+        return EventOutcome("ignored")
+    number, head_sha = pr["number"], pr["head"]["sha"]
+
+    same_pr = (reviews_t.c.repo_id == repo_id) & (reviews_t.c.pr_number == number)
+    # This exact head is already queued, running or reviewed: a redelivery, or
+    # a PR reopened without new commits. (A failed review may be retried.)
+    done = await conn.scalar(
+        select(reviews_t.c.id).where(
+            same_pr,
+            reviews_t.c.head_sha == head_sha,
+            reviews_t.c.status.in_(
+                [ReviewStatus.QUEUED, ReviewStatus.RUNNING, ReviewStatus.COMPLETED]
+            ),
+        )
+    )
+    if done is not None:
+        return EventOutcome("ignored")
+    # A newer push makes queued reviews of older heads pointless (D103).
+    # Running ones are left to finish; the worker won't post them (stale).
+    await conn.execute(
+        update(reviews_t)
+        .where(same_pr, reviews_t.c.status == ReviewStatus.QUEUED)
+        .values(
+            status=ReviewStatus.SUPERSEDED,
+            finished_at=func.now(),
+            error=f"superseded by a push of {head_sha[:7]}",
+        )
+    )
+    review_id = await conn.scalar(
+        insert(reviews_t)
+        .values(
+            repo_id=repo_id,
+            source=ReviewSource.GITHUB,
+            pr_number=number,
+            head_sha=head_sha,
+            status=ReviewStatus.QUEUED,
+        )
+        .returning(reviews_t.c.id)
+    )
+    queued = QueuedReview(review_id, pr["base"]["sha"], pr.get("title"))
+    return EventOutcome("processed", reviews=[queued])
 
 
 def _timestamp(value: str | None) -> datetime | None:

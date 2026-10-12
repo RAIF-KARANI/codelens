@@ -8,7 +8,7 @@ leaves a `running`/`failed` review with everything recorded so far.
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import delete, func, insert, update
+from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from core.db.models import Finding, Review, ReviewContextItem, ReviewEvent
@@ -127,6 +127,7 @@ class ReviewRecorder:
                 "evidence_node_ids": list(c.evidence_node_ids),
                 "confidence": c.finding.confidence,
                 "fingerprint": c.fingerprint,
+                "topic": c.topic,
                 "status": c.status,
                 "drop_reason": c.drop_reason,
             }
@@ -152,6 +153,20 @@ class ReviewRecorder:
                     },
                 )
             )
+
+
+async def append_event(conn: AsyncConnection, review_id: int, type_: str, **payload: Any) -> None:
+    """Add an event after the pipeline's own recorder is done (e.g. the worker
+    posting the review to GitHub): next seq after the last one. The caller
+    commits."""
+    seq = await conn.scalar(
+        select(func.coalesce(func.max(events_t.c.seq), 0) + 1).where(
+            events_t.c.review_id == review_id
+        )
+    )
+    await conn.execute(
+        insert(events_t).values(review_id=review_id, seq=seq, type=type_, payload=payload)
+    )
 
 
 async def fail_unfinished(conn: AsyncConnection, review_id: int, error: str) -> bool:

@@ -108,12 +108,15 @@ async def run_review(
     source: ReviewSource = ReviewSource.CLI,
     progress: ProgressFn | None = None,
     review_id: int | None = None,
+    title: str | None = None,
 ) -> ReviewResult:
     """Review head against its merge-base with base. `context_window` is the
     LLM's num_ctx: every prompt is fitted to it, minus the output reserve.
 
     With `review_id`, the review row already exists (the API queued it) and is
-    claimed instead of inserted; `source` is then the row's own."""
+    claimed instead of inserted; `source` is then the row's own. `title` is
+    what the prompt calls the change (a pull request's title); by default the
+    head's name."""
     say = progress or (lambda _: None)
     seconds: dict[str, float] = {}
 
@@ -193,7 +196,8 @@ async def run_review(
             summaries: list[str] = []
             failed: list[tuple[int, str]] = []
             fallbacks: list[int] = []  # chunks reviewed again without thinking
-            title = head if not head.startswith("HEAD") else "local changes"
+            if title is None:
+                title = head if not head.startswith("HEAD") else "local changes"
             prompt_budget = (
                 context_window - config.generation.max_output_tokens - _WINDOW_MARGIN_TOKENS
             )

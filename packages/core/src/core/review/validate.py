@@ -26,6 +26,7 @@ from core.enums import FindingStatus, Severity
 from core.review.config import ValidationConfig
 from core.review.packing import ReviewChunk
 from core.review.schemas import FindingOut
+from core.review.seeds import innermost
 
 _SEVERITY_ORDER = {Severity.CRITICAL: 0, Severity.WARNING: 1, Severity.SUGGESTION: 2}
 
@@ -41,6 +42,9 @@ class CheckedFinding:
     line_start: int  # normalised (start <= end); after anchoring, the anchor
     line_end: int
     anchored_from: tuple[int, int] | None = None  # the model's lines, if moved
+    # What the finding is about, for not repeating it on a later push of the
+    # same pull request (D104): the function it sits in, by name and content.
+    topic: str = ""
 
 
 def validate(
@@ -84,7 +88,16 @@ def _check_one(chunk: ReviewChunk, finding: FindingOut, config: ValidationConfig
         status = FindingStatus.DROPPED if reason else FindingStatus.POSTED
         fingerprint = _fingerprint(chunk, finding, start, end)
         return CheckedFinding(
-            finding, chunk.index, status, reason, evidence_ids, fingerprint, start, end, moved
+            finding,
+            chunk.index,
+            status,
+            reason,
+            evidence_ids,
+            fingerprint,
+            start,
+            end,
+            moved,
+            _topic(chunk, finding, start),
         )
 
     if change is None:
@@ -129,7 +142,26 @@ def drop(item: CheckedFinding, reason: str) -> CheckedFinding:
         item.line_start,
         item.line_end,
         item.anchored_from,
+        item.topic,
     )
+
+
+def _topic(chunk: ReviewChunk, finding: FindingOut, line: int) -> str:
+    """The innermost node (function, method, class or module) at the
+    finding's first line, identified by its name *and* its code's hash.
+
+    Measured on a real pull request: the fingerprint is too fine for telling
+    a later push's findings from ones already posted. The model flagged the
+    same problem on lines 167, then 167-168, so the fingerprints differed and
+    it was posted twice. A topic stays the same until the function itself
+    changes, which is when a new comment on it is worth making."""
+    change = chunk.file(finding.file_path)
+    node = innermost(change.head.nodes, line) if change and change.head else None
+    if node is None:
+        key = f"{finding.file_path}|line {line}"
+    else:
+        key = f"{finding.file_path}|{node.qualified_name}#{node.ordinal}|{node.content_hash}"
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
 
 
 def _fingerprint(chunk: ReviewChunk, finding: FindingOut, start: int, end: int) -> str:
