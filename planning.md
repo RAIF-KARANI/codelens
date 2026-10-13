@@ -9,7 +9,7 @@
 change aimed at making qwen3:8b reason over context was rejected (D83, D85–D87). Phase 5 (GitHub App) is done: PRs on a real repo get
 inline comments in 9–49 s, and a re-push repeats nothing (#20–#26). Phase 6 (dashboard) is done
 (#27–#32): a push to a PR watched live and clicked through to its evidence and graph. Phase 7 (public demo) in progress:
-step 1 (demo mode: read-only, on Postgres alone, open to every signed-in user) is in review.
+step 1 (demo mode) is merged (#33); step 2a (an open demo with no login, D117, and the demo-data export/import) is in review.
 
 ---
 
@@ -834,20 +834,24 @@ integration, rate limits and budgets, README with architecture diagram, results
 table, and a demo video.
 **Exit:** a public URL showing real reviews; the README tells the eval story.
 
-Decided before building (2026-10-13): visitors sign in with GitHub (Q7) and see every
-repo of the demo (D115); hosting is Vercel + Supabase (Q8, D116); the demo shows a new
-public repo, not the private playground.
+Decided (2026-10-13): the demo is **open, with no login** (Q7, changed the same day, D117):
+anyone with the link browses it, and every visitor sees every repo of the demo (D115).
+Hosting is Vercel + Supabase (Q8, D116), on a subdomain of the user's own domain. The demo
+shows a new public repo, not the private playground. Proof for people who won't click
+comes from the README and a video (step 5). Letting other people use CodeLens on their
+own repos is a separate, later upgrade: `docs/hosted-service.md`.
 
 | Step | Deliverable | User action |
 |---|---|---|
-| 1 🔍 | Demo mode end to end in the code: with `DEMO_MODE=true` the API runs on Postgres alone (no Redis, no queue; event streams read the database; `/health` checks only Postgres), refuses every write and webhook, and shows every repo to every signed-in user (D115); the dashboard (`DEMO_MODE=true`) shows a demo banner and hides Re-index and 👍/👎 | none |
-| 2 | Demo data: the public demo repo (a copy of an eval OSS project with a few PRs carrying planted bugs), reviewed locally through the App; `python -m core.demo export --repos …` (only those repos' rows) and `import` | create the public repo; add it to the App installation |
-| 3 | Hosting (D116): the API on Vercel (FastAPI, `DEMO_MODE`), the dashboard on Vercel, the demo database on Supabase (pgvector); asyncpg through Supabase's pooler; a daily cron that keeps the free project awake; the App's redirect URI for the demo's domain | create the Vercel and Supabase accounts and projects; set their secrets |
-| 4 | Hardening and observability: rate limits on the API and the login, structured JSON logs, `/health` checks Ollama where it's used; Langfuse stays an opt-in, off by default (§13) | none |
-| 5 | README: architecture diagram, the results table and the evaluation story, the demo link; a demo video script | record the video |
+| 1 ✅ #33 | Demo mode end to end in the code: with `DEMO_MODE=true` the API runs on Postgres alone (no Redis, no queue; event streams read the database; `/health` checks only Postgres), refuses every write and webhook, and shows every repo to every token holder (D115); the dashboard (`DEMO_MODE=true`) shows a demo banner and hides Re-index and 👍/👎 | none |
+| 2a 🔍 | The open demo (D117): with `DEMO_MODE=true` the dashboard has no sign-in (the proxy lets everyone in; the sign-in page and routes go to the repos) and calls the API as one anonymous visitor; a demo needs only `API_URL`, `API_JWT_SECRET` and `DEMO_MODE`. `python -m core.demo export` (only the named repos; refuses any that isn't public on GitHub, and local ones; leaves out embeddings, votes, installations, local paths) and `import` (replaces those repos, keeps ids, moves the sequences). `docs/demo.md`; `docs/hosted-service.md` (the future upgrade) | none |
+| 2b | The public demo repo (a copy of an eval OSS project with a few PRs carrying planted bugs), reviewed locally through the App, then exported | create the public repo; add it to the App installation |
+| 3 | Hosting (D116): the API on Vercel (FastAPI, `DEMO_MODE`), the dashboard on Vercel, the demo database on Supabase (pgvector); asyncpg through Supabase's pooler; a daily cron that keeps the free project awake; the dashboard on a subdomain of the user's domain | create the Vercel and Supabase accounts and projects; set their secrets; add the subdomain's DNS record |
+| 4 | Hardening and observability: rate limits on the API; structured JSON logs; `/health` checks Ollama where it's used; an **installation allowlist** (`GITHUB_ALLOWED_ACCOUNTS`): events from installations by other accounts are ignored, so the App can be opened to "Any account" for a friend's repos while strangers can't use the laptop (user's choice, 2026-10-13); Langfuse stays an opt-in, off by default (§13) | switch the App to "Any account" once the allowlist is in |
+| 5 | README: architecture diagram, the results table and the evaluation story, the demo link, screenshots, and "Run it on your own repos" (register your own App, run it on your own GPU); a demo video script | record the video |
 
 ### Stretch
-U7 sub-chunking · a feedback loop (suppress patterns users vote down) · mining
+CodeLens as a hosted service other people install (`docs/hosted-service.md`) · U7 sub-chunking · a feedback loop (suppress patterns users vote down) · mining
 anti-patterns from past human review comments · Go/Java support · TS path aliases ·
 light type inference for `self.attr`.
 
@@ -1216,8 +1220,9 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D112 | The anti-patterns editor (CRUD) is deferred with U5 (user's choice, 2026-10-13) | Build it in Phase 6 | Nothing reads the anti-patterns table until U5; an editor for unused data adds pages without showing anything |
 | D113 | The dashboard's GitHub login is our own code (~200 lines in `apps/web`): GitHub's web flow with the App's OAuth client and a `state` cookie; at the callback, `GET /user` and `GET /user/installations`; then an httpOnly session cookie signed with `jose` (HS256, its own `SESSION_SECRET`, 8 h) holding the user and their installation ids. The GitHub user token is dropped. The server mints a 5-minute API token per call from the session | Auth.js, as §3 planned | Auth.js v5 is still a beta, and its examples predate Next 16's `proxy.ts` and Cache Components. We need one provider plus one extra call, which in Auth.js means callbacks around a flow you can't see. Our own is short, readable and tested (CSRF state, open-redirect guard, forged, expired and `alg: none` cookies). Without a stored GitHub token, a stolen cookie can't act on GitHub. The cost: new installations show after the next sign-in |
 | D114 | Reviews keep a nullable `title`: the pull request's title when the review is queued (from the webhook), or a manual review's branch; a second Phase 6 migration (Q19, user's choice) | Keep D29's one migration per phase and show only `PR #N` | The title is what people recognise a change by, and the worker already had it for the prompt. One added nullable column is cheap; D29's point (never edit an applied migration) still holds. Older and eval reviews stay untitled |
-| D115 | On a demo instance (`DEMO_MODE=true`), every signed-in user sees every repo (Q7: the demo asks for a GitHub login, user's choice). Its database holds only the public demo repos exported to it (§14), so there is nothing private to hide. Outside demo mode, D111 is unchanged | Give visitors an installation; mark repos public | A visitor has no installation, so D111 would show them nothing. A per-repo public flag would add a column to protect data that, on a demo, is all public anyway. The rule lives in `api/access.py` with D111, and only demo mode turns it on |
+| D115 | On a demo instance (`DEMO_MODE=true`), every signed-in user sees every repo (Q7: the demo asks for a GitHub login, user's choice; with D117 nobody signs in, so this is every visitor). Its database holds only the public demo repos exported to it (§14), so there is nothing private to hide. Outside demo mode, D111 is unchanged | Give visitors an installation; mark repos public | A visitor has no installation, so D111 would show them nothing. A per-repo public flag would add a column to protect data that, on a demo, is all public anyway. The rule lives in `api/access.py` with D111, and only demo mode turns it on |
 | D116 | The demo is hosted on Vercel (the dashboard, and the API as a Python function with `DEMO_MODE`) and Supabase (Postgres with pgvector) (Q8, user's choice). The API runs on Postgres alone there (no Redis, worker or model). A daily Vercel cron calls `/health`, because Supabase pauses a free project after a week without activity | Neon + Render; one VPS | Two accounts, no servers to keep running, and both have free tiers. Every page works from stored data (D110). Checked 2026-10-13: Vercel allows Python functions up to 500 MB; Supabase's free tier has 500 MB of database and pauses after 7 idle days |
+| D117 | The demo is open: no sign-in. With `DEMO_MODE=true` the dashboard calls the API as one anonymous visitor (`DEMO_VISITOR`), and the proxy, sign-in page and sign-in routes let everyone through. The API still verifies a token on every request, and only the dashboard holds `API_JWT_SECRET`; writes stay refused (403) | Require a GitHub login (Q7's first answer); a public API with no token | The demo exists to be seen by people who won't sign in for it, and its data is a public repo's. Keeping the token check means the API isn't an open endpoint, and a demo needs no GitHub OAuth or session secrets at all |
 
 ---
 
@@ -1248,7 +1253,7 @@ PR overlay, migrate service, host port 5433). New decisions:
 | Q4 | Test files: include with a lower prior, or exclude from context? | Phase 4 step 2 |
 | Q5 | Graph `max_depth` 1 vs 2? | Phase 4 step 2 (ablate) |
 | Q6 | Barrel-file re-export following depth for TS | Phase 1 step 3 (keep it to 1 level unless fixtures need more) |
-| Q7 | ~~Demo login?~~ **Answered 2026-10-13: GitHub login required** (user's choice); every signed-in visitor sees the demo's repos (D115). Was: Dashboard auth for the demo: public read-only without login, or GitHub login required? | Phase 7 |
+| Q7 | ~~Demo login?~~ **Answered 2026-10-13: open, no login** (user's choice, changed the same day from "GitHub login required": the demo is proof for recruiters, and a sign-in page loses them; its data is public anyway; D117). Was: Dashboard auth for the demo: public read-only without login, or GitHub login required? | Phase 7 |
 | Q8 | ~~Hosting?~~ **Answered 2026-10-13: Vercel + Supabase** (user's choice; D116). Was: Hosting providers for the demo | Phase 7 |
 | Q9 | ~~Lower `max_findings_per_chunk` (e.g. 4)?~~ **Answered 2026-10-11:** no, keep 8 (D75; `evals/RESULTS.md`) | Phase 3 step 3 (ablate) |
 | Q10 | ~~The seeded dataset can't show context helping?~~ **Answered 2026-10-11: counterfactual cases** (D78), built in Phase 3 step 4 | Before Phase 4 step 1 |

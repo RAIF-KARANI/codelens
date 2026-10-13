@@ -36,13 +36,23 @@ function secret(name: string): string {
   return value;
 }
 
-/** A read-only demo (planning.md §15): the API it calls runs with
- * DEMO_MODE=true too. The dashboard hides what would write (Re-index, 👍/👎)
- * and says what the visitor is looking at. */
+/** A read-only, open demo (planning.md §15, D117): the API it calls runs
+ * with DEMO_MODE=true too. Nobody signs in; every visitor is the same
+ * anonymous one (lib/session.ts). The dashboard hides what would write
+ * (Re-index, 👍/👎) and says what the visitor is looking at. */
 export function isDemo(): boolean {
   return process.env.DEMO_MODE === "true";
 }
 
+/** What calling the API needs: all a demo needs. */
+export function apiConfig(): Pick<Config, "apiUrl" | "apiJwtSecret"> {
+  return {
+    apiUrl: required("API_URL").replace(/\/$/, ""),
+    apiJwtSecret: secret("API_JWT_SECRET"),
+  };
+}
+
+/** Everything, for signing in with GitHub (not used by a demo). */
 export function config(): Config {
   return {
     appUrl: required("APP_URL").replace(/\/$/, ""),

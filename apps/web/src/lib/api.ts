@@ -3,7 +3,7 @@ import "server-only";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
-import { config } from "@/lib/config";
+import { apiConfig } from "@/lib/config";
 import { currentUser } from "@/lib/dal";
 import { withQuery } from "@/lib/params";
 import { apiToken, type SessionUser } from "@/lib/tokens";
@@ -58,7 +58,7 @@ export async function callApi<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
-  const { apiUrl, apiJwtSecret } = config();
+  const { apiUrl, apiJwtSecret } = apiConfig();
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${await apiToken(user, apiJwtSecret)}`);
   headers.set("Accept", "application/json");

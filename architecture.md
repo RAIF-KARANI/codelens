@@ -2,12 +2,12 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-13: Phases 1–6 and Phase 7 step 1.
+> follows. It describes `main` as of 2026-10-13: Phases 1–6 and Phase 7 steps 1–2a.
 >
 > | File | Answers |
 > |---|---|
 > | [`idea.md`](idea.md) | *What* CodeLens is and *why* (the design narrative) |
-> | [`planning.md`](planning.md) | *How and in what order* we build it: the plan of record, decisions D1–D116, open questions |
+> | [`planning.md`](planning.md) | *How and in what order* we build it: the plan of record, decisions D1–D117, open questions |
 > | **`architecture.md`** | *How it works now*, as built |
 > | [`evals/RESULTS.md`](evals/RESULTS.md) | *How well it works*: every measured config |
 >
@@ -86,8 +86,9 @@ and code and prompts never leave the machine (D20).
 | Dashboard: a review's page (diff with inline findings, live timeline, evidence drawer, 👍/👎) | ✅ Phase 6 step 4 |
 | Dashboard: a review's graph and trace views | ✅ Phase 6 step 5 |
 | Dashboard end to end in the browser: a push watched live, clicked through to evidence and graph (`docs/e2e.md`) | ✅ Phase 6 step 6 |
-| Demo mode: read-only, on Postgres alone, open to every signed-in user | ✅ Phase 7 step 1 |
-| Demo data export/import, hosting, hardening, README | Phase 7 steps 2–5 |
+| Demo mode: read-only, on Postgres alone | ✅ Phase 7 step 1 |
+| The open demo (no login) and demo-data export/import (`docs/demo.md`) | ✅ Phase 7 step 2a |
+| The demo repo's data, hosting, hardening, README | Phase 7 steps 2b–5 |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -156,6 +157,8 @@ codelens/
 ├── evals/                       evaluation harness (a plain package at the repo root)
 ├── configs/pipeline/*.yaml      pipeline configs: the default and every measured ablation
 ├── docs/github-app.md           creating, installing and checking the GitHub App
+├── docs/e2e.md, docs/demo.md     running it end to end; the public demo
+├── docs/hosted-service.md       the future upgrade: CodeLens hosted for other people
 ├── scripts/                     GPU benchmarks (bench_llm.py, bench_embed.py)
 ├── apps/web/                    Next.js dashboard (Phase 6; §10.3)
 └── docker-compose.yml, .env.example, .github/workflows/ci.yml
@@ -177,6 +180,7 @@ codelens/
 | `providers/` | `Embedder` / `LLM` / `Reranker` protocols, Ollama implementations, deterministic fakes | `python -m core.providers` |
 | `diff/` | `git.py` (read-only git plumbing), `unified.py` (diff parser) | `python -m core.changes` |
 | `review/` | The review pipeline, one module per stage (§7) | `python -m core.review` |
+| `demo/` | Moving public demo repos to the hosted demo's database: `export` (only the named repos; refuses any that isn't public on GitHub; leaves out embeddings and votes), `import` (replaces those repos, keeps ids) (`docs/demo.md`) | `python -m core.demo export \| import` |
 | `github/` | The GitHub App: REST client, App JWT and installation tokens, manifest and registration, bare mirrors (`mirror.py`), webhook signatures and events → state + jobs (`webhooks.py`), a finished review → one GitHub review (`publish.py`) (§5.5, §7 S11, §10.1) | `python -m core.github register \| check` |
 
 ### 3.2 `api` and `worker`
@@ -958,9 +962,13 @@ FastAPI (`services/api`). `/health` is public; everything under `/api/v1` needs 
     event stream re-reads the database every heartbeat instead of waiting on a Redis
     doorbell (its reviews are finished, so it replays and ends at once), and `/health`
     checks only the database (`redis: null`);
-  - **every signed-in user sees every repo** (D115): the demo database holds only the
-    public demo repos exported to it. The dashboard with `DEMO_MODE=true` shows a demo
-    banner and hides Re-index and 👍/👎.
+  - **every token holder sees every repo** (D115): the demo database holds only the
+    public demo repos exported to it (`core.demo`, refusing private ones);
+  - the dashboard with `DEMO_MODE=true` is **open, with no sign-in** (D117): it calls
+    the API as one anonymous visitor, shows a demo banner, and hides Re-index and 👍/👎.
+    The API still checks a token on every request, and only the dashboard holds
+    `API_JWT_SECRET`, so a direct request gets a 401. A demo needs only `API_URL`,
+    `API_JWT_SECRET` and `DEMO_MODE` (`docs/demo.md`).
 - **One error shape** for every error, including framework 404s and validation errors:
   `{"error": {"code": "not_found", "message": "...", "details": {...}}}`. Broker
   failures return `503 queue_unavailable` and never leak hostnames.
@@ -1366,12 +1374,18 @@ latency with identical tokens, so latency is only compared between back-to-back 
 ## 15. Not built yet, and known gaps
 
 **Next, Phase 7 steps 2–5** (`planning.md` §9):
-- **Step 2:** the public demo repo, reviewed locally, and `core.demo` export/import of
-  its rows.
+- **Step 2b:** the public demo repo, reviewed locally, then exported.
 - **Step 3:** hosting on Vercel (dashboard and the read-only API) and Supabase (Postgres)
   (D116).
-- **Step 4:** rate limits, structured logs, health checks.
-- **Step 5:** the README's diagram, results table and evaluation story; a demo video.
+- **Step 4:** rate limits, structured logs, health checks, and an installation
+  allowlist so the App can review a few chosen accounts' repos.
+- **Step 5:** the README's diagram, results table and evaluation story, "Run it on your
+  own repos"; a demo video.
+
+**Later, as a separate upgrade:** CodeLens as a hosted service other people install on
+their own repos, with their reviews on the website (`docs/hosted-service.md`): hosted
+workers and a model that isn't a laptop GPU, per-installation limits, and data deletion
+on uninstall. D111 already isolates users by installation.
 
 The anti-patterns editor waits for U5 (D112).
 

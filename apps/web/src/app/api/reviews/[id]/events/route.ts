@@ -1,8 +1,8 @@
 import type { NextRequest } from "next/server";
 
-import { config } from "@/lib/config";
+import { apiConfig } from "@/lib/config";
 import { parseId } from "@/lib/params";
-import { readSession } from "@/lib/session";
+import { requestUser } from "@/lib/session";
 import { apiToken } from "@/lib/tokens";
 
 /** A review's live events, passed through from the API. The browser's
@@ -10,7 +10,7 @@ import { apiToken } from "@/lib/tokens";
  * session cookie, and this server adds the token (planning.md §7). The stream
  * is relayed as it arrives, never buffered. */
 export async function GET(request: NextRequest, ctx: RouteContext<"/api/reviews/[id]/events">) {
-  const user = await readSession();
+  const user = await requestUser();
   if (!user) {
     return Response.json({ error: { code: "unauthenticated" } }, { status: 401 });
   }
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/reviews/
     return Response.json({ error: { code: "not_found" } }, { status: 404 });
   }
 
-  const { apiUrl, apiJwtSecret } = config();
+  const { apiUrl, apiJwtSecret } = apiConfig();
   const headers = new Headers({
     Accept: "text/event-stream",
     Authorization: `Bearer ${await apiToken(user, apiJwtSecret)}`,

@@ -3,7 +3,8 @@ import "server-only";
 import { cacheLife } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { readSession } from "@/lib/session";
+import { isDemo } from "@/lib/config";
+import { readSession, requestUser } from "@/lib/session";
 import type { SessionUser } from "@/lib/tokens";
 
 /** The data access layer's one question: who is this? Every page and every
@@ -12,11 +13,12 @@ import type { SessionUser } from "@/lib/tokens";
  * request, and the browser's router for a few minutes, reuse the answer; it is
  * never stored on the server. */
 
-/** The signed-in user, or a redirect to the login page. */
+/** The signed-in user (on a demo, its anonymous visitor), or a redirect
+ * to the login page. */
 export async function currentUser(): Promise<SessionUser> {
   "use cache: private";
   cacheLife("minutes");
-  const user = await readSession();
+  const user = await requestUser();
   if (!user) {
     // redirect() throws, so a missing user is never cached.
     redirect("/login");
@@ -24,9 +26,10 @@ export async function currentUser(): Promise<SessionUser> {
   return user;
 }
 
-/** The signed-in user, or null (for UI that is shown either way). */
+/** The signed-in user, or null (for UI that is shown either way). A demo's
+ * visitor isn't signed in, so there it's always null. */
 export async function optionalUser(): Promise<SessionUser | null> {
   "use cache: private";
   cacheLife("minutes");
-  return readSession();
+  return isDemo() ? null : readSession();
 }

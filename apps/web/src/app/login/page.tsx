@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { isDemo } from "@/lib/config";
@@ -14,13 +15,14 @@ const ERRORS: Record<string, string> = {
 };
 
 export default function LoginPage({ searchParams }: PageProps<"/login">) {
+  // An open demo has no sign-in (D117).
+  if (isDemo()) redirect("/repos");
   return (
     <div className="mx-auto mt-16 max-w-sm text-center">
       <h1 className="text-2xl font-semibold tracking-tight">Sign in to CodeLens</h1>
       <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
-        {isDemo()
-          ? "Sign in with your GitHub account to browse the demo's reviews: the diffs, the findings, the evidence, the call graph and the retrieval trace. Signing in only tells CodeLens who you are; your GitHub token is not kept."
-          : "You'll see the repositories where the CodeLens GitHub App is installed and you have access. Signing in again picks up new installations."}
+        You&apos;ll see the repositories where the CodeLens GitHub App is installed and you have
+        access. Signing in again picks up new installations.
       </p>
       {/* The query string is request data, so it renders behind a boundary
           and the rest of the page is prerendered. */}
