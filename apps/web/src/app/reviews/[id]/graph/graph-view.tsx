@@ -13,14 +13,16 @@ import {
   Position,
   ReactFlow,
 } from "@xyflow/react";
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import type { GraphEdge, GraphNode } from "@/lib/api";
 import { COLUMNS, layout } from "@/lib/graph-layout";
 
 import { useEvidence } from "../evidence";
 
-type CodeNodeData = GraphNode & { cited: boolean };
+/** `focus`: highlighted (the finding the graph was opened from is about it);
+ * `dimmed`: another node, while something is highlighted. */
+type CodeNodeData = GraphNode & { cited: boolean; focus: boolean; dimmed: boolean };
 type CodeFlowNode = Node<CodeNodeData, "code">;
 
 const CHANGE_STYLES = {
@@ -39,9 +41,9 @@ function CodeNodeView({ data }: NodeProps<CodeFlowNode>) {
       : "border-dashed border-zinc-300 bg-white text-zinc-500 dark:border-zinc-700 dark:bg-zinc-950";
   return (
     <div
-      className={`w-60 rounded-md border-2 px-2.5 py-1.5 text-left text-xs shadow-sm ${style} ${
+      className={`w-60 rounded-md border-2 px-2.5 py-1.5 text-left text-xs shadow-sm transition-opacity ${style} ${
         data.node_id !== null ? "cursor-pointer" : ""
-      }`}
+      } ${data.focus ? "ring-4 ring-sky-400/70" : ""} ${data.dimmed ? "opacity-30" : ""}`}
       title={`${data.qualified_name}${data.path ? `\n${data.path}` : ""}`}
     >
       <Handle type="target" position={Position.Left} className="!bg-zinc-400" />
@@ -62,21 +64,41 @@ function CodeNodeView({ data }: NodeProps<CodeFlowNode>) {
 
 const NODE_TYPES = { code: CodeNodeView };
 
+/** Whether the browser asks for dark mode, kept in sync if it changes. The
+ * server can't know, so it renders light and the browser corrects it after
+ * hydration (colorMode="system" would make the two disagree). */
+function usePrefersDark(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const query = window.matchMedia("(prefers-color-scheme: dark)");
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches,
+    () => false,
+  );
+}
+
 /** The call graph around the review's changed code (api/graph.py), in four
  * columns (lib/graph-layout.ts). Click a node to read its code. */
 export function GraphView({
   nodes,
   edges,
   cited,
+  focus = [],
 }: {
   nodes: GraphNode[];
   edges: GraphEdge[];
   /** Node ids that findings cite as evidence. */
   cited: number[];
+  /** Graph node ids to highlight and zoom to (lib/focus.ts). */
+  focus?: string[];
 }) {
   const open = useEvidence();
+  const dark = usePrefersDark();
   const { flowNodes, flowEdges } = useMemo(() => {
     const citedSet = new Set(cited);
+    const focusSet = new Set(focus);
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const flowNodes: CodeFlowNode[] = layout(nodes, edges).map((p) => {
       const node = byId.get(p.id)!;
@@ -84,7 +106,12 @@ export function GraphView({
         id: p.id,
         type: "code",
         position: { x: p.x, y: p.y },
-        data: { ...node, cited: node.node_id !== null && citedSet.has(node.node_id) },
+        data: {
+          ...node,
+          cited: node.node_id !== null && citedSet.has(node.node_id),
+          focus: focusSet.has(p.id),
+          dimmed: focusSet.size > 0 && !focusSet.has(p.id),
+        },
         draggable: true,
         connectable: false,
       };
@@ -94,11 +121,17 @@ export function GraphView({
       source: e.source,
       target: e.target,
       markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-      style: e.kind === "inherits" ? { strokeDasharray: "4 3" } : undefined,
+      style: {
+        ...(e.kind === "inherits" ? { strokeDasharray: "4 3" } : {}),
+        // Edges between highlighted nodes stay bright.
+        ...(focus.length && !(focusSet.has(e.source) && focusSet.has(e.target))
+          ? { opacity: 0.25 }
+          : {}),
+      },
       label: e.kind === "inherits" ? "inherits" : undefined,
     }));
     return { flowNodes, flowEdges };
-  }, [nodes, edges, cited]);
+  }, [nodes, edges, cited, focus]);
 
   return (
     <div>
@@ -114,9 +147,11 @@ export function GraphView({
             }
           }}
           fitView
+          // Opened from a finding: start zoomed to its nodes.
+          fitViewOptions={focus.length ? { nodes: focus.map((id) => ({ id })), maxZoom: 1.2 } : undefined}
           minZoom={0.2}
           nodesConnectable={false}
-          colorMode="system"
+          colorMode={dark ? "dark" : "light"}
         >
           <Background gap={24} />
           <Controls showInteractive={false} />

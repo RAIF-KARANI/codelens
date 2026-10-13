@@ -2,6 +2,7 @@ import { Tag } from "@/components/badges";
 import type { Finding, Severity } from "@/lib/api";
 
 import { EvidenceButton } from "./evidence";
+import { GraphLink } from "./graph-link";
 import { VoteButtons } from "./vote-buttons";
 
 export const SEVERITY_STYLES: Record<Severity, { badge: string; line: string; border: string }> = {
@@ -85,6 +86,7 @@ export function FindingCard({
             confidence {Math.round(finding.confidence * 100)}%
           </span>
         )}
+        <GraphLink findingId={finding.id} />
         {!dropped && (
           <div className="ml-auto">
             <VoteButtons findingId={finding.id} votes={finding.votes} myVote={finding.my_vote} />

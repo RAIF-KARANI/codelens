@@ -1,8 +1,9 @@
 # Running CodeLens end to end
 
 The whole system on one machine: GitHub → webhook → API → queue → workers → local models
-→ a review posted on the pull request, with its progress streamed live. This is the run
-that closed Phase 5 (`planning.md` §9); the measurements are in §6.4 there.
+→ a review posted on the pull request, with its progress streamed live, and the dashboard
+to watch it in. This is the run that closed Phase 5 and, with the dashboard, Phase 6
+(`planning.md` §9); the measurements are in §6.4 there.
 
 ## What runs where
 
@@ -11,6 +12,7 @@ that closed Phase 5 (`planning.md` §9); the measurements are in §6.4 there.
 | Postgres, Redis, migrations, API (:8000), `worker` (queue `index`), `worker-gpu` (queue `gpu`) | Docker | `docker compose up -d` |
 | Ollama (`qwen3:8b`, `qwen3-embedding:0.6b`) | natively on the host (GPU) | the Ollama app |
 | The webhook relay | the host | `npx smee-client …` |
+| The dashboard (:3000) | the host | `pnpm dev` in `apps/web` |
 
 Containers reach Ollama at `http://host.docker.internal:11434`. Compose mounts `./data`
 (the repos' bare mirrors) and `./secrets` (the App's private key, read-only) into both
@@ -25,6 +27,9 @@ workers.
 2. Pull the models: `ollama pull qwen3:8b` and `ollama pull qwen3-embedding:0.6b`.
 3. A smee channel (https://smee.io/new) set as the App's webhook URL. `register` sets it
    when it creates the App.
+4. For the dashboard: `apps/web/.env.local` from `apps/web/.env.example`, and
+   `http://localhost:3000/api/auth/callback` as the App's redirect URI
+   (`docs/github-app.md` §5).
 
 ## Run
 
@@ -32,6 +37,7 @@ workers.
 docker compose up --build -d
 docker compose ps                      # api healthy; worker, worker-gpu up
 npx smee-client --url https://smee.io/<channel> --target http://localhost:8000/webhooks/github
+pnpm --dir apps/web dev                # the dashboard, http://localhost:3000
 ```
 
 Then, on GitHub:
@@ -44,6 +50,21 @@ Then, on GitHub:
   change.
 
 ## Watch it
+
+**In the dashboard** (http://localhost:3000, signed in with GitHub):
+
+1. **Repositories** → the repo → its **Reviews**. A new push's review appears as
+   `queued`, titled like the PR; the list re-renders itself while it runs.
+2. **Open the review.** Its **Timeline** fills in live: changed definitions found,
+   context packed, the chunk reviewed (with its time), validated, posted on GitHub. At
+   the end the page re-renders with the diff and the findings on their lines.
+3. **A finding's Evidence** button opens the code it cites; **Show in graph** opens
+   the **Graph** tab with the finding's changed code and evidence highlighted, among
+   its callers and callees.
+4. The **Trace** tab shows, per changed definition, every candidate retrieval found and
+   whether the model saw it, and why not.
+
+**From the command line:**
 
 ```bash
 docker compose logs -f worker-gpu      # reviews and embedding slices
@@ -63,6 +84,8 @@ The last command streams the review's events live (`stage`, `chunk_done`, `done`
 | A repo never appears | the delivery's status in *Recent deliveries*; `docker compose logs api` |
 | Indexing fails with a git error | the installation still covers the repo; `docker compose logs worker` |
 | Reviews time out | Ollama is up and reachable from a container: `docker compose exec worker-gpu python -c "import httpx; print(httpx.get('http://host.docker.internal:11434/api/version').text)"` |
+| The dashboard says "Something went wrong" with `invalid_token` | `API_JWT_SECRET` in `apps/web/.env.local` must equal the API's |
+| The dashboard shows no repos | sign in again (installations are read at sign-in); the App is installed on the repo; your login is in `API_ADMIN_LOGINS` for local/eval repos |
 | A review is posted much later than expected | an embedding job ran first: the `gpu` queue is FIFO, but embedding gives way every slice (D107) |
 
 To stop: `docker compose down` (data stays in the `pgdata` volume and `./data`).
