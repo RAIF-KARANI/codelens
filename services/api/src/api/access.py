@@ -4,7 +4,9 @@ reached through its repo, and a repo is visible to:
 - users whose token lists the repo's App installation (the dashboard fills
   `installations` from GitHub at login), and
 - API_ADMIN_LOGINS, who see every repo, including local and eval ones that
-  have no installation.
+  have no installation;
+- on a demo instance (DEMO_MODE), every signed-in user: its database holds
+  only the public demo repos it was given (D115).
 
 Anything not visible is a 404, exactly like something that doesn't exist, so
 a private repo's existence doesn't leak.
@@ -22,7 +24,7 @@ from core.db import models
 
 def visible(user: User) -> ColumnElement[bool]:
     """A filter on repos (`models.Repo`) for this user."""
-    if user.is_admin:
+    if user.is_admin or user.demo:
         return true()
     return models.Repo.installation_id.in_(
         select(models.Installation.id).where(

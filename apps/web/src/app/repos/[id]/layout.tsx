@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { StatusBadge, Tag } from "@/components/badges";
 import { getRepo } from "@/lib/api";
+import { isDemo } from "@/lib/config";
 import { shortSha } from "@/lib/format";
 import { githubUrl } from "@/lib/github-links";
 import { parseId } from "@/lib/params";
@@ -58,7 +59,8 @@ async function RepoHeader({ params }: Pick<LayoutProps<"/repos/[id]">, "params">
             {repo.default_branch} @ {shortSha(repo.last_indexed_sha)}
           </p>
         </div>
-        <ReindexButton action={reindex.bind(null, repo.id)} disabled={busy} />
+        {/* A demo can't index: nothing runs there but the pages. */}
+        {!isDemo() && <ReindexButton action={reindex.bind(null, repo.id)} disabled={busy} />}
       </div>
       <RepoTabs repoId={repo.id} />
       {/* While indexing, re-render every few seconds to show progress. */}

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { isDemo } from "@/lib/config";
 import { first } from "@/lib/params";
 import { safeNext } from "@/lib/paths";
 
@@ -17,8 +18,9 @@ export default function LoginPage({ searchParams }: PageProps<"/login">) {
     <div className="mx-auto mt-16 max-w-sm text-center">
       <h1 className="text-2xl font-semibold tracking-tight">Sign in to CodeLens</h1>
       <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
-        You&apos;ll see the repositories where the CodeLens GitHub App is installed and you have
-        access. Signing in again picks up new installations.
+        {isDemo()
+          ? "Sign in with your GitHub account to browse the demo's reviews: the diffs, the findings, the evidence, the call graph and the retrieval trace. Signing in only tells CodeLens who you are; your GitHub token is not kept."
+          : "You'll see the repositories where the CodeLens GitHub App is installed and you have access. Signing in again picks up new installations."}
       </p>
       {/* The query string is request data, so it renders behind a boundary
           and the rest of the page is prerendered. */}

@@ -2,12 +2,12 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-13: Phases 1–6.
+> follows. It describes `main` as of 2026-10-13: Phases 1–6 and Phase 7 step 1.
 >
 > | File | Answers |
 > |---|---|
 > | [`idea.md`](idea.md) | *What* CodeLens is and *why* (the design narrative) |
-> | [`planning.md`](planning.md) | *How and in what order* we build it: the plan of record, decisions D1–D114, open questions |
+> | [`planning.md`](planning.md) | *How and in what order* we build it: the plan of record, decisions D1–D116, open questions |
 > | **`architecture.md`** | *How it works now*, as built |
 > | [`evals/RESULTS.md`](evals/RESULTS.md) | *How well it works*: every measured config |
 >
@@ -86,6 +86,8 @@ and code and prompts never leave the machine (D20).
 | Dashboard: a review's page (diff with inline findings, live timeline, evidence drawer, 👍/👎) | ✅ Phase 6 step 4 |
 | Dashboard: a review's graph and trace views | ✅ Phase 6 step 5 |
 | Dashboard end to end in the browser: a push watched live, clicked through to evidence and graph (`docs/e2e.md`) | ✅ Phase 6 step 6 |
+| Demo mode: read-only, on Postgres alone, open to every signed-in user | ✅ Phase 7 step 1 |
+| Demo data export/import, hosting, hardening, README | Phase 7 steps 2–5 |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -950,8 +952,15 @@ FastAPI (`services/api`). `/health` is public; everything under `/api/v1` needs 
   Anything not visible is a 404, like something missing, so a private repo's existence
   doesn't leak. Being an admin is the server's decision, from the login; it is never a
   claim.
-- **`DEMO_MODE=true`** → every mutating route returns 403 (the public read-only demo, §15
-  of `planning.md`).
+- **`DEMO_MODE=true`** (the public read-only demo, §15 of `planning.md`, Phase 7):
+  - every mutating route returns 403, and webhooks are refused;
+  - the API runs on **Postgres alone**: no Redis clients or job queue are created, an
+    event stream re-reads the database every heartbeat instead of waiting on a Redis
+    doorbell (its reviews are finished, so it replays and ends at once), and `/health`
+    checks only the database (`redis: null`);
+  - **every signed-in user sees every repo** (D115): the demo database holds only the
+    public demo repos exported to it. The dashboard with `DEMO_MODE=true` shows a demo
+    banner and hides Re-index and 👍/👎.
 - **One error shape** for every error, including framework 404s and validation errors:
   `{"error": {"code": "not_found", "message": "...", "details": {...}}}`. Broker
   failures return `503 queue_unavailable` and never leak hostnames.
@@ -1356,10 +1365,13 @@ latency with identical tokens, so latency is only compared between back-to-back 
 
 ## 15. Not built yet, and known gaps
 
-**Next, Phase 7** (`planning.md` §9): demo, observability and hardening: `DEMO_MODE`
-data export/import, a hosted read-only deploy, rate limits and budgets, the README's
-results table and a demo video. Q7 (does the demo need a login?) and Q8 (hosting) are
-decided there.
+**Next, Phase 7 steps 2–5** (`planning.md` §9):
+- **Step 2:** the public demo repo, reviewed locally, and `core.demo` export/import of
+  its rows.
+- **Step 3:** hosting on Vercel (dashboard and the read-only API) and Supabase (Postgres)
+  (D116).
+- **Step 4:** rate limits, structured logs, health checks.
+- **Step 5:** the README's diagram, results table and evaluation story; a demo video.
 
 The anti-patterns editor waits for U5 (D112).
 

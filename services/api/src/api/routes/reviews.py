@@ -198,7 +198,7 @@ async def review_events(
     session: Session,
     user: CurrentUser,
     engine: Annotated[AsyncEngine, Depends(get_engine)],
-    redis: Annotated[Redis, Depends(get_events_redis)],
+    redis: Annotated[Redis | None, Depends(get_events_redis)],
     last_event_id: Annotated[int | None, Header(ge=0)] = None,
     after: Annotated[int | None, Query(ge=0)] = None,
 ) -> StreamingResponse:

@@ -19,17 +19,22 @@ def get_engine(request: Request) -> AsyncEngine:
     return request.app.state.engine
 
 
-def get_redis(request: Request) -> Redis:
+# The three below are None on a demo instance (DEMO_MODE), which runs on
+# Postgres alone. Routes that would use the queue are refused before then
+# (require_writable); /health and event streams do without Redis.
+
+
+def get_redis(request: Request) -> Redis | None:
     return request.app.state.redis
 
 
-def get_events_redis(request: Request) -> Redis:
+def get_events_redis(request: Request) -> Redis | None:
     """Redis for event streams (pub/sub), without a read timeout: a stream
     waits on its subscription for up to a heartbeat (api/sse.py)."""
     return request.app.state.events_redis
 
 
-def get_queue(request: Request) -> JobQueue:
+def get_queue(request: Request) -> JobQueue | None:
     return request.app.state.queue
 
 

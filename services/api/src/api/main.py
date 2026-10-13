@@ -21,14 +21,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
     app.state.engine = create_engine(settings.database_url)
     app.state.session_factory = create_session_factory(app.state.engine)
-    app.state.redis = Redis.from_url(settings.redis_url, socket_connect_timeout=2, socket_timeout=2)
-    app.state.events_redis = Redis.from_url(settings.redis_url, socket_connect_timeout=2)
-    app.state.queue = CeleryJobQueue(settings.redis_url)
+    if settings.demo_mode:
+        # A read-only demo runs on Postgres alone (planning.md §15): nothing
+        # is queued, and event streams read the database on their own.
+        app.state.redis = app.state.events_redis = app.state.queue = None
+    else:
+        app.state.redis = Redis.from_url(
+            settings.redis_url, socket_connect_timeout=2, socket_timeout=2
+        )
+        app.state.events_redis = Redis.from_url(settings.redis_url, socket_connect_timeout=2)
+        app.state.queue = CeleryJobQueue(settings.redis_url)
     try:
         yield
     finally:
-        await app.state.redis.aclose()
-        await app.state.events_redis.aclose()
+        for client in (app.state.redis, app.state.events_redis):
+            if client is not None:
+                await client.aclose()
         await app.state.engine.dispose()
 
 

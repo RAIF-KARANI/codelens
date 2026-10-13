@@ -13,6 +13,10 @@ later rings the bell at step 3. If that ring is lost (pub/sub keeps
 nothing), the next heartbeat's read still finds the row. Rows are only read
 from the database, so what a client sees live is exactly what it would see
 on replay.
+
+Without Redis (a demo instance, which runs on Postgres alone), there is no
+doorbell: the stream re-reads the database every heartbeat instead. Its
+reviews are finished, so a stream replays and ends at once anyway.
 """
 
 import asyncio
@@ -47,14 +51,15 @@ def frame(seq: int | None, event: str, data: dict[str, object]) -> str:
 
 async def review_stream(
     engine: AsyncEngine,
-    redis: Redis,
+    redis: Redis | None,
     review_id: int,
     after: int,
     *,
     heartbeat: float = HEARTBEAT_SECONDS,
 ) -> AsyncIterator[str]:
-    pubsub = redis.pubsub()
-    await pubsub.subscribe(channel(review_id))
+    pubsub = redis.pubsub() if redis is not None else None
+    if pubsub is not None:
+        await pubsub.subscribe(channel(review_id))
     try:
         last = after
         while True:
@@ -71,11 +76,15 @@ async def review_stream(
             ):
                 yield frame(None, END, {"status": str(status)})  # no id: not a stored event
                 return
-            if not await _doorbell(pubsub, heartbeat):
+            if pubsub is None:
+                await asyncio.sleep(heartbeat)
+                yield ": keep-alive\n\n"
+            elif not await _doorbell(pubsub, heartbeat):
                 yield ": keep-alive\n\n"
     finally:
-        await pubsub.unsubscribe()
-        await pubsub.aclose()
+        if pubsub is not None:
+            await pubsub.unsubscribe()
+            await pubsub.aclose()
 
 
 async def _doorbell(pubsub: PubSub, seconds: float) -> bool:

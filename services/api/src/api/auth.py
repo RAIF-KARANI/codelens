@@ -36,6 +36,9 @@ class User:
     login: str
     installations: frozenset[int] = frozenset()  # GitHub installation ids it can access
     is_admin: bool = False  # sees every repo, including local and eval ones
+    # A demo instance (DEMO_MODE) holds only exported public demo repos, so
+    # every signed-in user sees all of them (D115).
+    demo: bool = False
 
 
 def issue_token(
@@ -92,6 +95,7 @@ def current_user(
         installations=frozenset(installations),
         # Admin is the server's decision (API_ADMIN_LOGINS), never a claim.
         is_admin=login.lower() in settings.admin_logins,
+        demo=settings.demo_mode,
     )
 
 
