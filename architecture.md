@@ -2,7 +2,7 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-13: Phases 1–5 and Phase 6 steps 1–2.
+> follows. It describes `main` as of 2026-10-13: Phases 1–5 and Phase 6 steps 1–3.
 >
 > | File | Answers |
 > |---|---|
@@ -82,7 +82,8 @@ and code and prompts never leave the machine (D20).
 | End to end in Docker on a real repo, within the latency budget (`docs/e2e.md`) | ✅ Phase 5 step 5 |
 | The dashboard's API: access checks, diff, trace, graph, nodes, 👍/👎 | ✅ Phase 6 step 1 |
 | Dashboard: GitHub login, the server-side API client, layout, the repos page | ✅ Phase 6 step 2 |
-| Dashboard: repo, reviews, review detail, graph and trace pages | Phase 6 steps 3–6 |
+| Dashboard: a repo's reviews and index history, re-index | ✅ Phase 6 step 3 |
+| Dashboard: review detail, graph and trace pages | Phase 6 steps 4–6 |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -1107,9 +1108,30 @@ sequenceDiagram
 Two secrets, on purpose: a session cookie can never pass as an API token, or the reverse.
 Installations are read once per sign-in, so a new installation shows after the next one.
 
-**Pages so far:** `/login`, and `/repos` (every repo the user can see, with status, the
-indexed commit and the last review). The shared header shows the user, streamed in its
-own boundary so the layout stays static.
+**Pages so far:**
+
+| Route | Shows |
+|---|---|
+| `/login` | Sign in with GitHub; why a sign-in failed |
+| `/repos` | Every repo the user can see: status, the indexed commit, the last review |
+| `/repos/[id]` | The repo's header (status, branch @ commit, **Re-index**) and its reviews, newest first: PR and commit (linked to GitHub), status, findings by severity, duration, error. `?status=` filters, `?cursor=` pages |
+| `/repos/[id]/indexing` | The code graph's size (nodes, edges) and call resolution from the latest run; every index run with files and nodes added, changed and deleted |
+
+How they work:
+- **Request data streams.** The shared header shows the user in its own boundary, so the
+  layout stays static. A repo page's header and each tab read the route's `id`, so each
+  sits behind its own `<Suspense>`.
+- **The URL is untrusted.** Ids, cursors and filters are parsed (`lib/params.ts`); junk
+  becomes "absent" (a filter or cursor) or a 404 (an id).
+- **Paging is keyset,** like the API's: **Older** passes `next_cursor`; **Newest** goes
+  back to the start.
+- **Re-index is a Server Action** (`repos/[id]/actions.ts`). An action is a public
+  endpoint, so it reads the session itself and lets the API check access. API errors
+  (`demo_mode`, `not_indexable`, `queue_unavailable`) become a message under the
+  button.
+- **Background progress:** while a repo is indexing or a review is queued or running,
+  the page re-renders from the server every 3 s (`components/auto-refresh.tsx`; only
+  while the tab is visible). Live review events will use the SSE stream (step 4).
 
 ---
 
@@ -1285,8 +1307,7 @@ latency with identical tokens, so latency is only compared between back-to-back 
 
 ## 15. Not built yet, and known gaps
 
-**Next, Phase 6 steps 3–6** (`planning.md` §9): the dashboard pages.
-- **Step 3:** a repo's page: index history, re-index, its reviews.
+**Next, Phase 6 steps 4–6** (`planning.md` §9): the dashboard pages.
 - **Step 4:** a review's detail: the diff, inline findings, the live SSE timeline, the
   evidence drawer, 👍/👎.
 - **Step 5:** the graph and trace views.

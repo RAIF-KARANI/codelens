@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { first } from "@/lib/params";
 import { safeNext } from "@/lib/paths";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -58,10 +59,6 @@ function SignInButton({ href }: { href: string }) {
       Sign in with GitHub
     </a>
   );
-}
-
-function first(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
 }
 
 function GitHubMark() {
