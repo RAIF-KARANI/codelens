@@ -819,7 +819,7 @@ graph.
 | Step | Deliverable | User action |
 |---|---|---|
 | 1 ✅ #27 | The API the dashboard reads: per-repo access checks (JWT `installations` claim + `API_ADMIN_LOGINS`, D111); a review's diff and seeds stored with it (D110); `/reviews/{id}/diff`, `/trace`, `/graph`, `/nodes/{id}`, `/findings/{id}/feedback`; migration (`finding_feedback`, `reviews.diff`, `reviews.seeds`) | none |
-| 2 🔍 | Web foundation: GitHub login with the App's OAuth client, our own code (D113): state cookie, code exchange, `GET /user` + `GET /user/installations`, a signed session cookie, the GitHub token dropped; `proxy.ts` redirects early, the data access layer decides; the server-side API client that signs a 5-minute JWT per call; layout, navigation; the repos page; vitest | add `http://localhost:3000/api/auth/callback` to the App's callback URLs (`docs/github-app.md` §5) |
+| 2 🔍 | Web foundation: GitHub login with the App's OAuth client, our own code (D113): state cookie, code exchange, `GET /user` + `GET /user/installations`, a signed session cookie, the GitHub token dropped; `proxy.ts` redirects early, the data access layer decides; the server-side API client that signs a 5-minute JWT per call; layout, navigation; the repos page; vitest | add `http://localhost:3000/api/auth/callback` as the App's redirect URI (`docs/github-app.md` §5) |
 | 3 | Repo and reviews pages: index history, re-index, review lists | none |
 | 4 | Review detail: the diff with inline findings, the live SSE timeline (proxied by Next.js, which holds the JWT), the evidence drawer, 👍/👎 | none |
 | 5 | Graph view (React Flow) and trace view | none |

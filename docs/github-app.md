@@ -99,9 +99,12 @@ for an older App:
 
 1. Open the App's settings: `https://github.com/settings/apps/<slug>` (for an organisation's
    App, the organisation's **Settings → Developer settings → GitHub Apps**).
-2. Under **Identifying and authorizing users → Callback URL**, add
-   `http://localhost:3000/api/auth/callback` and **Save changes**. Leave **Expire user
-   authorization tokens** as it is; the dashboard drops the token after login anyway.
+2. Under **Identifying and authorizing users**, type
+   `http://localhost:3000/api/auth/callback` into the **Redirect URI** box (older GitHub
+   pages call it **Callback URL**; **Add redirect URI** adds another box once one is
+   used). Leave **Allow wildcard matching**, **Request user authorization (OAuth) during
+   installation** and **Enable Device Flow** unticked.
+3. Scroll to the bottom of the page and press **Save changes**.
 
 Then copy `apps/web/.env.example` to `apps/web/.env.local` and fill it in: the client id
 and secret are the `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` from `.env`, and
