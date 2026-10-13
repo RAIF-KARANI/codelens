@@ -2,7 +2,7 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-13: Phases 1–5 and Phase 6 steps 1–5.
+> follows. It describes `main` as of 2026-10-13: Phases 1–6.
 >
 > | File | Answers |
 > |---|---|
@@ -85,7 +85,7 @@ and code and prompts never leave the machine (D20).
 | Dashboard: a repo's reviews and index history, re-index | ✅ Phase 6 step 3 |
 | Dashboard: a review's page (diff with inline findings, live timeline, evidence drawer, 👍/👎) | ✅ Phase 6 step 4 |
 | Dashboard: a review's graph and trace views | ✅ Phase 6 step 5 |
-| Dashboard: the end-to-end check in the browser | Phase 6 step 6 |
+| Dashboard end to end in the browser: a push watched live, clicked through to evidence and graph (`docs/e2e.md`) | ✅ Phase 6 step 6 |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -1123,7 +1123,7 @@ Installations are read once per sign-in, so a new installation shows after the n
 | `/repos/[id]` | The repo's header (status, branch @ commit, **Re-index**) and its reviews, newest first: PR and commit (linked to GitHub), status, findings by severity, duration, error. `?status=` filters, `?cursor=` pages |
 | `/repos/[id]/indexing` | The code graph's size (nodes, edges) and call resolution from the latest run; every index run with files and nodes added, changed and deleted |
 | `/reviews/[id]` (tab **Diff**) | One review: title, PR and commit links, status, model, duration, counts; the **diff** with each finding under the line it ends on; the **timeline** (live while it runs); the changed definitions; token usage; `?dropped=1` adds the findings validation dropped, with the reason |
-| `/reviews/[id]/graph` | The call graph around the change (React Flow): callers → changed code → callees → other context the model saw; click a node for its code |
+| `/reviews/[id]/graph` | The call graph around the change (React Flow): callers → changed code → callees → other context the model saw; click a node for its code. `?finding=` (a finding's **Show in graph**) highlights and zooms to that finding's changed code and evidence (`lib/focus.ts`) |
 | `/reviews/[id]/trace` | For each chunk and each changed definition, every retrieved candidate: rank, similarity, what happened to it (shown in full, signature only, or why not), tokens; the token budgets |
 
 How they work:
@@ -1356,8 +1356,10 @@ latency with identical tokens, so latency is only compared between back-to-back 
 
 ## 15. Not built yet, and known gaps
 
-**Next, Phase 6 step 6** (`planning.md` §9): the end-to-end check in the browser:
-watch a review stream live and click a finding through to its evidence and graph.
+**Next, Phase 7** (`planning.md` §9): demo, observability and hardening: `DEMO_MODE`
+data export/import, a hosted read-only deploy, rate limits and budgets, the README's
+results table and a demo video. Q7 (does the demo need a login?) and Q8 (hosting) are
+decided there.
 
 The anti-patterns editor waits for U5 (D112).
 

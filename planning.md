@@ -7,10 +7,10 @@
 
 **Last updated:** 2026-10-13 · **Current position:** Phases 1–4 complete. Phase 4 adopted anchoring (test F1 0.654 → 0.767); every
 change aimed at making qwen3:8b reason over context was rejected (D83, D85–D87). Phase 5 (GitHub App) is done: PRs on a real repo get
-inline comments in 9–49 s, and a re-push repeats nothing (#20–#26). Phase 6 (dashboard) in progress: step 1
-(the API it reads, with per-repo access checks) steps 2–4 (GitHub login, the API client, the repos and repo pages, a review's
-page with inline findings, live timeline, evidence and votes) are merged (#27–#30);
-step 5 (the graph and trace views) is in review.
+inline comments in 9–49 s, and a re-push repeats nothing (#20–#26). Phase 6 (dashboard): steps 1–5
+(#27–#31: the API and its access checks, GitHub login, the repos and repo pages, a review's page with inline findings, live
+timeline, evidence and votes, the graph and trace views) are merged; step 6 (end to end in the browser) is in review, and its
+run met the **exit criterion**: a push to a PR watched live and clicked through to its evidence and graph.
 
 ---
 
@@ -824,8 +824,8 @@ graph.
 | 2 ✅ #28 | Web foundation: GitHub login with the App's OAuth client, our own code (D113): state cookie, code exchange, `GET /user` + `GET /user/installations`, a signed session cookie, the GitHub token dropped; `proxy.ts` redirects early, the data access layer decides; the server-side API client that signs a 5-minute JWT per call; layout, navigation; the repos page; vitest | add `http://localhost:3000/api/auth/callback` as the App's redirect URI (`docs/github-app.md` §5) |
 | 3 ✅ #29 | A repo's page (`/repos/[id]`): header with status and a Re-index button (a Server Action; the page re-renders every 3 s while indexing); the Reviews tab (newest first, status filter, keyset pages, PR and commit links, findings by severity, duration); the Indexing tab (the graph's size and call resolution, every run with files and nodes changed); repo rows link here | none |
 | 4 ✅ #30 | Review detail (`/reviews/[id]`): the stored diff (own parser) with each finding under its last line, clipped like the GitHub review (D109); the live SSE timeline through a session-checked Next.js route that adds the JWT; the evidence drawer (node code via another route); 👍/👎 (a Server Action, optimistic); `reviews.title` stored and shown (Q19, D114); review rows link here | none |
-| 5 🔍 | A review's Graph and Trace tabs (the review page becomes a layout with Diff / Graph / Trace tabs and one shared evidence drawer). Graph: React Flow, laid out in four columns by our own `lib/graph-layout.ts` (callers → changed code → callees → other context), changed code coloured by its change, nodes the model saw solid, cited evidence starred, click for the code. Trace: per chunk and per changed definition, every candidate with its rank, similarity, outcome (shown, signature only, or why not) and tokens, against the token budgets | none |
-| 6 | End to end in the browser (the exit criterion) | none |
+| 5 ✅ #31 | A review's Graph and Trace tabs (the review page becomes a layout with Diff / Graph / Trace tabs and one shared evidence drawer). Graph: React Flow, laid out in four columns by our own `lib/graph-layout.ts` (callers → changed code → callees → other context), changed code coloured by its change, nodes the model saw solid, cited evidence starred, click for the code. Trace: per chunk and per changed definition, every candidate with its rank, similarity, outcome (shown, signature only, or why not) and tokens, against the token budgets | none |
+| 6 🔍 | End to end in the browser. A finding's **Show in graph** opens the Graph tab with its changed code and evidence highlighted (`lib/focus.ts`). Run (2026-10-13, review 1383, playground PR #4): queued 6 s after the push, started at 11 s, finished at 43 s; the timeline streamed live and the page re-rendered into the diff with 4 findings; a finding's evidence opened `Database.__getitem__`, and Show in graph highlighted it and the changed `Database.table`. **Exit criterion met.** Runbook: `docs/e2e.md` | none (allowed the test push) |
 
 Anti-patterns CRUD is deferred with U5 (D112).
 
