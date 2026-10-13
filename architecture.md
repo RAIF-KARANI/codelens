@@ -2,7 +2,7 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-13: Phases 1–4 and Phase 5 steps 1–4.
+> follows. It describes `main` as of 2026-10-13: Phases 1–5.
 >
 > | File | Answers |
 > |---|---|
@@ -79,7 +79,7 @@ and code and prompts never leave the machine (D20).
 | GitHub repos from webhook events: bare mirrors, indexed from git objects on install and push | ✅ Phase 5 step 3a |
 | Reviewing pull requests and posting the reviews on GitHub | ✅ Phase 5 step 3b |
 | Live review progress over SSE | ✅ Phase 5 step 4 |
-| End-to-end check against the latency budget | ⏭ Phase 5 step 5 |
+| End to end in Docker on a real repo, within the latency budget (`docs/e2e.md`) | ✅ Phase 5 step 5 |
 | Dashboard | Phase 6 (`apps/web` is an empty Next.js app) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
@@ -523,6 +523,9 @@ or `embedded_hash` ≠ sha256(current chunk text). The indexer never clears embe
 
 ### 6.3 Mechanics
 
+- **Slices** (D107): the worker's `embed_repo` embeds at most 512 nodes per run (~20 s) and
+  re-queues itself while stale nodes remain, so a review never waits behind a whole
+  repo's embedding: at most one slice.
 - Pages of 256 nodes, one transaction per page: an interrupted run keeps every finished
   page.
 - Vectors are **L2-normalised** before storing, so cosine distance = 1 − dot product.
@@ -710,10 +713,11 @@ Only for GitHub reviews that completed; the worker does it after the pipeline (�
 
 - **One `COMMENT` review per reviewed push** (never `REQUEST_CHANGES`, D13), posted in a
   single API call, so the author is notified once.
-- **Inline comments** for posted findings, on the RIGHT side of the diff. A multi-line
-  range is used only when both ends sit in one hunk; otherwise the comment goes on the
-  last line. A finding on no diff line is listed in the body instead. If GitHub still
-  refuses a placement (422), the review is posted again with every finding in the body.
+- **Inline comments** for posted findings, on the RIGHT side of the diff. The finding's
+  range is clipped to the first hunk it overlaps (D109); the model often names a whole
+  function, e.g. lines 2263–2321 around a 6-line hunk. A finding on no diff line is listed
+  in the body instead. If GitHub still refuses a placement (422), the review is posted
+  again with every finding in the body.
 - **The summary body, always, even with nothing new** (the user's choice, D101): the
   model's chunk summaries, the counts by severity, and how many were left out as
   repeats, plus a footer with the files reviewed and the local model.
@@ -776,7 +780,7 @@ engine (D7): each task runs its own event loop, and a pooled connection can't cr
 | Task | Queue | Does | Returns |
 |---|---|---|---|
 | `worker.index_repo(repo_id)` | `index` | local repo: `index_repository` on its checkout. GitHub repo: installation token → `GET /repos/{name}` (default branch) → mirror fetch → `index_revision` (§5.5) | run id, commit, whether it wrote |
-| `worker.embed_repo(repo_id)` | `gpu` | `embed_repository` | embedded / up-to-date counts |
+| `worker.embed_repo(repo_id)` | `gpu` | `embed_repository`, one slice of ≤ 512 nodes; re-queues itself if more remain (D107) | embedded / up-to-date / remaining counts |
 | `worker.review(review_id, base)` | `gpu` | `run_review`, claiming the queued row | status, posted count |
 | `worker.ping()` | `index` (default) | smoke test | `"pong"` |
 
@@ -792,7 +796,8 @@ engine (D7): each task runs its own event loop, and a pooled connection can't cr
 - **Lock contention:** `index_repo` catches `IndexLocked` and retries every 30 s, for up to
   30 min, keeping its place in the chain (D89).
 - **`worker_prefetch_multiplier = 1`**, so one worker can't hoard long jobs.
-- **Q17 (open):** `gpu` is FIFO, so a review can wait behind a long embedding job.
+- **Q17, answered (D107):** `gpu` is FIFO, but embedding gives way every slice, so a
+  review waits for at most one (measured live: 6 s).
 
 ### 9.2 A review's lifecycle
 
@@ -1194,6 +1199,7 @@ All on the RTX 4060 Laptop (8 GB), Ollama 0.40.x, details in `planning.md` §1.3
 | Review latency (eval case, one function) | ~15 s at 8k (A0 ~5 s) |
 | Real 13-file PR, 4 chunks | 163 s; output length is the driver (~1.1k output tokens per chunk) |
 | This repo's step-1 PR via the API (4 chunks) | 202 in 84 ms; review done in 110 s |
+| **GitHub PR opened/pushed → review posted** (Docker, `codelens-playground`, 5 events) | **9–49 s**; budget 10 min (D84). Details: `planning.md` §6.4 |
 
 The laptop GPU sometimes drops into a power-capped state that doubles to quadruples
 latency with identical tokens, so latency is only compared between back-to-back runs.
@@ -1202,10 +1208,10 @@ latency with identical tokens, so latency is only compared between back-to-back 
 
 ## 15. Not built yet, and known gaps
 
-**Next, Phase 5** (`planning.md` §9):
-
-1. **Step 5:** end to end on a real test repo, and the latency budget re-checked;
-   decide Q17 (GPU queue priorities) and Q18 (review only a push's incremental diff?).
+**Next, Phase 6** (`planning.md` §9): the dashboard, with GitHub login (Auth.js) and the
+per-repo access checks moved there (D101). Its pages are repos, reviews, a review's detail
+with the diff, inline findings, the live SSE timeline and an evidence drawer, the graph
+view and the trace view.
 
 **Deferred upgrades:** FTS + RRF (U1), graph expansion (U2), a cross-encoder reranker (U3),
 a PageRank prior (U4) and anti-patterns (U5). Their schema columns (`tsv`, `centrality`,
@@ -1217,12 +1223,14 @@ a PageRank prior (U4) and anti-patterns (U5). Their schema columns (`tsv`, `cent
 - An unchanged file's edges aren't re-resolved on re-index (D36).
 - The stored graph may be indexed at a different commit than the review's merge-base (D56).
 - No type inference: `obj.method()` calls stay unresolved.
-- The `gpu` queue is FIFO (Q17).
+- A review that runs while its repo is still embedding (D107) retrieves from a partial set
+  of vectors.
 - Local-path reviews need the API and worker on the host (D92).
 - `apps/web` is still empty.
 - `webhook_deliveries` grows without pruning.
-- Every push re-reviews the whole PR diff (Q18); topics stop repeated comments, but the
-  model re-reads unchanged code, and its output varies from push to push.
+- Every push re-reviews the whole PR diff (D108, by choice); topics stop repeated
+  comments, but the model re-reads unchanged code, and its output varies from push to
+  push.
 - A failed review posts nothing on the PR; nothing tells the author it failed.
 - Out-of-order `installation` events (e.g. `deleted` arriving before `created` on a quick
   reinstall) aren't reconciled.

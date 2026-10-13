@@ -6,8 +6,9 @@ context with hybrid vector + full-text search plus graph expansion, and asks an 
 severity-graded review findings.
 
 > **Status:** Phases 1–4 done: the indexer, the review pipeline, the eval harness and the
-> measured upgrades ([`evals/RESULTS.md`](evals/RESULTS.md)). Phase 5 (GitHub App) is in
-> progress: background jobs and the first API endpoints. The plan of record is
+> measured upgrades ([`evals/RESULTS.md`](evals/RESULTS.md)). Phase 5 done: a GitHub App
+> that reviews pull requests with inline comments, using local models, typically within a
+> minute ([`docs/e2e.md`](docs/e2e.md)). Next: the dashboard. The plan of record is
 > [`planning.md`](planning.md); how the system works today, component by component, is in
 > [`architecture.md`](architecture.md).
 
@@ -244,6 +245,9 @@ with inline findings. Setup, including the local webhook tunnel and a connection
 uv run python -m core.github register --name "CodeLens (you)" --webhook-url https://smee.io/<channel>
 uv run python -m core.github check
 ```
+
+Running the whole system end to end (Docker, the App, the webhook relay, watching a review
+live) is in [`docs/e2e.md`](docs/e2e.md).
 
 ## Parser (inspect the code graph)
 

@@ -16,7 +16,7 @@ from core.db import create_engine
 from core.indexing import IndexingError, IndexLocked
 from core.review.pipeline import ReviewError
 from worker.celery_app import celery_app
-from worker.tasks import LOCK_MAX_RETRIES, index_repo, ping, review
+from worker.tasks import LOCK_MAX_RETRIES, embed_repo, index_repo, ping, review
 
 Sql = Callable[..., list[Any]]
 
@@ -195,3 +195,32 @@ def test_index_retries_while_another_run_holds_the_lock(
 
     assert attempts == 2
     assert isinstance(result.result, IndexLocked)
+
+
+@pytest.mark.integration
+def test_embedding_yields_the_gpu_between_slices(
+    shop: Any, sql: Sql, worker_on_fakes: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Q17/D107: a long embedding job re-queues itself after each slice, so a
+    # review queued meanwhile runs before the next slice.
+    sql("UPDATE code_nodes SET embedding = NULL WHERE repo_id = :id", id=shop.repo_id)
+    total = sql("SELECT count(*) FROM code_nodes WHERE repo_id = :id", id=shop.repo_id)[0][0]
+    requeued: list[int] = []
+    monkeypatch.setattr(worker.tasks, "EMBED_SLICE_NODES", 10)
+    monkeypatch.setattr(worker.tasks, "requeue_embedding", requeued.append)
+
+    slices = [embed_repo.apply(args=(shop.repo_id,)).get()]
+    while slices[-1]["remaining"]:
+        slices.append(embed_repo.apply(args=(shop.repo_id,)).get())
+
+    assert all(s["embedded"] <= 10 for s in slices)
+    assert sum(s["embedded"] for s in slices) == total
+    assert len(slices) == -(-total // 10)  # ceil: every slice but the last is full
+    assert requeued == [shop.repo_id] * (len(slices) - 1)  # the last one doesn't
+    assert (
+        sql(
+            "SELECT count(*) FROM code_nodes WHERE repo_id = :id AND embedding IS NULL",
+            id=shop.repo_id,
+        )[0][0]
+        == 0
+    )
