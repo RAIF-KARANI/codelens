@@ -245,6 +245,7 @@ async def _pull_request(
             repo_id=repo_id,
             source=ReviewSource.GITHUB,
             pr_number=number,
+            title=pr.get("title"),
             head_sha=head_sha,
             status=ReviewStatus.QUEUED,
         )

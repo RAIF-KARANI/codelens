@@ -50,7 +50,11 @@ async def create_review(
         _resolve_refs, Path(repo.local_path), body.head, body.base
     )
     review = models.Review(
-        repo_id=repo.id, source=ReviewSource.CLI, head_sha=head_sha, status=ReviewStatus.QUEUED
+        repo_id=repo.id,
+        source=ReviewSource.CLI,
+        title=body.head,  # the branch: what the change is called
+        head_sha=head_sha,
+        status=ReviewStatus.QUEUED,
     )
     session.add(review)
     # Commit before enqueueing, or the worker could pick the job up before the

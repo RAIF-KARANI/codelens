@@ -20,6 +20,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except the login page, the auth routes and static files.
-  matcher: ["/((?!login|api/auth|_next/static|_next/image|favicon.ico|.*\\.svg$).*)"],
+  // Pages only: not the login page, static files, or /api (whose handlers
+  // check the session themselves and answer 401, not a redirect).
+  matcher: ["/((?!login|api/|_next/static|_next/image|favicon.ico|.*\\.svg$).*)"],
 };

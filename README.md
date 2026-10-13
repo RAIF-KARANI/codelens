@@ -271,8 +271,9 @@ uv run python -m core.parser path/to/repo --unresolved    # in-repo calls it cou
 
 A Next.js app that signs you in with GitHub (through the App's OAuth client) and reads
 the API from its server. So far it has the login, the repos list, and each repo's
-reviews and index history with a Re-index button; a review's own page, the graph and
-the trace come in the next Phase 6 steps. It needs the API running, `apps/web/.env.local` (copy
+reviews and index history with a Re-index button, and each review's page: the diff
+with its findings on the lines, a live timeline while it runs, the code each finding
+cites as evidence, and 👍/👎. The graph and trace views come in the next Phase 6 steps. It needs the API running, `apps/web/.env.local` (copy
 `apps/web/.env.example`), and the App's redirect URI set
 ([`docs/github-app.md`](docs/github-app.md) §5).
 

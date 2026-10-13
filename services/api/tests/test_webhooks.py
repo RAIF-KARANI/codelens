@@ -387,13 +387,14 @@ def test_a_pull_request_queues_a_review(settings: Settings, sql: Sql, installed:
         response = deliver(c, installed, "pull_request", pr_event("opened"), delivery="pr")
 
     assert response.json()["status"] == "processed"
-    [review] = sql("SELECT id, source, pr_number, head_sha, status FROM reviews")
+    [review] = sql("SELECT id, source, pr_number, title, head_sha, status FROM reviews")
     assert (review.source, review.pr_number, review.head_sha, review.status) == (
         "github",
         7,
         "a" * 40,
         "queued",
     )
+    assert review.title == "Make @admin happy"  # kept for the dashboard (Q19)
     # The base is the PR's base tip; the worker diffs against its merge-base.
     assert queue.jobs == [("review", review.id, "b" * 40, "Make @admin happy")]
 

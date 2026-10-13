@@ -8,8 +8,9 @@
 **Last updated:** 2026-10-13 · **Current position:** Phases 1–4 complete. Phase 4 adopted anchoring (test F1 0.654 → 0.767); every
 change aimed at making qwen3:8b reason over context was rejected (D83, D85–D87). Phase 5 (GitHub App) is done: PRs on a real repo get
 inline comments in 9–49 s, and a re-push repeats nothing (#20–#26). Phase 6 (dashboard) in progress: step 1
-(the API it reads, with per-repo access checks) and step 2 (GitHub login, the API client, the repos page) are merged
-(#27, #28); step 3 (a repo's reviews and index history, re-index) is in review.
+(the API it reads, with per-repo access checks) steps 2 and 3 (GitHub login, the API client, the repos and repo pages) are
+merged (#27–#29); step 4 (a review's page: diff with inline findings, live timeline,
+evidence drawer, 👍/👎) is in review.
 
 ---
 
@@ -664,9 +665,10 @@ codelens/
 │   ├── src/app/api/auth/{login,callback,logout}/  ✅ GitHub login (D113)
 │   ├── src/app/{login,repos}/      ✅
 │   ├── src/app/repos/[id]/{page,indexing/page,layout,actions}  ✅ 6.3
-│   ├── src/app/reviews/[id]/{page,graph,trace}/   📋6
-│   ├── src/components/             ✅ badges, pager, skeleton, auto-refresh · 📋6 diff, findings, graph, trace
-│   ├── src/lib/                    ✅ config, tokens, session, dal, github, oauth, paths, params, format, github-links, api · 📋6 sse.ts
+│   ├── src/app/reviews/[id]/       ✅ 6.4 page, diff-view, finding-card, live-timeline, evidence, vote-buttons, actions · 📋6 graph, trace
+│   ├── src/app/api/{reviews/[id]/events,nodes/[id]}/  ✅ 6.4 session-checked proxies
+│   ├── src/components/             ✅ badges, pager, skeleton, auto-refresh · 📋6 graph, trace
+│   ├── src/lib/                    ✅ config, tokens, session, dal, github, oauth, paths, params, format, github-links, api, diff, events
 │   └── test/                       ✅ vitest
 ├── packages/core/
 │   ├── alembic.ini                 ✅
@@ -820,8 +822,8 @@ graph.
 |---|---|---|
 | 1 ✅ #27 | The API the dashboard reads: per-repo access checks (JWT `installations` claim + `API_ADMIN_LOGINS`, D111); a review's diff and seeds stored with it (D110); `/reviews/{id}/diff`, `/trace`, `/graph`, `/nodes/{id}`, `/findings/{id}/feedback`; migration (`finding_feedback`, `reviews.diff`, `reviews.seeds`) | none |
 | 2 ✅ #28 | Web foundation: GitHub login with the App's OAuth client, our own code (D113): state cookie, code exchange, `GET /user` + `GET /user/installations`, a signed session cookie, the GitHub token dropped; `proxy.ts` redirects early, the data access layer decides; the server-side API client that signs a 5-minute JWT per call; layout, navigation; the repos page; vitest | add `http://localhost:3000/api/auth/callback` as the App's redirect URI (`docs/github-app.md` §5) |
-| 3 🔍 | A repo's page (`/repos/[id]`): header with status and a Re-index button (a Server Action; the page re-renders every 3 s while indexing); the Reviews tab (newest first, status filter, keyset pages, PR and commit links, findings by severity, duration); the Indexing tab (the graph's size and call resolution, every run with files and nodes changed); repo rows link here | none |
-| 4 | Review detail: the diff with inline findings, the live SSE timeline (proxied by Next.js, which holds the JWT), the evidence drawer, 👍/👎 | none |
+| 3 ✅ #29 | A repo's page (`/repos/[id]`): header with status and a Re-index button (a Server Action; the page re-renders every 3 s while indexing); the Reviews tab (newest first, status filter, keyset pages, PR and commit links, findings by severity, duration); the Indexing tab (the graph's size and call resolution, every run with files and nodes changed); repo rows link here | none |
+| 4 🔍 | Review detail (`/reviews/[id]`): the stored diff (own parser) with each finding under its last line, clipped like the GitHub review (D109); the live SSE timeline through a session-checked Next.js route that adds the JWT; the evidence drawer (node code via another route); 👍/👎 (a Server Action, optimistic); `reviews.title` stored and shown (Q19, D114); review rows link here | none |
 | 5 | Graph view (React Flow) and trace view | none |
 | 6 | End to end in the browser (the exit criterion) | none |
 
@@ -1202,6 +1204,7 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D111 | Per-repo access: a repo is visible to a token whose `installations` claim (GitHub installation ids, filled by the dashboard from `GET /user/installations` at login) contains the repo's installation, and to logins in `API_ADMIN_LOGINS` (the user's choice for local and eval repos, which have no installation); every route checks through `api/access.py`; anything not visible is a 404 | Check GitHub on every request; let every signed-in user see local/eval repos | GitHub itself decides which installations a user can reach, once per login; the API only checks a signed claim, so no GitHub call per request. Admin is decided by the server from the login, never by a claim. A 404 for hidden repos doesn't reveal that a private repo exists |
 | D112 | The anti-patterns editor (CRUD) is deferred with U5 (user's choice, 2026-10-13) | Build it in Phase 6 | Nothing reads the anti-patterns table until U5; an editor for unused data adds pages without showing anything |
 | D113 | The dashboard's GitHub login is our own code (~200 lines in `apps/web`): GitHub's web flow with the App's OAuth client and a `state` cookie; at the callback, `GET /user` and `GET /user/installations`; then an httpOnly session cookie signed with `jose` (HS256, its own `SESSION_SECRET`, 8 h) holding the user and their installation ids. The GitHub user token is dropped. The server mints a 5-minute API token per call from the session | Auth.js, as §3 planned | Auth.js v5 is still a beta, and its examples predate Next 16's `proxy.ts` and Cache Components. We need one provider plus one extra call, which in Auth.js means callbacks around a flow you can't see. Our own is short, readable and tested (CSRF state, open-redirect guard, forged, expired and `alg: none` cookies). Without a stored GitHub token, a stolen cookie can't act on GitHub. The cost: new installations show after the next sign-in |
+| D114 | Reviews keep a nullable `title`: the pull request's title when the review is queued (from the webhook), or a manual review's branch; a second Phase 6 migration (Q19, user's choice) | Keep D29's one migration per phase and show only `PR #N` | The title is what people recognise a change by, and the worker already had it for the prompt. One added nullable column is cheap; D29's point (never edit an applied migration) still holds. Older and eval reviews stay untitled |
 
 ---
 
@@ -1243,7 +1246,7 @@ PR overlay, migrate service, host port 5433). New decisions:
 | Q15 | ~~16k window for thinking?~~ **Answered 2026-10-12:** measured (Ollama now runs with flash attention + q8_0 KV); thinking still not adopted (D86). Was: Thinking needs a bigger output reserve than the 8k window can spare (13% of test reviews truncated at 3,000). Run Ollama with flash attention + q8_0 KV (`OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`, D66: free on this GPU) and evaluate thinking at a 16k window with a ~6,000-token reserve? A server setting on the user's machine | Before Phase 4 step 4 |
 | Q16 | ~~How to continue Phase 4?~~ **Answered 2026-10-12: (b) a verification pass, then (d) Phase 5** (user's choice; verification rejected, D87). Was: How to continue Phase 4, now that prompting (D83) and thinking (D86) don't get qwen3:8b to use context: (a) the retrieval upgrades U1–U5 as planned, accepting that F1 may not move; (b) a verification pass (a second, narrow call per API-contract finding); (c) a stronger model (Q2: qwen3:14b, partly on CPU); or (d) stop Phase 4 at anchoring and move to Phase 5 (GitHub App) | Now |
 | Q17 | ~~Reviews ahead of bulk embedding?~~ **Answered 2026-10-13:** embedding runs in slices of 512 nodes and re-queues itself, so a review waits for at most one slice (D107); measured live, 6 s. Was: Should the `gpu` queue put reviews ahead of bulk embedding (Celery priorities, or a third queue that the GPU worker drains first)? Today it is FIFO, so a PR opened while a new repo is embedding (~8–9 min for 14k nodes, §5.7) waits for it (D88) | Phase 5 step 5 (measure end to end) |
-| Q19 | Store the pull request's title on the review (a nullable `reviews.title`)? The worker already receives it for the prompt but doesn't keep it, so review lists show only `PR #4` and the commit. A small second Phase 6 migration (D29 plans one per phase); older reviews would stay untitled | Phase 6 step 4 (the review page wants it too) |
+| Q19 | ~~Store PR titles?~~ **Answered 2026-10-13: yes** (user's choice; D114). Was: Store the pull request's title on the review (a nullable `reviews.title`)? The worker already receives it for the prompt but doesn't keep it, so review lists show only `PR #4` and the commit. A small second Phase 6 migration (D29 plans one per phase); older reviews would stay untitled | Phase 6 step 4 (the review page wants it too) |
 | Q18 | ~~Incremental per-push review?~~ **Answered 2026-10-13: no, the whole PR diff** (user's choice; D108). Was: Should a push be reviewed on its *incremental* diff (since the last reviewed head) rather than the whole PR? Today every push re-reviews the full PR diff; topics (D104) stop repeats, but the model still re-reads unchanged code, and its output varies from push to push | Phase 5 step 5 (watch real PRs) |
 
 ---

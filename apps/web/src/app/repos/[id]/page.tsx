@@ -115,8 +115,21 @@ function ReviewRow({ review, repo }: { review: ReviewSummary; repo: RepoDetail }
   const onGitHub = repo.source === "github";
   return (
     <tr className="align-top">
-      <td className="px-4 py-3 font-medium">#{review.id}</td>
+      <td className="px-4 py-3 font-medium">
+        <Link href={`/reviews/${review.id}`} className="hover:underline">
+          #{review.id}
+        </Link>
+      </td>
       <td className="px-4 py-3">
+        {review.title && (
+          <Link
+            href={`/reviews/${review.id}`}
+            className="block max-w-xs truncate font-medium hover:underline"
+            title={review.title}
+          >
+            {review.title}
+          </Link>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           {review.pr_number !== null && onGitHub ? (
             <a
