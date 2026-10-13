@@ -2,7 +2,8 @@
 integration tests use the test database and fake models (services/conftest.py)."""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
@@ -81,7 +82,8 @@ def test_review_restarts_a_crashed_attempt(shop: Any, sql: Sql, worker_on_fakes:
 
     seqs = [r.seq for r in sql("SELECT seq FROM review_events ORDER BY seq")]
     assert seqs == list(range(1, len(seqs) + 1))
-    assert sql("SELECT type FROM review_events ORDER BY seq DESC LIMIT 1")[0].type == "done"
+    last_two = sql("SELECT type FROM review_events ORDER BY seq DESC LIMIT 2")
+    assert [r.type for r in last_two] == ["end", "done"]
     assert [r.file_path for r in sql("SELECT file_path FROM findings")] == [
         "shop/pricing.py",
         "shop/orders.py",
@@ -112,6 +114,35 @@ def test_review_failing_before_the_pipeline_marks_the_row(
     assert row.status == "failed"
     assert "no-such-branch" in row.error
     assert row.finished_at is not None
+    # A streamer is told why, and that the stream is over.
+    events = sql("SELECT type, payload FROM review_events ORDER BY seq")
+    assert [e.type for e in events] == ["error", "end"]
+    assert "no-such-branch" in events[0].payload["message"]
+    assert events[1].payload == {"status": "failed"}
+
+
+@pytest.mark.integration
+def test_every_event_rings_the_doorbell(
+    shop: Any, sql: Sql, worker_on_fakes: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rings: list[int] = []
+
+    @asynccontextmanager
+    async def recording_doorbell(settings: Any) -> AsyncIterator[Any]:
+        async def notify(review_id: int) -> None:
+            rings.append(review_id)
+
+        yield notify
+
+    monkeypatch.setattr(worker.tasks, "doorbell", recording_doorbell)
+    review_id = queued_review(sql, shop.repo_id, shop.head_sha)
+
+    review.apply(args=(review_id, shop.base_sha)).get()
+
+    events = sql("SELECT type FROM review_events ORDER BY seq")
+    assert events[-1].type == "end"
+    # One ring per event, each after its row was committed.
+    assert rings == [review_id] * len(events)
 
 
 @pytest.mark.integration

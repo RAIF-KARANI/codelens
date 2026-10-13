@@ -4,16 +4,19 @@ import asyncio
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Header, Query, status
+from fastapi.responses import StreamingResponse
+from redis.asyncio import Redis
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from api import schemas
 from api.auth import current_user, require_writable
-from api.dependencies import get_queue, get_session
+from api.dependencies import get_engine, get_events_redis, get_queue, get_session
 from api.errors import ApiError, not_found
 from api.queries import severity_counts
 from api.queue import JobQueue, QueueUnavailable
+from api.sse import review_stream
 from core.db import models
 from core.diff import git
 from core.enums import FindingStatus, RepoSource, ReviewSource, ReviewStatus, Severity
@@ -101,4 +104,32 @@ async def get_review(
         token_usage=review.token_usage,
         pipeline_config=review.pipeline_config,
         findings=[schemas.Finding.model_validate(f) for f in findings],
+    )
+
+
+@router.get(
+    "/{review_id}/events",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {}}}},
+)
+async def review_events(
+    review_id: int,
+    session: Session,
+    engine: Annotated[AsyncEngine, Depends(get_engine)],
+    redis: Annotated[Redis, Depends(get_events_redis)],
+    last_event_id: Annotated[int | None, Header(ge=0)] = None,
+    after: Annotated[int | None, Query(ge=0)] = None,
+) -> StreamingResponse:
+    """The review's timeline as Server-Sent Events: everything after
+    `Last-Event-ID` (an EventSource sends it when it reconnects; `?after=`
+    does the same), then live events until `end` (api/sse.py)."""
+    if await session.get(models.Review, review_id) is None:
+        raise not_found("review", review_id)
+    start = after if after is not None else (last_event_id or 0)
+    return StreamingResponse(
+        review_stream(engine, redis, review_id, start),
+        media_type="text/event-stream",
+        # no-cache: never replay a stale stream. X-Accel-Buffering: nginx-style
+        # proxies would otherwise hold events back until a buffer fills.
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

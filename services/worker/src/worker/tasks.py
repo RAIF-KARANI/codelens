@@ -9,9 +9,12 @@ reads the current row when it runs. The tasks return small JSON summaries
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+from redis.asyncio import Redis
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -34,8 +37,9 @@ from core.github.publish import build_review
 from core.indexing import IndexingError, IndexLocked, IndexReport, index_repository, index_revision
 from core.providers import open_providers
 from core.review.config import PipelineConfig
+from core.review.events import END, channel
 from core.review.pipeline import ReviewError, ReviewResult, run_review
-from core.review.recorder import append_event, fail_unfinished
+from core.review.recorder import Notify, append_event, fail_unfinished, ring
 from worker.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -163,47 +167,96 @@ async def _review(
         row = await _load_review(engine, review_id)
         if row.status in _FINISHED:
             # A redelivered message for a review that already ran (acks are
-            # late), or one a newer push superseded while it waited.
+            # late), or one a newer push superseded while it waited. Its
+            # stream already ended.
             logger.info("review %s already %s; skipping", review_id, row.status)
             return {"review_id": review_id, "status": str(row.status), "skipped": True}
-        github = row.source is ReviewSource.GITHUB
-        if github and await _supersede_if_stale(engine, row, review_id, "before it ran"):
-            return {"review_id": review_id, "status": "superseded", "skipped": True}
-        try:
-            if github:
-                repo_path = await _fetch_pull_request(settings, row)
-            elif row.local_path:
-                repo_path = Path(row.local_path)
-            else:
-                raise ReviewError(f"{row.full_name} has no local checkout to review")
-            config = PipelineConfig.from_yaml(settings.pipeline_config)
-            async with open_providers(settings) as providers:
-                result = await run_review(
-                    engine,
-                    providers,
-                    repo_path=repo_path,
-                    base=base,
-                    head=row.head_sha,
-                    repo_name=row.full_name,
-                    config=config,
-                    context_window=settings.llm_num_ctx,
-                    source=row.source,
-                    review_id=review_id,
-                    title=title,
-                )
-                model = providers.llm.model
-        except Exception as exc:
-            # Errors after the pipeline started are already recorded; this
-            # catches the ones before it (bad revision, missing config).
-            async with engine.connect() as conn:
-                await fail_unfinished(conn, review_id, str(exc) or repr(exc))
-            raise
-        summary = {"review_id": review_id, "status": result.status.value}
-        if github and result.status is ReviewStatus.COMPLETED:
-            summary |= await _publish(settings, engine, row, review_id, result, model)
+        async with doorbell(settings) as notify:
+            try:
+                return await _run_review(settings, engine, row, review_id, base, title, notify)
+            finally:
+                # Whatever happened, nothing more will be written: tell
+                # streamers to stop (D106).
+                await _end(engine, review_id, notify)
     finally:
         await engine.dispose()
+
+
+async def _run_review(
+    settings: Settings,
+    engine: AsyncEngine,
+    row: Any,
+    review_id: int,
+    base: str,
+    title: str | None,
+    notify: Notify,
+) -> dict[str, Any]:
+    github = row.source is ReviewSource.GITHUB
+    if github and await _supersede_if_stale(engine, row, review_id, "before it ran", notify):
+        return {"review_id": review_id, "status": "superseded", "skipped": True}
+    try:
+        if github:
+            repo_path = await _fetch_pull_request(settings, row)
+        elif row.local_path:
+            repo_path = Path(row.local_path)
+        else:
+            raise ReviewError(f"{row.full_name} has no local checkout to review")
+        config = PipelineConfig.from_yaml(settings.pipeline_config)
+        async with open_providers(settings) as providers:
+            result = await run_review(
+                engine,
+                providers,
+                repo_path=repo_path,
+                base=base,
+                head=row.head_sha,
+                repo_name=row.full_name,
+                config=config,
+                context_window=settings.llm_num_ctx,
+                source=row.source,
+                review_id=review_id,
+                title=title,
+                notify=notify,
+                final=False,  # posting may follow; _end closes the stream
+            )
+            model = providers.llm.model
+    except Exception as exc:
+        # The pipeline records its own failures; this also catches the ones
+        # before it started (bad revision, missing config), and tells a
+        # streamer why.
+        message = str(exc) or repr(exc)
+        async with engine.connect() as conn:
+            await fail_unfinished(conn, review_id, message)
+            await append_event(conn, review_id, "error", message=message)
+            await conn.commit()
+        await ring(notify, review_id)
+        raise
+    summary = {"review_id": review_id, "status": result.status.value}
+    if github and result.status is ReviewStatus.COMPLETED:
+        summary |= await _publish(settings, engine, row, review_id, result, model, notify)
     return {**summary, "posted": len(result.posted)}
+
+
+async def _end(engine: AsyncEngine, review_id: int, notify: Notify) -> None:
+    async with engine.connect() as conn:
+        status = await conn.scalar(select(Review.status).where(Review.id == review_id))
+        await append_event(conn, review_id, END, status=str(status))
+        await conn.commit()
+    await ring(notify, review_id)
+
+
+@asynccontextmanager
+async def doorbell(settings: Settings) -> AsyncIterator[Notify]:
+    """Rings a review's Redis channel after each new event (D105). A client
+    per task: like the database engine, it belongs to the task's event loop."""
+    client = Redis.from_url(settings.redis_url, socket_connect_timeout=2, socket_timeout=2)
+
+    async def notify(review_id: int) -> None:
+        await client.publish(channel(review_id), "new")
+
+    try:
+        yield notify
+    finally:
+        await client.aclose()
 
 
 async def _load_review(engine: AsyncEngine, review_id: int) -> Any:
@@ -230,7 +283,9 @@ async def _load_review(engine: AsyncEngine, review_id: int) -> Any:
     return row
 
 
-async def _supersede_if_stale(engine: AsyncEngine, row: Any, review_id: int, when: str) -> bool:
+async def _supersede_if_stale(
+    engine: AsyncEngine, row: Any, review_id: int, when: str, notify: Notify
+) -> bool:
     """A newer push to the same pull request (a later, not failed review)
     makes this head stale: skip it, or don't post it (D103)."""
     async with engine.begin() as conn:
@@ -253,6 +308,8 @@ async def _supersede_if_stale(engine: AsyncEngine, row: Any, review_id: int, whe
                 error=f"superseded by review {newer} {when}",
             )
         )
+        await append_event(conn, review_id, "superseded", by_review=newer, when=when)
+    await ring(notify, review_id)
     return True
 
 
@@ -280,11 +337,12 @@ async def _publish(
     review_id: int,
     result: ReviewResult,
     model: str,
+    notify: Notify,
 ) -> dict[str, Any]:
     """Post the review on the pull request, unless a newer push came in while
     it ran. Findings on a function already commented on in this PR, and
     unchanged since (same topic, D104), are left out."""
-    if await _supersede_if_stale(engine, row, review_id, "while it ran (not posted)"):
+    if await _supersede_if_stale(engine, row, review_id, "while it ran (not posted)", notify):
         return {"status": "superseded", "published": False}
     async with engine.connect() as conn:
         already = set(
@@ -332,6 +390,7 @@ async def _publish(
             inline=publication.inline,
         )
         await conn.commit()
+    await ring(notify, review_id)
     return {"published": True, "new": publication.new, "repeated": publication.repeated}
 
 

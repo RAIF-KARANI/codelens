@@ -1,11 +1,16 @@
 """S10 persist: the review row, its event timeline, the context trace, findings.
 
 Each write is its own short transaction on one connection: events become
-visible as they happen (Phase 5 streams them over SSE), and a crash mid-review
-leaves a `running`/`failed` review with everything recorded so far.
+visible as they happen, and a crash mid-review leaves a `running`/`failed`
+review with everything recorded so far.
+
+After each event is committed, an optional `notify(review_id)` rings the
+doorbell for anyone streaming the review (the worker publishes on Redis;
+core.review.events). The event itself is only ever read from the database.
 """
 
-from collections.abc import Sequence
+import logging
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
 from sqlalchemy import delete, func, insert, select, update
@@ -23,10 +28,27 @@ events_t = ReviewEvent.__table__
 items_t = ReviewContextItem.__table__
 findings_t = Finding.__table__
 
+logger = logging.getLogger(__name__)
+
+Notify = Callable[[int], Awaitable[None]]  # review_id -> "it has new events"
+
+
+async def ring(notify: Notify | None, review_id: int) -> None:
+    """Tell streamers a review has new events. Best effort: a lost doorbell
+    only delays a live viewer until their next poll, so it must never fail
+    the review."""
+    if notify is None:
+        return
+    try:
+        await notify(review_id)
+    except Exception:  # Redis down, ...: the event is safe in the database
+        logger.warning("could not notify streamers of review %s", review_id, exc_info=True)
+
 
 class ReviewRecorder:
-    def __init__(self, conn: AsyncConnection) -> None:
+    def __init__(self, conn: AsyncConnection, notify: Notify | None = None) -> None:
         self._conn = conn
+        self._notify = notify
         self._seq = 0
         self.review_id: int | None = None
 
@@ -86,6 +108,8 @@ class ReviewRecorder:
                     review_id=self.review_id, seq=self._seq, type=type_, payload=payload
                 )
             )
+        if self.review_id is not None:
+            await ring(self._notify, self.review_id)
 
     async def context(self, chunks: Sequence[ReviewChunk]) -> None:
         rows = [

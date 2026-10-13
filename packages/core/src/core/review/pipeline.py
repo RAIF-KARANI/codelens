@@ -28,9 +28,10 @@ from core.providers import (
 )
 from core.review.changes import ChangeSet, collect_changes
 from core.review.config import GenerationConfig, PipelineConfig
+from core.review.events import END
 from core.review.packing import ReviewChunk, build_chunks, fit_to_window
 from core.review.prompts import build_messages, system_prompt
-from core.review.recorder import ReviewRecorder
+from core.review.recorder import Notify, ReviewRecorder
 from core.review.retrieval import retrieve_for_seeds, select_seeds
 from core.review.schemas import FindingOut, ReviewOut
 from core.review.validate import CheckedFinding, validate
@@ -109,6 +110,8 @@ async def run_review(
     progress: ProgressFn | None = None,
     review_id: int | None = None,
     title: str | None = None,
+    notify: Notify | None = None,
+    final: bool = True,
 ) -> ReviewResult:
     """Review head against its merge-base with base. `context_window` is the
     LLM's num_ctx: every prompt is fitted to it, minus the output reserve.
@@ -116,7 +119,12 @@ async def run_review(
     With `review_id`, the review row already exists (the API queued it) and is
     claimed instead of inserted; `source` is then the row's own. `title` is
     what the prompt calls the change (a pull request's title); by default the
-    head's name."""
+    head's name.
+
+    `notify` is rung after every event (live streaming). With `final`, the
+    review's last event is `end`: nothing more will be written. The worker
+    passes final=False when it still has work after the pipeline (posting
+    to GitHub) and writes `end` itself."""
     say = progress or (lambda _: None)
     seconds: dict[str, float] = {}
 
@@ -139,7 +147,7 @@ async def run_review(
                 f"no indexed repo named {repo_name!r}: run core.index (and core.embed) first"
             )
 
-        recorder = ReviewRecorder(conn)
+        recorder = ReviewRecorder(conn, notify)
         review_id = await recorder.start(
             repo_id=repo_id,
             source=source,
@@ -292,9 +300,13 @@ async def run_review(
             await recorder.finish(
                 status, usage, error=failed[0][1] if status is ReviewStatus.FAILED else None
             )
+            if final:
+                await recorder.event(END, status=status.value)
         except Exception as exc:
             await conn.rollback()
             await recorder.finish(ReviewStatus.FAILED, usage, error=repr(exc))
+            if final:
+                await recorder.event(END, status=ReviewStatus.FAILED.value)
             raise
 
     return ReviewResult(

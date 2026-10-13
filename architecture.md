@@ -2,7 +2,7 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-12: Phases 1–4 and Phase 5 steps 1–3b.
+> follows. It describes `main` as of 2026-10-13: Phases 1–4 and Phase 5 steps 1–4.
 >
 > | File | Answers |
 > |---|---|
@@ -78,7 +78,8 @@ and code and prompts never leave the machine (D20).
 | GitHub App credentials, verified webhook endpoint, installations | ✅ Phase 5 step 2 |
 | GitHub repos from webhook events: bare mirrors, indexed from git objects on install and push | ✅ Phase 5 step 3a |
 | Reviewing pull requests and posting the reviews on GitHub | ✅ Phase 5 step 3b |
-| Live review progress over SSE; end-to-end check | ⏭ Phase 5 steps 4–5 |
+| Live review progress over SSE | ✅ Phase 5 step 4 |
+| End-to-end check against the latency budget | ⏭ Phase 5 step 5 |
 | Dashboard | Phase 6 (`apps/web` is an empty Next.js app) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
@@ -698,7 +699,7 @@ step 4), and a crash leaves everything recorded up to that point.
 | Write | When |
 |---|---|
 | `reviews` row | **inserted** as `running`, or, with `review_id`, a `queued`/`running` row is **claimed**. Claiming a `running` row (a crashed attempt) first deletes its partial events, trace and findings (D90) |
-| `review_events` | every stage: `stage` (seeds, packed, generating), `chunk_done` (estimated vs real tokens, ms, finding count), `chunk_failed`, `think_fallback`, `done` |
+| `review_events` | every stage: `stage` (seeds, packed, generating), `chunk_done` (estimated vs real tokens, ms, finding count), `chunk_failed`, `think_fallback`, `done`, and finally `end` (CLI and eval reviews; the worker writes its own, §10.2). After each commit, an optional `notify` rings the Redis doorbell (D105) |
 | `review_context_items` | every candidate per chunk, included or not, with stage scores |
 | `findings` | posted and dropped, with reasons |
 | `reviews` finish | status, `token_usage` (input/output tokens, LLM ms), error |
@@ -893,6 +894,7 @@ FastAPI (`services/api`). `/health` is public; everything under `/api/v1` needs 
 | GET | `/api/v1/repos/{id}/reviews` | Reviews, newest first, `?status=`, with posted counts by severity |
 | POST | `/api/v1/reviews` | Queue a manual review `{repo_id, base, head}`; `202 {review_id, status, head_sha}` |
 | GET | `/api/v1/reviews/{id}` | A review: summary, counts, token usage, exact pipeline config, findings (`?include_dropped=true`) |
+| GET | `/api/v1/reviews/{id}/events` | The review's timeline as **Server-Sent Events**: replay after `Last-Event-ID` (or `?after=`), then live, until `end` (§10.2) |
 | POST | `/webhooks/github` | GitHub's events (HMAC-signed); `202 {delivery_id, event, status}` (§10.1) |
 
 **Conventions:**
@@ -974,6 +976,59 @@ Only a *handled* delivery counts as seen (D95), and the three steps run in order
 A broker outage at step 2 leaves the delivery unprocessed, so "Redeliver" in the App's
 settings queues the jobs again. GitHub doesn't retry App deliveries by itself. Re-handling
 is safe: the upserts and every job are idempotent.
+
+### 10.2 Live review events (SSE, Phase 5 step 4)
+
+`GET /api/v1/reviews/{id}/events` (`api/sse.py`) streams the review's `review_events`
+rows as Server-Sent Events: `id:` is the row's `seq`, `event:` its type, and `data:` its
+JSON payload.
+
+**Postgres is the mailbox, Redis the doorbell** (D105). Every event is a row, committed
+first. The worker then publishes a bare notification on `review:<id>`
+(`core/review/events.py`); a failed publish is logged, never fatal.
+
+```mermaid
+sequenceDiagram
+    participant C as client
+    participant A as API (stream)
+    participant R as Redis
+    participant PG as Postgres
+    participant W as worker
+    C->>A: GET /reviews/12/events (Last-Event-ID: 3)
+    A->>R: SUBSCRIBE review:12
+    A->>PG: events with seq > 3
+    A-->>C: id: 4 / id: 5 … (replay)
+    W->>PG: INSERT event 6 (commit)
+    W->>R: PUBLISH review:12
+    R-->>A: ring
+    A->>PG: events with seq > 5
+    A-->>C: id: 6 …
+    Note over A,C: no ring for 15 s: ": keep-alive", and re-read anyway
+    W->>PG: INSERT event 9 "end"
+    A-->>C: id: 9 event: end — then the stream closes
+```
+
+- **The order is what makes it lossless.** The stream subscribes before it reads, so an
+  event committed between the two is read, and one committed later rings. A lost ring
+  (Redis pub/sub keeps nothing) costs at most one heartbeat, since every heartbeat
+  re-reads the database. Live and replayed streams are the same rows.
+- **`end` is the last event of every review** (D106), and the server closes the stream
+  after it:
+  - the pipeline writes it for CLI and eval reviews;
+  - the worker writes it after posting to GitHub, or after any failure (with an `error`
+    event before it);
+  - a superseded review gets `superseded`, then `end`.
+
+  Reviews from before this step have no `end`: once finished and quiet for 30 s, they get
+  a synthetic one, with no id.
+- **Headers:** `Cache-Control: no-cache`, and `X-Accel-Buffering: no` so proxies don't hold
+  events back. The pub/sub connection has no read timeout, since it waits a full heartbeat.
+- **Browsers:** an `EventSource` can't send an `Authorization` header, so the Phase 6
+  dashboard's Next.js server will proxy the stream with the JWT.
+
+Measured live on a real PR push: the webhook queued the review in 2.8 s; then `seeds`,
+`packed`, `generating`, `chunk_done`, `done`, `published` and `end` each reached the
+client as soon as the worker committed it; and the server closed the stream at +37.2 s.
 
 ---
 
@@ -1149,9 +1204,7 @@ latency with identical tokens, so latency is only compared between back-to-back 
 
 **Next, Phase 5** (`planning.md` §9):
 
-1. **Step 4:** Redis pub/sub of `review_events` and an SSE endpoint with `Last-Event-ID`
-   replay.
-2. **Step 5:** end to end on a real test repo, and the latency budget re-checked;
+1. **Step 5:** end to end on a real test repo, and the latency budget re-checked;
    decide Q17 (GPU queue priorities) and Q18 (review only a push's incremental diff?).
 
 **Deferred upgrades:** FTS + RRF (U1), graph expansion (U2), a cross-encoder reranker (U3),

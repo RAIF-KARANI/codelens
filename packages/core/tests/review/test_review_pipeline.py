@@ -175,7 +175,8 @@ def test_b0_review_end_to_end(shop: Path, migrated_database_url: str) -> None:
     assert all("vector_similarity" in i.stage_scores for i in items)
     events = query(migrated_database_url, "SELECT seq, type FROM review_events ORDER BY seq")
     assert [e.seq for e in events] == list(range(1, len(events) + 1))
-    assert events[-1].type == "done"
+    # The CLI's review is final: `end` closes it for anyone streaming (D106).
+    assert [e.type for e in events[-2:]] == ["done", "end"]
 
 
 def test_a0_diff_only_retrieves_nothing(shop: Path, migrated_database_url: str) -> None:
