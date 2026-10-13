@@ -5,10 +5,10 @@
 > two disagree, **this file wins**. It supersedes `idea.md` §14 (roadmap) and adds
 > decisions D18+.
 
-**Last updated:** 2026-10-12 · **Current position:** Phases 1–4 complete. Phase 4 adopted anchoring (test F1 0.654 → 0.767); every
-change aimed at making qwen3:8b reason over context was rejected (D83, D85–D87). Phase 5 (GitHub App) in progress:
-steps 1 (#20), 2 (#22), 3a (#23) and 3b (#24) are done: the App reviews real pull requests;
-step 4 (live review events over SSE) is in review.
+**Last updated:** 2026-10-13 · **Current position:** Phases 1–4 complete. Phase 4 adopted anchoring (test F1 0.654 → 0.767); every
+change aimed at making qwen3:8b reason over context was rejected (D83, D85–D87). Phase 5 (GitHub App) met its exit
+criterion end to end in Docker (step 5, in review): PRs on a real repo get inline comments in 9–49 s, and a re-push
+repeats nothing. Next: Phase 6 (dashboard).
 
 ---
 
@@ -542,6 +542,24 @@ open question Q9, to be decided by evals.
 The token estimate (chars ÷ 3.0) now over-counts real prompts by 6–14%, so no prompt can
 silently exceed the window (D63).
 
+**End to end on GitHub (Phase 5 step 5, 2026-10-13).** The whole stack ran in Docker, with
+Ollama native and a smee relay, on a private copy of sqlite-utils (`codelens-playground`, 108
+files, 1,337 nodes). The times are from GitHub's own timestamps: PR opened (or pushed) →
+review posted.
+
+| PR | Change | Open/push → posted | What CodeLens posted |
+|---|---|---|---|
+| #1 | `sql_format` bug, 1 file, opened while the repo was still embedding | **25 s** (waited 6 s for an embedding slice, D107) | 🔴 critical · security, on the changed line |
+| #2 | `rename_local` (behaviour-preserving) | **9 s** | a summary, no findings |
+| #3 | 4 files, 4 planted bugs (`raise_to_none`, `remove_guard`, `reorder_params`, `exception_type`) | **33 s** (queued behind #2) | all 4 found; 2 inline, 2 in the body (fixed: D109) |
+| #3, 2nd push | README only | **≈33 s** | "No new findings"; 4 not repeated (D104) |
+| #4 | #3's change again, after the placement fix | **49 s** (queued behind #3's push) | all 4 inline |
+
+The worst case, 49 s, is ~8% of the 10-minute budget (D84). Single-PR reviews take 7–30 s of
+GPU at this size, and a review queued behind another adds that one's time. The earlier
+fashion-store reviews took 33–135 s; the slow ones coincided with the laptop GPU's
+power-capped state (§1.3).
+
 ---
 
 ## 7. API surface
@@ -782,8 +800,8 @@ budget; a re-push doesn't duplicate comments.
 | 2 ✅ #22 | GitHub App: manifest + `python -m core.github register` (D93) and `check`, `docs/github-app.md`; App JWT (RS256) → cached installation tokens (D96); httpx GitHub client; `POST /webhooks/github` with HMAC SHA-256, delivery dedupe (D95), `installation` events mirrored (D97); migration (`installations`, `webhook_deliveries`, `repos.installation_id`) | register the App (`docs/github-app.md`) |
 | 3a ✅ #23 | Repos from events (D101): `installation` created and `installation_repositories` attach repos (keyed by GitHub id) and queue indexing; removed repos are detached; a push to the default branch re-indexes. Bare mirrors refreshed with an installation token (D99); indexing straight from git objects (`parse_revision`, `index_revision`; D100); webhook state → jobs → processed, in that order (D98) | none |
 | 3b ✅ #24 | Pull requests (D102): `opened`/`synchronize`/`reopened`/`ready_for_review` (open, not drafts) queue a review of the PR head (`refs/pull/N/head`) against its base, with the PR title in the prompt; one `COMMENT` review per push: inline comments plus a summary even when nothing new (D101); a newer push supersedes older reviews (D103); no repeats on unchanged functions (topics, D104). Verified on a real PR | none |
-| 4 🔍 | `GET /api/v1/reviews/{id}/events` (SSE): replay after `Last-Event-ID`, then live through a Redis doorbell over the `review_events` rows (D105), until an `end` event (D106); heartbeats every 15 s. Verified live on a real PR | none |
-| 5 | End to end on a real test repo via smee (D94); re-check the latency budget (D84) | install the App on a test repo |
+| 4 ✅ #25 | `GET /api/v1/reviews/{id}/events` (SSE): replay after `Last-Event-ID`, then live through a Redis doorbell over the `review_events` rows (D105), until an `end` event (D106); heartbeats every 15 s. Verified live on a real PR | none |
+| 5 🔍 | End to end in Docker on a private test repo (`codelens-playground`, sqlite-utils), via smee: 5 PR events, 9–49 s from open/push to posted review (§6.4), all planted bugs found, no repeats on re-push. **Exit criterion met.** Q17 answered with embedding slices (D107), Q18 with the whole PR diff (D108), comment placement clipped to hunks (D109); runbook `docs/e2e.md` | added the playground to the App |
 
 ### Phase 6: Dashboard
 Auth.js (GitHub) → JWT to the API, carrying the user's installation ids, and per-repo
@@ -1161,6 +1179,9 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D104 | Across pushes, a finding is a repeat if an earlier posted review of the PR had a finding with the same *topic*: file + innermost node at its first line + that node's content hash. Validation's within-review dedupe keeps the fingerprint (eval behaviour unchanged) | The fingerprint (file + category + the code in its exact lines) | Measured on a real PR: the same concern ("null if `gridId` is not provided") came back on lines 167–168 instead of 167, got a new fingerprint, and was posted twice, alongside three rewordings. With topics, a README-only push posted "No new findings; 2 more on code already commented on". Trade-off: a different second issue in an unchanged function isn't posted on later pushes; the first review of that code had its chance |
 | D105 | Live events: Postgres is the mailbox, Redis the doorbell. Each event is a `review_events` row, committed first; then the worker publishes a bare notification on `review:<id>`. A stream subscribes, *then* reads the rows after `Last-Event-ID`, then re-reads on every ring and at every 15 s heartbeat. Notification failures never fail a review | Publish the events themselves on Redis; poll Postgres only | Subscribing before reading closes the gap between replay and live. A lost ring (pub/sub stores nothing) costs one heartbeat of delay, never an event, and live and replayed streams are the same rows. Polling alone would delay every event by up to its interval. Measured live on a real PR: every event reached the client the moment it was committed |
 | D106 | Every review's last event is `end` (`{status}`), and the stream closes after it. The pipeline writes it for CLI and eval reviews; the worker writes it itself, after posting to GitHub or after any failure. Reviews from before this step have no `end`: once finished and quiet for 30 s, the stream sends a synthetic one (no id) | Close on `done`, or when the status turns final | For a GitHub review, `done` (pipeline finished) comes before `published`, and the status turns `completed` before posting. Only the writer of the last event knows it is last. An EventSource reconnects when a stream closes, so the client needs `end` to know to stop |
+| D107 | `embed_repo` embeds at most 512 nodes per run (~20 s), then re-queues itself if stale nodes remain, so a review queued meanwhile runs before the next slice (answers Q17) | Celery priorities; a separate queue for reviews; one long task | The Redis transport's priorities are emulated and approximate, and two queues on one concurrency-1 worker still don't pre-empt a running task. Slicing bounds the wait by construction, needs no broker features, and `embed_repository` already took a `limit`. Measured live: a PR opened mid-embedding waited 6 s and was posted 25 s after it was opened; without slices it would wait for the whole job (~9 min for 14k nodes). Cost: a review may run while the repo is still partly embedded, so retrieval sees fewer vectors |
+| D108 | Each push is reviewed on the whole PR diff, not just its own commits (answers Q18; user's choice, 2026-10-13) | Review only the files changed since the last reviewed head | It's the diff GitHub shows reviewers, findings must sit on PR diff lines anyway, and a later push can expose a bug in code from an earlier one. Topics (D104) keep the cost to the author at zero repeated comments; the cost is GPU time (7–30 s per push here) |
+| D109 | An inline comment's range is clipped to the first diff hunk it overlaps | Require the finding's own first and last lines to be in a hunk | Measured on a real PR: the model flagged a swapped parameter as lines 2263–2321 (the whole function) around a 6-line hunk, and a removed guard as 842–850. Two of four true findings went to the review body. Clipped, all four were inline on the next PR |
 
 ---
 
@@ -1201,8 +1222,8 @@ PR overlay, migrate service, host port 5433). New decisions:
 | Q14 | ~~Which lever next?~~ **Answered 2026-10-12: thinking mode first** (user's choice; D85). Was: The 8B model reacts to a diff's shape and ignores the callers that show a change is safe, even tagged and with a rule (D83). Which lever next: U6 thinking mode (a toggle already), Q2 a stronger model (qwen3:14b, partly on CPU), or a verification pass (for each api-contract finding, a short second call with only the change and its callers: "does any caller break?")? | Before Phase 4 step 3 |
 | Q15 | ~~16k window for thinking?~~ **Answered 2026-10-12:** measured (Ollama now runs with flash attention + q8_0 KV); thinking still not adopted (D86). Was: Thinking needs a bigger output reserve than the 8k window can spare (13% of test reviews truncated at 3,000). Run Ollama with flash attention + q8_0 KV (`OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`, D66: free on this GPU) and evaluate thinking at a 16k window with a ~6,000-token reserve? A server setting on the user's machine | Before Phase 4 step 4 |
 | Q16 | ~~How to continue Phase 4?~~ **Answered 2026-10-12: (b) a verification pass, then (d) Phase 5** (user's choice; verification rejected, D87). Was: How to continue Phase 4, now that prompting (D83) and thinking (D86) don't get qwen3:8b to use context: (a) the retrieval upgrades U1–U5 as planned, accepting that F1 may not move; (b) a verification pass (a second, narrow call per API-contract finding); (c) a stronger model (Q2: qwen3:14b, partly on CPU); or (d) stop Phase 4 at anchoring and move to Phase 5 (GitHub App) | Now |
-| Q17 | Should the `gpu` queue put reviews ahead of bulk embedding (Celery priorities, or a third queue that the GPU worker drains first)? Today it is FIFO, so a PR opened while a new repo is embedding (~8–9 min for 14k nodes, §5.7) waits for it (D88) | Phase 5 step 5 (measure end to end) |
-| Q18 | Should a push be reviewed on its *incremental* diff (since the last reviewed head) rather than the whole PR? Today every push re-reviews the full PR diff; topics (D104) stop repeats, but the model still re-reads unchanged code, and its output varies from push to push | Phase 5 step 5 (watch real PRs) |
+| Q17 | ~~Reviews ahead of bulk embedding?~~ **Answered 2026-10-13:** embedding runs in slices of 512 nodes and re-queues itself, so a review waits for at most one slice (D107); measured live, 6 s. Was: Should the `gpu` queue put reviews ahead of bulk embedding (Celery priorities, or a third queue that the GPU worker drains first)? Today it is FIFO, so a PR opened while a new repo is embedding (~8–9 min for 14k nodes, §5.7) waits for it (D88) | Phase 5 step 5 (measure end to end) |
+| Q18 | ~~Incremental per-push review?~~ **Answered 2026-10-13: no, the whole PR diff** (user's choice; D108). Was: Should a push be reviewed on its *incremental* diff (since the last reviewed head) rather than the whole PR? Today every push re-reviews the full PR diff; topics (D104) stop repeats, but the model still re-reads unchanged code, and its output varies from push to push | Phase 5 step 5 (watch real PRs) |
 
 ---
 

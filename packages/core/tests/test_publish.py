@@ -21,7 +21,7 @@ diff --git a/app.py b/app.py
 +    return x
 
 
-@@ -20,3 +21,4 @@ def b():
+@@ -20,2 +21,3 @@ def b():
      y = 2
 +    z = 3
      return y
@@ -83,15 +83,19 @@ def build(
 def test_comments_sit_on_lines_github_accepts() -> None:
     pub = build(
         finding(2, 3, topic="multi"),  # both lines in hunk 1: a range
+        finding(3, 22, topic="span"),  # spans two hunks: clipped to the first
+        # Wider than hunk 2 on both sides, like the model's "lines 2263-2321"
+        # around a 6-line hunk on a real PR: clipped to the hunk.
+        finding(15, 30, topic="wide"),
         finding(22, 22, topic="single"),  # added line in hunk 2
-        finding(3, 22, topic="span"),  # spans two hunks: collapses to its last line
     )
     placements = [
         {k: v for k, v in c.items() if k not in ("path", "body")} for c in pub.payload["comments"]
     ]
     assert placements == [
         {"start_line": 2, "start_side": "RIGHT", "line": 3, "side": "RIGHT"},
-        {"line": 22, "side": "RIGHT"},
+        {"start_line": 3, "start_side": "RIGHT", "line": 5, "side": "RIGHT"},
+        {"start_line": 21, "start_side": "RIGHT", "line": 23, "side": "RIGHT"},
         {"line": 22, "side": "RIGHT"},
     ]
     assert pub.payload["event"] == "COMMENT"

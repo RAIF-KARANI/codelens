@@ -74,16 +74,24 @@ def build_review(
 
 
 def _placement(diff: FileDiff, start: int, end: int) -> dict[str, Any] | None:
-    """Where GitHub accepts the comment: on the new side (RIGHT), on a line
-    shown in the diff (added or context), and a multi-line range only within
-    one hunk. Validation already puts findings on added lines or their
-    anchors (D82); this guards the rest."""
+    """Where GitHub accepts the comment: on the new side (RIGHT), on lines
+    shown in the diff (added or context), and a range only within one hunk.
+
+    The finding's range is clipped to the first hunk it overlaps. Measured on
+    a real PR: the model flagged a swapped parameter as lines 2263-2321 (the
+    whole function), around a 6-line hunk. Requiring the range's own ends to
+    be in the hunk sent two of four true findings to the review body."""
     for hunk in diff.hunks:
-        shown = {line.new_line for line in hunk.lines if line.new_line is not None}
-        if end in shown:
-            if start != end and start in shown:
-                return {"start_line": start, "start_side": "RIGHT", "line": end, "side": "RIGHT"}
-            return {"line": end, "side": "RIGHT"}
+        inside = [
+            line.new_line
+            for line in hunk.lines
+            if line.new_line is not None and start <= line.new_line <= end
+        ]
+        if inside:
+            first, last = inside[0], inside[-1]  # a hunk's new lines are consecutive
+            if first == last:
+                return {"line": last, "side": "RIGHT"}
+            return {"start_line": first, "start_side": "RIGHT", "line": last, "side": "RIGHT"}
     return None
 
 

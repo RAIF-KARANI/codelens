@@ -49,6 +49,10 @@ logger = logging.getLogger(__name__)
 LOCK_RETRY_SECONDS = 30
 LOCK_MAX_RETRIES = 60
 
+# Nodes per embed_repo run: ~20 s of GPU at the measured ~25 nodes/s, so a
+# review never waits behind more than that (D107).
+EMBED_SLICE_NODES = 512
+
 # Installation tokens live an hour, longer than any task, so they are cached
 # per worker process (D96). The HTTP client that mints them is per task.
 _TOKEN_CACHE: dict[int, InstallationToken] = {}
@@ -73,8 +77,24 @@ def index_repo(self: Any, repo_id: int) -> dict[str, Any]:
 
 @celery_app.task(name=jobs.EMBED_REPO)
 def embed_repo(repo_id: int) -> dict[str, Any]:
-    """Embed a repo's stale nodes (queue: gpu)."""
-    return asyncio.run(_embed(get_settings(), repo_id))
+    """Embed a repo's stale nodes, one slice per run (queue: gpu).
+
+    The gpu queue is FIFO with one worker (D88), so one long job would hold
+    back every review queued after it: a new 14k-node repo embeds for ~9
+    minutes (Q17). Instead each run embeds at most EMBED_SLICE_NODES, then,
+    if stale nodes remain, sends itself to the back of the queue. A review
+    queued meanwhile runs before the next slice: it waits for at most one
+    slice, ~20 s (D107)."""
+    summary = asyncio.run(_embed(get_settings(), repo_id))
+    if summary["remaining"]:
+        requeue_embedding(repo_id)
+    return summary
+
+
+def requeue_embedding(repo_id: int) -> None:
+    """The next slice goes to the back of the gpu queue. (A seam for tests,
+    which run tasks in-process and have no worker to pick it up.)"""
+    embed_repo.apply_async(args=(repo_id,))
 
 
 @celery_app.task(name=jobs.REVIEW)
@@ -148,11 +168,21 @@ async def _embed(settings: Settings, repo_id: int) -> dict[str, Any]:
         repo = await _load_repo(engine, repo_id)
         async with open_providers(settings) as providers:
             report = await embed_repository(
-                engine, providers.embedder, repo.full_name, max_tokens=settings.embed_max_tokens
+                engine,
+                providers.embedder,
+                repo.full_name,
+                max_tokens=settings.embed_max_tokens,
+                limit=EMBED_SLICE_NODES,
             )
     finally:
         await engine.dispose()
-    return {"repo_id": repo_id, "embedded": report.embedded, "up_to_date": report.up_to_date}
+    remaining = report.nodes_total - report.up_to_date - report.embedded
+    return {
+        "repo_id": repo_id,
+        "embedded": report.embedded,
+        "up_to_date": report.up_to_date,
+        "remaining": remaining,
+    }
 
 
 # A review in one of these states has nothing left to do.
