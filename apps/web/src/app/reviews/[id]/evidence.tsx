@@ -24,8 +24,13 @@ export function EvidenceProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Opens the drawer on a node, e.g. from a graph node's click. */
+export function useEvidence(): (opened: Opened) => void {
+  return use(EvidenceContext);
+}
+
 export function EvidenceButton({ nodeId, label }: { nodeId: number; label: string }) {
-  const open = use(EvidenceContext);
+  const open = useEvidence();
   return (
     <button
       type="button"
