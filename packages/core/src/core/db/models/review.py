@@ -13,7 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from core.db.base import Base, CreatedAtMixin, IdMixin, str_enum
+from core.db.base import Base, CreatedAtMixin, IdMixin, TimestampMixin, str_enum
 from core.enums import FindingStatus, ReviewSource, ReviewStatus, Severity
 
 
@@ -43,6 +43,11 @@ class Review(IdMixin, CreatedAtMixin, Base):
     # The review CodeLens posted on the pull request, once posted. Findings of
     # posted reviews are what a later push's review checks for repeats.
     github_review_id: Mapped[int | None] = mapped_column(BigInteger)
+    # What was reviewed, kept with the review (D110): the raw unified diff, and
+    # the changed nodes [{path, qualified_name, kind, change, start_line,
+    # end_line, signature_changed}]. NULL for reviews before Phase 6.
+    diff: Mapped[str | None]
+    seeds: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
 
     findings: Mapped[list["Finding"]] = relationship(
         back_populates="review", lazy="raise", passive_deletes=True
@@ -83,6 +88,22 @@ class Finding(IdMixin, Base):
     drop_reason: Mapped[str | None]  # which validation rule rejected it
 
     review: Mapped[Review] = relationship(back_populates="findings", lazy="raise")
+
+
+class FindingFeedback(IdMixin, TimestampMixin, Base):
+    """A 👍 or 👎 from a dashboard user on one finding (one per user, changeable)."""
+
+    __tablename__ = "finding_feedback"
+    __table_args__ = (
+        UniqueConstraint("finding_id", "github_user_id"),
+        CheckConstraint("vote IN (-1, 1)", name="vote"),
+    )
+
+    finding_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("findings.id", ondelete="CASCADE")
+    )
+    github_user_id: Mapped[str]  # the JWT's `sub`
+    vote: Mapped[int] = mapped_column(SmallInteger)
 
 
 class ReviewContextItem(IdMixin, Base):

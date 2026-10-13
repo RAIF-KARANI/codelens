@@ -76,6 +76,15 @@ class Settings(BaseSettings):
     api_jwt_secret: SecretStr = SecretStr("")
     # A public read-only instance (§15): every mutating endpoint returns 403.
     demo_mode: bool = False
+    # GitHub logins (comma-separated) that may see every repo, including local
+    # and eval ones with no installation (D111). Everyone else sees only the
+    # repos of the App installations their token lists.
+    api_admin_logins: str = ""
+
+    @property
+    def admin_logins(self) -> frozenset[str]:
+        # GitHub logins are case-insensitive.
+        return frozenset(x.strip().lower() for x in self.api_admin_logins.split(",") if x.strip())
 
     # --- GitHub App (docs/github-app.md). `python -m core.github register` creates
     # the App and writes these to secrets/github-app.env.

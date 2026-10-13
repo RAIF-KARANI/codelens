@@ -212,6 +212,12 @@ uv run python -m api.token --login me          # uses API_JWT_SECRET from .env
 | POST | `/api/v1/reviews` | queue a review `{"repo_id", "base", "head"}` (`202 {review_id}`) |
 | GET | `/api/v1/reviews/{id}` | a review and its findings (`?include_dropped=true` for the rejected ones) |
 | GET | `/api/v1/reviews/{id}/events` | the review's progress as Server-Sent Events: replay after `Last-Event-ID`, then live, until `end` |
+| GET | `/api/v1/reviews/{id}/diff`, `/trace`, `/graph` | what was reviewed, why each piece of context was used, and the call graph around the change |
+| GET | `/api/v1/nodes/{id}` | a code node's source (a finding's evidence) |
+| POST / DELETE | `/api/v1/findings/{id}/feedback` | 👍 / 👎 on a finding |
+
+A token sees the repos of the GitHub App installations it lists (`--installation ID` on
+`api.token`); logins in `API_ADMIN_LOGINS` see every repo, including local ones.
 
 Errors always have the shape `{"error": {"code", "message", "details"}}`. With
 `DEMO_MODE=true`, every mutating route returns `403`.

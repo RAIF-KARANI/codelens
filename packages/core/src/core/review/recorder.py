@@ -21,6 +21,7 @@ from core.enums import ReviewSource, ReviewStatus
 from core.providers import Usage
 from core.review.config import PipelineConfig
 from core.review.packing import ReviewChunk
+from core.review.seeds import Seed
 from core.review.validate import CheckedFinding
 
 reviews_t = Review.__table__
@@ -62,8 +63,15 @@ class ReviewRecorder:
         model: str,
         config: PipelineConfig,
         review_id: int | None = None,
+        diff: str | None = None,
+        seeds: Sequence[Seed] = (),
     ) -> int:
-        """Insert a running review, or claim `review_id`, one the API queued."""
+        """Insert a running review, or claim `review_id`, one the API queued.
+
+        The diff and the changed nodes (seeds) are stored with it (D110): a
+        review is then a complete record of what was reviewed, which the
+        dashboard can show without git access to the repo (a hosted demo has
+        only the database)."""
         values = {
             "base_sha": base_sha,
             "head_sha": head_sha,
@@ -71,6 +79,8 @@ class ReviewRecorder:
             "status": ReviewStatus.RUNNING,
             "started_at": func.now(),
             "pipeline_config": config.model_dump(mode="json"),
+            "diff": _cap(diff),
+            "seeds": [_seed_json(s) for s in seeds],
         }
         async with self._conn.begin():
             if review_id is None:
@@ -177,6 +187,30 @@ class ReviewRecorder:
                     },
                 )
             )
+
+
+# A huge generated diff shouldn't bloat every review row; the dashboard's
+# diff view degrades to "truncated" past this.
+_MAX_DIFF_CHARS = 1_000_000
+
+
+def _cap(diff: str | None) -> str | None:
+    if diff is None or len(diff) <= _MAX_DIFF_CHARS:
+        return diff
+    return diff[:_MAX_DIFF_CHARS] + "\n\\ CodeLens: diff truncated\n"
+
+
+def _seed_json(seed: Seed) -> dict[str, Any]:
+    node = seed.node
+    return {
+        "path": seed.path,
+        "qualified_name": node.qualified_name,
+        "kind": node.kind.value,
+        "change": seed.change.value,
+        "start_line": node.start_line,
+        "end_line": node.end_line,
+        "signature_changed": seed.signature_changed,
+    }
 
 
 async def append_event(conn: AsyncConnection, review_id: int, type_: str, **payload: Any) -> None:

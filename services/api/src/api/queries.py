@@ -54,3 +54,31 @@ async def review_summaries(
         schemas.ReviewSummary.model_validate(r).model_copy(update={"counts": counts[r.id]})
         for r in reviews
     ]
+
+
+async def votes(
+    session: AsyncSession, finding_ids: Sequence[int], github_user_id: str
+) -> tuple[dict[int, schemas.Votes], dict[int, int]]:
+    """👍/👎 counts per finding, and the caller's own votes, in two queries."""
+    counts = {finding_id: schemas.Votes() for finding_id in finding_ids}
+    mine: dict[int, int] = {}
+    if not finding_ids:
+        return counts, mine
+    fb = models.FindingFeedback
+    rows = await session.execute(
+        select(fb.finding_id, fb.vote, func.count())
+        .where(fb.finding_id.in_(finding_ids))
+        .group_by(fb.finding_id, fb.vote)
+    )
+    for finding_id, vote, n in rows:
+        if vote == 1:
+            counts[finding_id].up = n
+        else:
+            counts[finding_id].down = n
+    own = await session.execute(
+        select(fb.finding_id, fb.vote).where(
+            fb.finding_id.in_(finding_ids), fb.github_user_id == github_user_id
+        )
+    )
+    mine = {finding_id: vote for finding_id, vote in own}
+    return counts, mine

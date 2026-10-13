@@ -38,3 +38,9 @@ def test_empty_variables_mean_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(_env_file=None)
     assert settings.github_app_id is None
     assert settings.github_webhook_secret.get_secret_value() == ""
+
+
+def test_admin_logins_are_a_case_insensitive_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert Settings(_env_file=None).admin_logins == frozenset()
+    monkeypatch.setenv("API_ADMIN_LOGINS", " RAIF-KARANI, octo ,,")
+    assert Settings(_env_file=None).admin_logins == {"raif-karani", "octo"}

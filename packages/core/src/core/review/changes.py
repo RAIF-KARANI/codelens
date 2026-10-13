@@ -32,6 +32,7 @@ class ChangeSet:
     base_sha: str  # the merge-base
     head_sha: str
     files: tuple[FileChange, ...]
+    diff: str = ""  # the raw unified diff, as git produced it (stored with the review)
 
     @property
     def seeds(self) -> list[Seed]:
@@ -41,7 +42,8 @@ class ChangeSet:
 def collect_changes(repo: Path, base: str, head: str) -> ChangeSet:
     head_sha = git.resolve(repo, head)
     base_sha = git.merge_base(repo, base, head_sha)
-    diffs = parse_unified_diff(git.diff(repo, base_sha, head_sha))
+    raw = git.diff(repo, base_sha, head_sha)
+    diffs = parse_unified_diff(raw)
 
     # Python module names depend on where __init__.py files are, at each side.
     head_packages = python_package_dirs(git.list_files(repo, head_sha))
@@ -59,7 +61,7 @@ def collect_changes(repo: Path, base: str, head: str) -> ChangeSet:
             skipped = "binary"
         seeds = tuple(find_seeds(diff, head_file, base_file))
         files.append(FileChange(diff, head_file, base_file, seeds, skipped))
-    return ChangeSet(base_sha, head_sha, tuple(files))
+    return ChangeSet(base_sha, head_sha, tuple(files), raw)
 
 
 def _parse_at(

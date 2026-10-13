@@ -1,4 +1,6 @@
-"""Reviews: queue a manual review, read one with its findings."""
+"""Reviews: queue a manual review; read one with its findings, diff, trace,
+graph and live events. Every route sees only the reviews of repos the caller
+may see (api/access.py, D111)."""
 
 import asyncio
 from pathlib import Path
@@ -10,20 +12,23 @@ from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from api import schemas
-from api.auth import current_user, require_writable
+from api import access, schemas
+from api.auth import User, current_user, require_writable
 from api.dependencies import get_engine, get_events_redis, get_queue, get_session
-from api.errors import ApiError, not_found
-from api.queries import severity_counts
+from api.errors import ApiError
+from api.graph import review_graph
+from api.queries import severity_counts, votes
 from api.queue import JobQueue, QueueUnavailable
 from api.sse import review_stream
 from core.db import models
 from core.diff import git
 from core.enums import FindingStatus, RepoSource, ReviewSource, ReviewStatus, Severity
 
+# Router-level too: auth runs before any other validation (cached per request).
 router = APIRouter(prefix="/api/v1/reviews", tags=["reviews"], dependencies=[Depends(current_user)])
 
 Session = Annotated[AsyncSession, Depends(get_session)]
+CurrentUser = Annotated[User, Depends(current_user)]
 
 _SEVERITY_ORDER = {Severity.CRITICAL: 0, Severity.WARNING: 1, Severity.SUGGESTION: 2}
 
@@ -32,13 +37,12 @@ _SEVERITY_ORDER = {Severity.CRITICAL: 0, Severity.WARNING: 1, Severity.SUGGESTIO
 async def create_review(
     body: schemas.ReviewCreate,
     session: Session,
+    user: CurrentUser,
     queue: Annotated[JobQueue, Depends(get_queue)],
 ) -> schemas.ReviewQueued:
     """Queue a review of `head` against its merge-base with `base`, in a repo
     indexed from a local checkout. Follow it with GET /reviews/{id}."""
-    repo = await session.get(models.Repo, body.repo_id)
-    if repo is None:
-        raise not_found("repo", body.repo_id)
+    repo = await access.repo_for(session, user, body.repo_id)
     if repo.source is not RepoSource.LOCAL or not repo.local_path:
         raise ApiError(409, "unsupported_source", f"{repo.full_name} has no local checkout")
     # git runs subprocesses: off the event loop.
@@ -78,13 +82,12 @@ def _resolve_refs(checkout: Path, head: str, base: str) -> tuple[str, str]:
 
 @router.get("/{review_id}")
 async def get_review(
-    review_id: int, session: Session, include_dropped: bool = False
-) -> schemas.ReviewDetail:
+    review_id: int, session: Session, user: CurrentUser, include_dropped: bool = False
+) -> schemas.ReviewDetailWithVotes:
     """A review with its findings: posted ones by default, and with
-    `include_dropped=true` also those validation rejected, with the reason."""
-    review = await session.get(models.Review, review_id)
-    if review is None:
-        raise not_found("review", review_id)
+    `include_dropped=true` also those validation rejected, with the reason.
+    Each finding carries its 👍/👎 counts and the caller's own vote."""
+    review = await access.review_for(session, user, review_id)
     query = select(models.Finding).where(models.Finding.review_id == review_id)
     if not include_dropped:
         query = query.where(models.Finding.status == FindingStatus.POSTED)
@@ -98,13 +101,87 @@ async def get_review(
         ),
     )
     counts = await severity_counts(session, [review_id])
-    return schemas.ReviewDetail(
+    tallies, mine = await votes(session, [f.id for f in findings], user.github_id)
+    return schemas.ReviewDetailWithVotes(
         **schemas.ReviewSummary.model_validate(review).model_dump(exclude={"counts"}),
         counts=counts[review_id],
         token_usage=review.token_usage,
         pipeline_config=review.pipeline_config,
-        findings=[schemas.Finding.model_validate(f) for f in findings],
+        findings=[
+            schemas.FindingWithVotes.model_validate(f).model_copy(
+                update={"votes": tallies[f.id], "my_vote": mine.get(f.id)}
+            )
+            for f in findings
+        ],
     )
+
+
+@router.get("/{review_id}/diff")
+async def get_review_diff(
+    review_id: int, session: Session, user: CurrentUser
+) -> schemas.ReviewDiff:
+    """What was reviewed: the unified diff and the changed nodes, as stored
+    with the review (D110)."""
+    review = await access.review_for(session, user, review_id)
+    if review.diff is None:
+        # Reviews before Phase 6 didn't store their diff.
+        raise ApiError(404, "not_recorded", f"review {review_id} has no stored diff")
+    return schemas.ReviewDiff(
+        review_id=review_id,
+        base_sha=review.base_sha,
+        head_sha=review.head_sha,
+        diff=review.diff,
+        seeds=[schemas.Seed.model_validate(s) for s in review.seeds or []],
+    )
+
+
+@router.get("/{review_id}/trace")
+async def get_review_trace(
+    review_id: int, session: Session, user: CurrentUser
+) -> schemas.ReviewTrace:
+    """Why each piece of context was (or wasn't) shown to the model: every
+    retrieved candidate per review chunk, with its stage scores, plus the
+    token budgets the prompt was packed with."""
+    await access.review_for(session, user, review_id)
+    items = (
+        await session.scalars(
+            select(models.ReviewContextItem)
+            .where(models.ReviewContextItem.review_id == review_id)
+            .order_by(
+                models.ReviewContextItem.chunk_index,
+                models.ReviewContextItem.included.desc(),
+                models.ReviewContextItem.id,
+            )
+        )
+    ).all()
+    chunks: dict[int, list[schemas.TraceItem]] = {}
+    for item in items:
+        chunks.setdefault(item.chunk_index, []).append(
+            schemas.TraceItem.model_validate(item, from_attributes=True)
+        )
+    packed = await session.scalar(
+        select(models.ReviewEvent.payload)
+        .where(
+            models.ReviewEvent.review_id == review_id,
+            models.ReviewEvent.type == "stage",
+            models.ReviewEvent.payload["stage"].astext == "packed",
+        )
+        .limit(1)
+    )
+    return schemas.ReviewTrace(
+        review_id=review_id,
+        budgets=(packed or {}).get("budgets"),
+        chunks=[schemas.TraceChunk(index=i, items=v) for i, v in sorted(chunks.items())],
+    )
+
+
+@router.get("/{review_id}/graph")
+async def get_review_graph(
+    review_id: int, session: Session, user: CurrentUser
+) -> schemas.ReviewGraph:
+    """The call graph around the review's changed code (api/graph.py)."""
+    review = await access.review_for(session, user, review_id)
+    return await review_graph(session, review)
 
 
 @router.get(
@@ -115,6 +192,7 @@ async def get_review(
 async def review_events(
     review_id: int,
     session: Session,
+    user: CurrentUser,
     engine: Annotated[AsyncEngine, Depends(get_engine)],
     redis: Annotated[Redis, Depends(get_events_redis)],
     last_event_id: Annotated[int | None, Header(ge=0)] = None,
@@ -123,8 +201,7 @@ async def review_events(
     """The review's timeline as Server-Sent Events: everything after
     `Last-Event-ID` (an EventSource sends it when it reconnects; `?after=`
     does the same), then live events until `end` (api/sse.py)."""
-    if await session.get(models.Review, review_id) is None:
-        raise not_found("review", review_id)
+    await access.review_for(session, user, review_id)
     start = after if after is not None else (last_event_id or 0)
     return StreamingResponse(
         review_stream(engine, redis, review_id, start),
