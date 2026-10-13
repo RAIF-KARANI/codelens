@@ -2,7 +2,7 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-13: Phases 1–5 and Phase 6 steps 1–4.
+> follows. It describes `main` as of 2026-10-13: Phases 1–5 and Phase 6 steps 1–5.
 >
 > | File | Answers |
 > |---|---|
@@ -84,7 +84,8 @@ and code and prompts never leave the machine (D20).
 | Dashboard: GitHub login, the server-side API client, layout, the repos page | ✅ Phase 6 step 2 |
 | Dashboard: a repo's reviews and index history, re-index | ✅ Phase 6 step 3 |
 | Dashboard: a review's page (diff with inline findings, live timeline, evidence drawer, 👍/👎) | ✅ Phase 6 step 4 |
-| Dashboard: graph and trace pages | Phase 6 steps 5–6 |
+| Dashboard: a review's graph and trace views | ✅ Phase 6 step 5 |
+| Dashboard: the end-to-end check in the browser | Phase 6 step 6 |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -1121,7 +1122,9 @@ Installations are read once per sign-in, so a new installation shows after the n
 | `/repos` | Every repo the user can see: status, the indexed commit, the last review |
 | `/repos/[id]` | The repo's header (status, branch @ commit, **Re-index**) and its reviews, newest first: PR and commit (linked to GitHub), status, findings by severity, duration, error. `?status=` filters, `?cursor=` pages |
 | `/repos/[id]/indexing` | The code graph's size (nodes, edges) and call resolution from the latest run; every index run with files and nodes added, changed and deleted |
-| `/reviews/[id]` | One review: title, PR and commit links, status, model, duration, counts; the **diff** with each finding under the line it ends on; the **timeline** (live while it runs); the changed definitions; token usage; `?dropped=1` adds the findings validation dropped, with the reason |
+| `/reviews/[id]` (tab **Diff**) | One review: title, PR and commit links, status, model, duration, counts; the **diff** with each finding under the line it ends on; the **timeline** (live while it runs); the changed definitions; token usage; `?dropped=1` adds the findings validation dropped, with the reason |
+| `/reviews/[id]/graph` | The call graph around the change (React Flow): callers → changed code → callees → other context the model saw; click a node for its code |
+| `/reviews/[id]/trace` | For each chunk and each changed definition, every retrieved candidate: rank, similarity, what happened to it (shown in full, signature only, or why not), tokens; the token budgets |
 
 How they work:
 - **Request data streams.** The shared header shows the user in its own boundary, so the
@@ -1139,7 +1142,8 @@ How they work:
   the page re-renders from the server every 3 s (`components/auto-refresh.tsx`; only
   while the tab is visible). A review's own page uses its event stream instead.
 
-**A review's page** (`app/reviews/[id]/`):
+**A review's page** (`app/reviews/[id]/`): a layout with the header, the tabs (Diff,
+Graph, Trace) and one evidence drawer that every tab can open.
 - **The diff** is the one stored with the review (D110), parsed by `lib/diff.ts` (our
   own ~120 lines: files, hunks, old and new line numbers, from the hunk headers' counts).
   A finding goes under the last line it covers, clipped to the first hunk it overlaps,
@@ -1158,6 +1162,23 @@ How they work:
   fetched from `/api/nodes/[id]` (another session-checked route handler) when clicked.
 - **👍/👎** (`vote-buttons.tsx`): a Server Action posts or deletes the vote; the counts
   change at once and are replaced by the API's answer, or restored with a message.
+- **The graph** (`graph/`): React Flow draws `GET /reviews/{id}/graph`, placed by our
+  own `lib/graph-layout.ts` instead of a layout engine. The graph is one hop deep, so four
+  columns say it all, the same way every time:
+  - **callers** are neighbours with an edge into the changed code (a node that both calls
+    and is called counts as a caller: what depends on a change is what breaks);
+  - **changed code** is coloured by its change (added, modified, deleted);
+  - **callees** are the other neighbours;
+  - **other context** is code retrieval showed the model that isn't a neighbour.
+
+  Nodes the model saw are solid, the rest dashed; ★ marks evidence a finding cited;
+  `inherits` edges are dashed. Clicking a node opens its code.
+- **The trace** (`trace/`): `GET /reviews/{id}/trace` grouped per chunk and per changed
+  definition (`retrieved_for`), best rank first: similarity, the outcome in words
+  (`lib/trace.ts`: shown in full, signature only, didn't fit the context budget, holds
+  the old version of the changed code, cut for the model's window) and tokens, with the
+  chunk's context tokens against the budget. These are the rows the evals are scored
+  from; ★ again marks cited evidence.
 - `/api/*` routes are outside the proxy's matcher: they answer 401 themselves rather
   than redirecting.
 
@@ -1335,9 +1356,8 @@ latency with identical tokens, so latency is only compared between back-to-back 
 
 ## 15. Not built yet, and known gaps
 
-**Next, Phase 6 steps 5–6** (`planning.md` §9): the dashboard pages.
-- **Step 5:** the graph and trace views.
-- **Step 6:** the end-to-end check in the browser.
+**Next, Phase 6 step 6** (`planning.md` §9): the end-to-end check in the browser:
+watch a review stream live and click a finding through to its evidence and graph.
 
 The anti-patterns editor waits for U5 (D112).
 

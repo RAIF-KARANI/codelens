@@ -8,9 +8,9 @@
 **Last updated:** 2026-10-13 · **Current position:** Phases 1–4 complete. Phase 4 adopted anchoring (test F1 0.654 → 0.767); every
 change aimed at making qwen3:8b reason over context was rejected (D83, D85–D87). Phase 5 (GitHub App) is done: PRs on a real repo get
 inline comments in 9–49 s, and a re-push repeats nothing (#20–#26). Phase 6 (dashboard) in progress: step 1
-(the API it reads, with per-repo access checks) steps 2 and 3 (GitHub login, the API client, the repos and repo pages) are
-merged (#27–#29); step 4 (a review's page: diff with inline findings, live timeline,
-evidence drawer, 👍/👎) is in review.
+(the API it reads, with per-repo access checks) steps 2–4 (GitHub login, the API client, the repos and repo pages, a review's
+page with inline findings, live timeline, evidence and votes) are merged (#27–#30);
+step 5 (the graph and trace views) is in review.
 
 ---
 
@@ -225,7 +225,7 @@ latency for uncertain gain), fine-tuning.
 | HTTP clients | httpx (async) | Ollama, reranker, GitHub API | aiohttp |
 | GitHub | GitHub App (REST v3) + PyJWT for the App JWT | Fine-grained permissions, installation tokens | OAuth app + PAT (weaker security story) |
 | Frontend | Next.js 16 (App Router) + TypeScript + Tailwind + shadcn/ui | Standard, fast to build | — |
-| Frontend extras | React Flow (graph), react-diff-view (diff), react-markdown (comments); GitHub login is our own code with `jose` (D113, instead of Auth.js) | One library per job | Cytoscape.js (graph) |
+| Frontend extras | React Flow (`@xyflow/react`, graph; laid out by our own columns, not dagre); the diff view is our own parser (6.4) instead of react-diff-view; GitHub login is our own code with `jose` (D113, instead of Auth.js) | One library per job | Cytoscape.js (graph) |
 | Tooling | uv, ruff, pytest, pnpm, pre-commit, Docker Compose, GitHub Actions | Fast, standard | — |
 | Observability | Own trace tables first; Langfuse optional later (§13) | Keeps code local; the trace view is a feature | Langfuse from day 1 |
 
@@ -665,10 +665,10 @@ codelens/
 │   ├── src/app/api/auth/{login,callback,logout}/  ✅ GitHub login (D113)
 │   ├── src/app/{login,repos}/      ✅
 │   ├── src/app/repos/[id]/{page,indexing/page,layout,actions}  ✅ 6.3
-│   ├── src/app/reviews/[id]/       ✅ 6.4 page, diff-view, finding-card, live-timeline, evidence, vote-buttons, actions · 📋6 graph, trace
+│   ├── src/app/reviews/[id]/       ✅ 6.4 layout, header, page (diff), diff-view, finding-card, live-timeline, evidence, vote-buttons, actions · 6.5 graph/, trace/
 │   ├── src/app/api/{reviews/[id]/events,nodes/[id]}/  ✅ 6.4 session-checked proxies
-│   ├── src/components/             ✅ badges, pager, skeleton, auto-refresh · 📋6 graph, trace
-│   ├── src/lib/                    ✅ config, tokens, session, dal, github, oauth, paths, params, format, github-links, api, diff, events
+│   ├── src/components/             ✅ badges, pager, skeleton, auto-refresh, tabs
+│   ├── src/lib/                    ✅ config, tokens, session, dal, github, oauth, paths, params, format, github-links, api, diff, events, graph-layout, trace
 │   └── test/                       ✅ vitest
 ├── packages/core/
 │   ├── alembic.ini                 ✅
@@ -823,8 +823,8 @@ graph.
 | 1 ✅ #27 | The API the dashboard reads: per-repo access checks (JWT `installations` claim + `API_ADMIN_LOGINS`, D111); a review's diff and seeds stored with it (D110); `/reviews/{id}/diff`, `/trace`, `/graph`, `/nodes/{id}`, `/findings/{id}/feedback`; migration (`finding_feedback`, `reviews.diff`, `reviews.seeds`) | none |
 | 2 ✅ #28 | Web foundation: GitHub login with the App's OAuth client, our own code (D113): state cookie, code exchange, `GET /user` + `GET /user/installations`, a signed session cookie, the GitHub token dropped; `proxy.ts` redirects early, the data access layer decides; the server-side API client that signs a 5-minute JWT per call; layout, navigation; the repos page; vitest | add `http://localhost:3000/api/auth/callback` as the App's redirect URI (`docs/github-app.md` §5) |
 | 3 ✅ #29 | A repo's page (`/repos/[id]`): header with status and a Re-index button (a Server Action; the page re-renders every 3 s while indexing); the Reviews tab (newest first, status filter, keyset pages, PR and commit links, findings by severity, duration); the Indexing tab (the graph's size and call resolution, every run with files and nodes changed); repo rows link here | none |
-| 4 🔍 | Review detail (`/reviews/[id]`): the stored diff (own parser) with each finding under its last line, clipped like the GitHub review (D109); the live SSE timeline through a session-checked Next.js route that adds the JWT; the evidence drawer (node code via another route); 👍/👎 (a Server Action, optimistic); `reviews.title` stored and shown (Q19, D114); review rows link here | none |
-| 5 | Graph view (React Flow) and trace view | none |
+| 4 ✅ #30 | Review detail (`/reviews/[id]`): the stored diff (own parser) with each finding under its last line, clipped like the GitHub review (D109); the live SSE timeline through a session-checked Next.js route that adds the JWT; the evidence drawer (node code via another route); 👍/👎 (a Server Action, optimistic); `reviews.title` stored and shown (Q19, D114); review rows link here | none |
+| 5 🔍 | A review's Graph and Trace tabs (the review page becomes a layout with Diff / Graph / Trace tabs and one shared evidence drawer). Graph: React Flow, laid out in four columns by our own `lib/graph-layout.ts` (callers → changed code → callees → other context), changed code coloured by its change, nodes the model saw solid, cited evidence starred, click for the code. Trace: per chunk and per changed definition, every candidate with its rank, similarity, outcome (shown, signature only, or why not) and tokens, against the token budgets | none |
 | 6 | End to end in the browser (the exit criterion) | none |
 
 Anti-patterns CRUD is deferred with U5 (D112).

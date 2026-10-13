@@ -251,3 +251,25 @@ export const getReview = (id: number, opts: { dropped?: boolean } = {}) =>
 export const getReviewDiff = (id: number) => apiOrMissing<ReviewDiff>(`/reviews/${id}/diff`);
 
 export const getReviewTrace = (id: number) => api<ReviewTrace>(`/reviews/${id}/trace`);
+
+export type GraphNode = {
+  /** "n<node id>", or "seed:<qualified name>" for changed code not in the index yet. */
+  id: string;
+  node_id: number | null;
+  label: string;
+  qualified_name: string;
+  kind: string;
+  path: string | null;
+  is_seed: boolean;
+  change: Seed["change"] | null;
+  /** 0 for changed code, 1 for its callers and callees, null for other context. */
+  depth: number | null;
+  /** Whether the model was shown it. */
+  in_context: boolean;
+};
+
+export type GraphEdge = { source: string; target: string; kind: "calls" | "inherits" };
+
+export type ReviewGraph = { review_id: number; nodes: GraphNode[]; edges: GraphEdge[] };
+
+export const getReviewGraph = (id: number) => api<ReviewGraph>(`/reviews/${id}/graph`);
