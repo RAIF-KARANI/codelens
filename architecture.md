@@ -2,7 +2,7 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-13: Phases 1–6 and Phase 7 steps 1–2a.
+> follows. It describes `main` as of 2026-10-13: Phases 1–6 and Phase 7 steps 1–2b.
 >
 > | File | Answers |
 > |---|---|
@@ -88,7 +88,8 @@ and code and prompts never leave the machine (D20).
 | Dashboard end to end in the browser: a push watched live, clicked through to evidence and graph (`docs/e2e.md`) | ✅ Phase 6 step 6 |
 | Demo mode: read-only, on Postgres alone | ✅ Phase 7 step 1 |
 | The open demo (no login) and demo-data export/import (`docs/demo.md`) | ✅ Phase 7 step 2a |
-| The demo repo's data, hosting, hardening, README | Phase 7 steps 2b–5 |
+| The public demo repo (`codelens-demo`), reviewed and exported | ✅ Phase 7 step 2b |
+| Hosting, hardening, README | Phase 7 steps 3–5 |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -1374,7 +1375,6 @@ latency with identical tokens, so latency is only compared between back-to-back 
 ## 15. Not built yet, and known gaps
 
 **Next, Phase 7 steps 2–5** (`planning.md` §9):
-- **Step 2b:** the public demo repo, reviewed locally, then exported.
 - **Step 3:** hosting on Vercel (dashboard and the read-only API) and Supabase (Postgres)
   (D116).
 - **Step 4:** rate limits, structured logs, health checks, and an installation

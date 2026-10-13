@@ -16,6 +16,21 @@ The API still requires a token on a demo: only the dashboard, which holds
 `API_JWT_SECRET`, can call it. A request straight to the API gets a 401, and any write a
 403.
 
+## The demo repository
+
+[`RAIF-KARANI/codelens-demo`](https://github.com/RAIF-KARANI/codelens-demo): a public copy
+of [sqlite-utils](https://github.com/simonw/sqlite-utils) (Apache-2.0, credited in its
+README; its own CI workflows are left out) with three pull requests, reviewed by the App
+from the laptop on 2026-10-13:
+
+| PR | What it carries | CodeLens found |
+|---|---|---|
+| #1 Simplify the trigger lookup query | a planted SQL injection (the table name formatted into the query) | 1 critical, inline; 15 s |
+| #2 Clarify a variable name in reset_counts | nothing: a harmless rename | no findings; 8 s |
+| #3 Cleanup pass across the library | four planted bugs: swapped parameters, a removed guard, `None` instead of an exception, the wrong exception type | all four, inline; 23 s |
+
+The export of it is `data/demo/codelens-demo.json.gz` (555 KB; `data/` is gitignored).
+
 ## 1. Make the reviews (laptop)
 
 1. Create the **public** demo repo on GitHub and add it to the App's installation
