@@ -1,4 +1,5 @@
-"""Readiness endpoint: 200 when Postgres and Redis both answer, 503 otherwise."""
+"""Readiness endpoint: 200 when Postgres and Redis both answer, 503 otherwise.
+A demo instance (DEMO_MODE) has no Redis, so only Postgres counts there."""
 
 import asyncio
 from typing import Annotated, Literal
@@ -16,7 +17,7 @@ router = APIRouter(tags=["health"])
 
 class HealthChecks(BaseModel):
     database: CheckResult
-    redis: CheckResult
+    redis: CheckResult | None  # None: not used (a demo instance)
 
 
 class HealthResponse(BaseModel):
@@ -31,11 +32,14 @@ class HealthResponse(BaseModel):
 async def health(
     response: Response,
     engine: Annotated[AsyncEngine, Depends(get_engine)],
-    redis: Annotated[Redis, Depends(get_redis)],
+    redis: Annotated[Redis | None, Depends(get_redis)],
 ) -> HealthResponse:
-    # Run both probes concurrently, so the worst case is one timeout, not two.
-    database, cache = await asyncio.gather(check_database(engine), check_redis(redis))
-    healthy = database.ok and cache.ok
+    if redis is None:
+        database, cache = await check_database(engine), None
+    else:
+        # Both probes at once, so the worst case is one timeout, not two.
+        database, cache = await asyncio.gather(check_database(engine), check_redis(redis))
+    healthy = database.ok and (cache is None or cache.ok)
     if not healthy:
         # A non-2xx code is what load balancers / compose healthchecks act on.
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE

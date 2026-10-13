@@ -36,6 +36,13 @@ function secret(name: string): string {
   return value;
 }
 
+/** A read-only demo (planning.md §15): the API it calls runs with
+ * DEMO_MODE=true too. The dashboard hides what would write (Re-index, 👍/👎)
+ * and says what the visitor is looking at. */
+export function isDemo(): boolean {
+  return process.env.DEMO_MODE === "true";
+}
+
 export function config(): Config {
   return {
     appUrl: required("APP_URL").replace(/\/$/, ""),

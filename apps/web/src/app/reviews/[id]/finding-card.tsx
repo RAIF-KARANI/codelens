@@ -1,5 +1,6 @@
 import { Tag } from "@/components/badges";
 import type { Finding, Severity } from "@/lib/api";
+import { isDemo } from "@/lib/config";
 
 import { EvidenceButton } from "./evidence";
 import { GraphLink } from "./graph-link";
@@ -87,7 +88,8 @@ export function FindingCard({
           </span>
         )}
         <GraphLink findingId={finding.id} />
-        {!dropped && (
+        {/* Votes are writes: a read-only demo has none. */}
+        {!dropped && !isDemo() && (
           <div className="ml-auto">
             <VoteButtons findingId={finding.id} votes={finding.votes} myVote={finding.my_vote} />
           </div>

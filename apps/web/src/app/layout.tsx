@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { UserMenu } from "@/app/user-menu";
+import { isDemo } from "@/lib/config";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -47,8 +48,26 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             </div>
           </div>
         </header>
+        {isDemo() && <DemoBanner />}
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{children}</main>
       </body>
     </html>
+  );
+}
+
+/** What a demo visitor is looking at. */
+function DemoBanner() {
+  return (
+    <div className="border-b border-sky-200 bg-sky-50 text-sm text-sky-900 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-100">
+      <p className="mx-auto max-w-6xl px-4 py-2">
+        <span className="font-medium">Read-only demo.</span> These reviews were made by a local
+        model (qwen3:8b) on a laptop GPU, then copied here; nothing runs on this server but the
+        pages. Source and evaluation:{" "}
+        <a href="https://github.com/RAIF-KARANI/codelens" className="underline underline-offset-4">
+          github.com/RAIF-KARANI/codelens
+        </a>
+        .
+      </p>
+    </div>
   );
 }

@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { DateTime, StatusBadge, Tag } from "@/components/badges";
 import { TableSkeleton } from "@/components/skeleton";
 import { listRepos, type Repo } from "@/lib/api";
+import { isDemo } from "@/lib/config";
 import { shortSha } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Repositories" };
@@ -28,7 +29,9 @@ async function RepoTable() {
   if (repos.length === 0) {
     return (
       <div className="mt-8 rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
-        No repositories yet. Install the CodeLens GitHub App on a repository, then sign in again.
+        {isDemo()
+          ? "The demo has no repositories loaded yet."
+          : "No repositories yet. Install the CodeLens GitHub App on a repository, then sign in again."}
       </div>
     );
   }
