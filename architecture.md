@@ -2,12 +2,12 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-13: Phases 1–5 and Phase 6 step 1.
+> follows. It describes `main` as of 2026-10-13: Phases 1–5 and Phase 6 steps 1–2.
 >
 > | File | Answers |
 > |---|---|
 > | [`idea.md`](idea.md) | *What* CodeLens is and *why* (the design narrative) |
-> | [`planning.md`](planning.md) | *How and in what order* we build it: the plan of record, decisions D1–D92, open questions |
+> | [`planning.md`](planning.md) | *How and in what order* we build it: the plan of record, decisions D1–D113, open questions |
 > | **`architecture.md`** | *How it works now*, as built |
 > | [`evals/RESULTS.md`](evals/RESULTS.md) | *How well it works*: every measured config |
 >
@@ -81,7 +81,8 @@ and code and prompts never leave the machine (D20).
 | Live review progress over SSE | ✅ Phase 5 step 4 |
 | End to end in Docker on a real repo, within the latency budget (`docs/e2e.md`) | ✅ Phase 5 step 5 |
 | The dashboard's API: access checks, diff, trace, graph, nodes, 👍/👎 | ✅ Phase 6 step 1 |
-| Dashboard pages | Phase 6 steps 2–6 (`apps/web` is an empty Next.js app) |
+| Dashboard: GitHub login, the server-side API client, layout, the repos page | ✅ Phase 6 step 2 |
+| Dashboard: repo, reviews, review detail, graph and trace pages | Phase 6 steps 3–6 |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -92,7 +93,7 @@ and code and prompts never leave the machine (D20).
 flowchart TB
     subgraph host["Windows host (RTX 4060 Laptop, 8 GB VRAM)"]
         OL["Ollama (native, GPU) :11434<br/>qwen3:8b · qwen3-embedding:0.6b"]
-        WEB["apps/web (Next.js) :3000<br/><i>empty until Phase 6</i>"]
+        WEB["apps/web (Next.js) :3000<br/>pnpm dev"]
         subgraph docker["Docker Desktop (WSL2 VM, 8 GB)"]
             PG[("postgres<br/>pgvector/pgvector:pg16<br/>host :5433")]
             RD[("redis 7<br/>host :6379")]
@@ -102,6 +103,8 @@ flowchart TB
             WG["worker-gpu<br/>celery -Q gpu -c 1"]
         end
     end
+    WEB -- "Bearer JWT (5 min)" --> API
+    WEB -- "login: OAuth, /user, /user/installations" --> GH
     GH(["GitHub"]) -- webhooks --> SMEE(["smee.io relay"]) -- "smee-client" --> API
     MIG --> PG
     API --> PG
@@ -119,6 +122,7 @@ flowchart TB
 | **postgres** | The only datastore: relational, vectors (pgvector HNSW), full-text (tsvector/GIN), graph (edges table) | One store, one transaction boundary (D1). Host port 5433 because a native Postgres owns 5432 (D17) |
 | **redis** | Celery broker and result backend; later, SSE pub/sub | |
 | **migrate** | Runs Alembic once, then exits; `api` and the workers wait for it | App code never runs against an old schema (D16) |
+| **web** | The dashboard (Next.js 16), run on the host with `pnpm dev` | Signs users in with GitHub and calls the API from its server only (§10.3) |
 | **api** | Thin HTTP layer: `/health`, `/api/v1/*`, `/webhooks/github` | No heavy work in requests; enqueues jobs by name (D91) |
 | **smee.io + `smee-client`** | Relays GitHub's webhooks to the laptop in development | `gh webhook forward` can't forward an App's webhook (D94); `docs/github-app.md` |
 | **worker** | Celery, queue `index`: parse and persist | Concurrency 2 |
@@ -148,7 +152,7 @@ codelens/
 ├── configs/pipeline/*.yaml      pipeline configs: the default and every measured ablation
 ├── docs/github-app.md           creating, installing and checking the GitHub App
 ├── scripts/                     GPU benchmarks (bench_llm.py, bench_embed.py)
-├── apps/web/                    Next.js dashboard (Phase 6)
+├── apps/web/                    Next.js dashboard (Phase 6; §10.3)
 └── docker-compose.yml, .env.example, .github/workflows/ci.yml
 ```
 
@@ -1055,11 +1059,57 @@ sequenceDiagram
 - **Headers:** `Cache-Control: no-cache`, and `X-Accel-Buffering: no` so proxies don't hold
   events back. The pub/sub connection has no read timeout, since it waits a full heartbeat.
 - **Browsers:** an `EventSource` can't send an `Authorization` header, so the Phase 6
-  dashboard's Next.js server will proxy the stream with the JWT.
+  dashboard's Next.js server will proxy the stream with the JWT (step 4).
 
 Measured live on a real PR push: the webhook queued the review in 2.8 s; then `seeds`,
 `packed`, `generating`, `chunk_done`, `done`, `published` and `end` each reached the
 client as soon as the worker committed it; and the server closed the stream at +37.2 s.
+
+### 10.3 The dashboard and its login (`apps/web`, Phase 6 step 2)
+
+Next.js 16 with the App Router, React 19 and Tailwind 4. Cache Components are on: a page's
+static parts are prerendered, and anything that reads the request (the session, API data)
+streams in behind a `<Suspense>` boundary.
+
+**Signing in** (D113) uses GitHub's web flow with the App's own OAuth client, in three route
+handlers:
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant W as apps/web
+    participant G as GitHub
+    participant A as API
+    B->>W: GET /api/auth/login?next=/repos
+    W-->>B: 307 to github.com/login/oauth/authorize + state cookie (10 min)
+    B->>G: approve
+    G-->>B: 302 to /api/auth/callback?code&state
+    B->>W: GET /api/auth/callback (state checked against the cookie)
+    W->>G: POST /login/oauth/access_token (code + client secret)
+    W->>G: GET /user, GET /user/installations (user token)
+    Note over W: the user token is dropped here
+    W-->>B: 307 to /repos + session cookie (8 h)
+    B->>W: GET /repos
+    W->>A: GET /api/v1/repos, Bearer JWT (5 min)
+    A-->>W: only repos of the user's installations (D111)
+```
+
+| Piece | File | What it does |
+|---|---|---|
+| Login, callback, logout | `src/app/api/auth/*/route.ts` | The flow above. A random `state` in an httpOnly cookie stops a forged callback (CSRF); `next` must be a path on this site (`lib/paths.ts`), so the login can't redirect elsewhere. Logout is POST only |
+| GitHub calls | `lib/github.ts` | Code exchange (GitHub answers a bad code with HTTP 200 and an `error` field), `/user`, and every page of `/user/installations` |
+| Session cookie | `lib/tokens.ts`, `lib/session.ts` | `codelens_session`: a JWT signed with `SESSION_SECRET` (HS256, algorithm pinned), httpOnly, `SameSite=Lax`, `Secure` in production, 8 h. It holds the GitHub id, login, name, avatar and installation ids, nothing secret. A missing, forged, expired or malformed cookie reads as signed out |
+| Data access layer | `lib/dal.ts` | `currentUser()` (or a redirect to `/login`) and `optionalUser()`. The one place that decides who is signed in; `use cache: private` lets a request (and the browser's router, for minutes) reuse the answer without a server-side cache |
+| Proxy | `src/proxy.ts` | Redirects signed-out visitors to `/login?next=…` before rendering. Only a shortcut: every page still goes through the DAL |
+| API client | `lib/api.ts` | `api<T>(path)`: a fresh 5-minute token per call (`sub`, `login`, `installations`, signed with `API_JWT_SECRET`), never cached, never sent to the browser. API 404 → the page's not-found; other errors → `error.tsx` |
+| Settings | `lib/config.ts`, `apps/web/.env.example` | `APP_URL`, `API_URL`, `API_JWT_SECRET`, `SESSION_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`; none is `NEXT_PUBLIC_`, and both secrets must be ≥ 32 bytes |
+
+Two secrets, on purpose: a session cookie can never pass as an API token, or the reverse.
+Installations are read once per sign-in, so a new installation shows after the next one.
+
+**Pages so far:** `/login`, and `/repos` (every repo the user can see, with status, the
+indexed commit and the last review). The shared header shows the user, streamed in its
+own boundary so the layout stays static.
 
 ---
 
@@ -1158,6 +1208,7 @@ rejected: caller tags, split diffs, thinking at 8k and 16k, and a verification p
 | Prompt injection from the code under review | Untrusted text only inside tagged blocks that the system prompt declares to be data; our own closing tags neutralised inside content (`</context>` → `</ context>`); no tools; schema-constrained output, then validation. Worst case: one bad finding, never an action (D61) |
 | Malicious repo content on workers | Never executes repo code. git runs with argument lists (no shell), `--no-ext-diff --no-textconv`, option-like revisions rejected; reads git objects only. The worker image runs as non-root |
 | Forged API calls | HS256 JWT with a pinned algorithm, required `exp` and `sub`, a minimum key length, and fail-closed when unconfigured |
+| Dashboard sessions | Signed httpOnly cookie, its own secret, algorithm pinned, 8 h; OAuth `state` checked in constant time; post-login redirects limited to local paths; the GitHub user token is never stored; API tokens are minted on the server per call (§10.3, D113) |
 | Forged or replayed webhooks | HMAC-SHA256 of the raw body under the webhook secret, compared in constant time, before parsing; fail-closed without a secret; deliveries deduplicated by id (D95, D97) |
 | GitHub credentials | The App's key and webhook secret come from the manifest flow straight into gitignored `secrets/` (0600 where supported), never printed; the callback needs a random `state`; installation tokens live in memory only (D93, D96) |
 | Leaking internals | `/health` and broker errors expose only exception class names; details go to the server log |
@@ -1203,10 +1254,11 @@ tables.
 | API | `TestClient` with a recording or in-process job queue; auth and error shape run without a DB |
 | Worker | Real tasks run eagerly (`.apply()`): crash restart, lock retry, redelivery skip |
 | End to end | API → worker task → API, in-process (`services/api/tests/test_routes.py`) |
+| Dashboard | vitest on the server code: session cookies (round trip, forged, expired, `alg: none`), the API token's claims, the GitHub calls with a fake `fetch`, `state` and `next` checks |
 | Evals | Local only (GPU); CI runs none (§10.6 of `planning.md`) |
 
 CI (GitHub Actions) runs ruff, `ruff format --check` and pytest with Postgres and Redis
-services, plus the web app's lint and build.
+services, plus the web app's lint, tests and build.
 
 ---
 
@@ -1233,9 +1285,8 @@ latency with identical tokens, so latency is only compared between back-to-back 
 
 ## 15. Not built yet, and known gaps
 
-**Next, Phase 6 steps 2–6** (`planning.md` §9): the dashboard pages.
-- **Step 2:** GitHub login (Auth.js); the server-side API client that signs the JWT.
-- **Step 3:** the repos and reviews pages.
+**Next, Phase 6 steps 3–6** (`planning.md` §9): the dashboard pages.
+- **Step 3:** a repo's page: index history, re-index, its reviews.
 - **Step 4:** a review's detail: the diff, inline findings, the live SSE timeline, the
   evidence drawer, 👍/👎.
 - **Step 5:** the graph and trace views.
@@ -1256,7 +1307,7 @@ a PageRank prior (U4) and anti-patterns (U5). Their schema columns (`tsv`, `cent
 - A review that runs while its repo is still embedding (D107) retrieves from a partial set
   of vectors.
 - Local-path reviews need the API and worker on the host (D92).
-- `apps/web` is still empty.
+- The dashboard runs with `pnpm dev` on the host; it isn't in Docker Compose yet.
 - `webhook_deliveries` grows without pruning.
 - Every push re-reviews the whole PR diff (D108, by choice); topics stop repeated
   comments, but the model re-reads unchanged code, and its output varies from push to

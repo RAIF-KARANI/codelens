@@ -15,7 +15,7 @@ severity-graded review findings.
 ## Repository layout
 
 ```
-apps/web/            Next.js dashboard (empty for now)
+apps/web/            Next.js dashboard (Phase 6, in progress)
 services/api/        FastAPI app            -> import name `api`
 services/worker/     Celery background jobs -> import name `worker`
 packages/core/       Shared Python library  -> import name `core`
@@ -269,10 +269,18 @@ uv run python -m core.parser path/to/repo --unresolved    # in-repo calls it cou
 
 ## Dashboard
 
+A Next.js app that signs you in with GitHub (through the App's OAuth client) and reads
+the API from its server. So far it has the login and the repos page; the review pages
+come in the next Phase 6 steps. It needs the API running, `apps/web/.env.local` (copy
+`apps/web/.env.example`), and the App's callback URL set
+([`docs/github-app.md`](docs/github-app.md) §5).
+
 ```bash
 cd apps/web
 pnpm install
 pnpm dev                      # http://localhost:3000
+pnpm test                     # vitest
+pnpm lint && pnpm build
 ```
 
 ## Configuration

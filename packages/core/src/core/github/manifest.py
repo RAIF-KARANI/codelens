@@ -22,6 +22,9 @@ PERMISSIONS = {"contents": "read", "metadata": "read", "pull_requests": "write"}
 # to an App; these are the ones it has to ask for.
 EVENTS = ["pull_request", "push"]
 HOMEPAGE = "https://github.com/RAIF-KARANI/codelens"
+# Where GitHub sends users back after the dashboard's "Sign in with GitHub"
+# (apps/web, D113). More can be added in the App's settings, e.g. for a deploy.
+DASHBOARD_CALLBACK_URL = "http://localhost:3000/api/auth/callback"
 
 
 def build_manifest(*, name: str, webhook_url: str, redirect_url: str) -> dict[str, Any]:
@@ -30,6 +33,7 @@ def build_manifest(*, name: str, webhook_url: str, redirect_url: str) -> dict[st
         "url": HOMEPAGE,
         "hook_attributes": {"url": webhook_url, "active": True},
         "redirect_url": redirect_url,
+        "callback_urls": [DASHBOARD_CALLBACK_URL],
         "public": False,  # only its owner can install it
         "default_permissions": PERMISSIONS,
         "default_events": EVENTS,
