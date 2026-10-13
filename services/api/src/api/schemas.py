@@ -80,6 +80,9 @@ class ReviewSummary(_FromRow):
     repo_id: int
     source: ReviewSource
     pr_number: int | None
+    # The pull request's title when it was queued, or a manual review's
+    # branch; null for eval reviews and those before Phase 6 step 4 (Q19).
+    title: str | None = None
     base_sha: str | None
     head_sha: str
     status: ReviewStatus

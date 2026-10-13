@@ -26,6 +26,15 @@ export class ApiError extends Error {
 /** For pages: the signed-in user's view of `path`. A 404 becomes the page's
  * not-found; any other error goes to the nearest error.tsx. */
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const result = await apiOrMissing<T>(path, init);
+  // Missing and not-yours look the same on purpose (D111).
+  if (result === null) notFound();
+  return result;
+}
+
+/** Like api(), but a 404 is null: for parts of a page that may be absent
+ * (an older review has no stored diff). */
+export async function apiOrMissing<T>(path: string, init: RequestInit = {}): Promise<T | null> {
   // API data is per request: never part of a prerendered shell. (The user
   // comes from a private cache, so without this Next.js would see the token's
   // timestamp as the first request-time value.)
@@ -34,8 +43,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     return await callApi<T>(await currentUser(), path, init);
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) {
-      // Missing and not-yours look the same on purpose (D111).
-      notFound();
+      return null;
     }
     // A 401 here means the API and the dashboard disagree about
     // API_JWT_SECRET: logging in again wouldn't help.
@@ -132,6 +140,8 @@ export type ReviewSummary = {
   repo_id: number;
   source: ReviewSource;
   pr_number: number | null;
+  /** The PR's title, or a manual review's branch; null for older reviews. */
+  title: string | null;
   base_sha: string | null;
   head_sha: string;
   status: ReviewStatus;
@@ -144,6 +154,86 @@ export type ReviewSummary = {
   counts: SeverityCounts;
 };
 
+export type Severity = "critical" | "warning" | "suggestion";
+export type Vote = 1 | -1;
+export type Votes = { up: number; down: number };
+
+export type Finding = {
+  id: number;
+  file_path: string;
+  line_start: number;
+  line_end: number;
+  severity: Severity;
+  category: string;
+  title: string;
+  explanation: string;
+  suggested_fix: string | null;
+  /** The code nodes the model was shown as evidence for it. */
+  evidence_node_ids: number[];
+  confidence: number | null;
+  status: "posted" | "dropped";
+  /** Why validation dropped it (dropped findings only). */
+  drop_reason: string | null;
+  votes: Votes;
+  my_vote: Vote | null;
+};
+
+export type ReviewDetail = ReviewSummary & {
+  token_usage: Record<string, number> | null;
+  pipeline_config: Record<string, unknown>;
+  findings: Finding[];
+};
+
+export type Seed = {
+  path: string;
+  qualified_name: string;
+  kind: string;
+  change: "added" | "modified" | "deleted";
+  start_line: number;
+  end_line: number;
+  signature_changed: boolean;
+};
+
+export type ReviewDiff = {
+  review_id: number;
+  base_sha: string | null;
+  head_sha: string;
+  diff: string;
+  seeds: Seed[];
+};
+
+export type TraceItem = {
+  label: string;
+  node_id: number | null;
+  qualified_name: string;
+  included: boolean;
+  truncated: boolean;
+  token_cost: number;
+  stage_scores: Record<string, unknown>;
+};
+
+export type ReviewTrace = {
+  review_id: number;
+  budgets: Record<string, number> | null;
+  chunks: { index: number; items: TraceItem[] }[];
+};
+
+export type CodeNode = {
+  id: number;
+  repo_id: number;
+  path: string;
+  kind: string;
+  name: string;
+  qualified_name: string;
+  signature: string | null;
+  docstring: string | null;
+  start_line: number;
+  end_line: number;
+  code: string;
+};
+
+export type FeedbackOut = { finding_id: number; votes: Votes; my_vote: Vote | null };
+
 export const listRepos = () => api<Repo[]>("/repos");
 
 export const getRepo = (id: number) => api<RepoDetail>(`/repos/${id}`);
@@ -153,3 +243,11 @@ export const listIndexRuns = (id: number, cursor?: number) =>
 
 export const listReviews = (id: number, opts: { status?: ReviewStatus; cursor?: number }) =>
   api<Page<ReviewSummary>>(withQuery(`/repos/${id}/reviews`, opts));
+
+export const getReview = (id: number, opts: { dropped?: boolean } = {}) =>
+  api<ReviewDetail>(withQuery(`/reviews/${id}`, { include_dropped: opts.dropped ? "true" : undefined }));
+
+/** null for reviews from before the diff was stored (D110). */
+export const getReviewDiff = (id: number) => apiOrMissing<ReviewDiff>(`/reviews/${id}/diff`);
+
+export const getReviewTrace = (id: number) => api<ReviewTrace>(`/reviews/${id}/trace`);

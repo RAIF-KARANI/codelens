@@ -26,6 +26,10 @@ class Review(IdMixin, CreatedAtMixin, Base):
         str_enum(ReviewSource, "review_source"), server_default=ReviewSource.GITHUB.value
     )
     pr_number: Mapped[int | None]  # NULL for CLI and eval reviews
+    # What the change is called: the pull request's title when it was queued,
+    # or the branch of a manual review. NULL for eval reviews, and for reviews
+    # before Phase 6 step 4 (Q19).
+    title: Mapped[str | None]
     base_sha: Mapped[str | None]  # the merge-base the diff was computed against
     head_sha: Mapped[str]
     status: Mapped[ReviewStatus] = mapped_column(

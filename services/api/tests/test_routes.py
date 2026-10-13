@@ -156,6 +156,7 @@ def test_review_end_to_end(
 
     assert posted["status"] == "completed"
     assert (posted["source"], posted["model"]) == ("cli", "fake-llm")
+    assert posted["title"] == shop.branch  # a manual review is named by its branch
     assert (posted["base_sha"], posted["head_sha"]) == (shop.base_sha, shop.head_sha)
     assert posted["counts"] == {"critical": 1, "warning": 0, "suggestion": 0}
     assert posted["pipeline_config"]["validation"]["anchor_window"] == 3  # default.yaml (A1)

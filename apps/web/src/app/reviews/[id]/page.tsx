@@ -1,0 +1,236 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { Suspense } from "react";
+
+import { DateTime, SeverityCountsView, StatusBadge, Tag } from "@/components/badges";
+import {
+  getRepo,
+  getReview,
+  getReviewDiff,
+  getReviewTrace,
+  type RepoDetail,
+  type ReviewDetail,
+  type ReviewDiff,
+  type Seed,
+} from "@/lib/api";
+import { parseDiff } from "@/lib/diff";
+import { formatDuration, shortSha } from "@/lib/format";
+import { commitUrl, pullRequestUrl } from "@/lib/github-links";
+import { first, parseId, withQuery } from "@/lib/params";
+
+import { DiffView } from "./diff-view";
+import { EvidenceProvider } from "./evidence";
+import { FindingCard } from "./finding-card";
+import { LiveTimeline } from "./live-timeline";
+
+export const metadata: Metadata = { title: "Review" };
+
+/** One review: what changed, what CodeLens found and where, the evidence for
+ * each finding, and the review's timeline (live while it runs). */
+export default function ReviewPage({ params, searchParams }: PageProps<"/reviews/[id]">) {
+  return (
+    <Suspense
+      fallback={<div className="h-64 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-900" />}
+    >
+      <Review params={params} searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function Review({ params, searchParams }: PageProps<"/reviews/[id]">) {
+  const id = parseId((await params).id);
+  if (id === null) notFound();
+  const showDropped = first((await searchParams).dropped) === "1";
+  const review = await getReview(id, { dropped: showDropped });
+  const [repo, diff, trace] = await Promise.all([
+    getRepo(review.repo_id),
+    getReviewDiff(id),
+    getReviewTrace(id),
+  ]);
+  // What the prompt called each piece of evidence, for the evidence buttons.
+  const names = new Map<number, string>();
+  for (const item of trace.chunks.flatMap((c) => c.items)) {
+    if (item.node_id !== null) names.set(item.node_id, item.qualified_name);
+  }
+  const live = review.status === "queued" || review.status === "running";
+
+  return (
+    <EvidenceProvider>
+      <Link
+        href={`/repos/${repo.id}`}
+        className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+      >
+        ← {repo.full_name}
+      </Link>
+      <ReviewHeader review={review} repo={repo} />
+
+      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
+        <aside className="space-y-4 xl:order-2">
+          <LiveTimeline reviewId={review.id} live={live} />
+          {diff && diff.seeds.length > 0 && <ChangedCode seeds={diff.seeds} />}
+          {review.token_usage && <Usage usage={review.token_usage} />}
+        </aside>
+
+        <div className="min-w-0 space-y-4 xl:order-1">
+          {review.error && (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+              {review.error}
+            </p>
+          )}
+          {live ? (
+            // The diff is stored when the review starts and the findings when
+            // it ends; the timeline re-renders the page then.
+            <p className="rounded-lg border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+              The diff and the findings appear here when the review finishes.
+            </p>
+          ) : (
+            <ReviewBody review={review} diff={diff} names={names} showDropped={showDropped} />
+          )}
+        </div>
+      </div>
+    </EvidenceProvider>
+  );
+}
+
+function ReviewBody({
+  review,
+  diff,
+  names,
+  showDropped,
+}: {
+  review: ReviewDetail;
+  diff: ReviewDiff | null;
+  names: Map<number, string>;
+  showDropped: boolean;
+}) {
+  const posted = review.findings.filter((f) => f.status === "posted");
+  const dropped = review.findings.filter((f) => f.status === "dropped");
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 className="text-sm font-semibold">
+          {posted.length} finding{posted.length === 1 ? "" : "s"}
+        </h2>
+        <Link
+          href={withQuery(`/reviews/${review.id}`, { dropped: showDropped ? undefined : "1" })}
+          className="text-xs text-zinc-500 underline underline-offset-4 hover:text-zinc-900 dark:hover:text-zinc-100"
+        >
+          {showDropped ? "Hide dropped findings" : "Show findings validation dropped"}
+        </Link>
+      </div>
+      {diff ? (
+        <DiffView files={parseDiff(diff.diff)} findings={review.findings} names={names} />
+      ) : (
+        <>
+          <p className="text-sm text-zinc-500">
+            This review is from before diffs were stored with reviews, so its findings are
+            listed without the diff.
+          </p>
+          {review.findings.map((f) => (
+            <FindingCard key={f.id} finding={f} names={names} />
+          ))}
+        </>
+      )}
+      {showDropped && dropped.length === 0 && (
+        <p className="text-sm text-zinc-500">Validation dropped nothing in this review.</p>
+      )}
+    </>
+  );
+}
+
+function ReviewHeader({ review, repo }: { review: ReviewDetail; repo: RepoDetail }) {
+  const onGitHub = repo.source === "github";
+  const name =
+    review.title ?? (review.pr_number !== null ? `PR #${review.pr_number}` : `Review #${review.id}`);
+  const took = formatDuration(review.started_at, review.finished_at);
+  return (
+    <header className="mt-3">
+      <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight">
+        <span className="break-words">{name}</span>
+        <StatusBadge status={review.status} />
+        {review.source !== "github" && <Tag>{review.source === "eval" ? "eval case" : "branch"}</Tag>}
+      </h1>
+      <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-600 dark:text-zinc-400">
+        <span>Review #{review.id}</span>
+        {review.pr_number !== null && onGitHub && (
+          <a
+            href={pullRequestUrl(repo.full_name, review.pr_number)}
+            target="_blank"
+            rel="noreferrer"
+            className="hover:underline"
+          >
+            PR #{review.pr_number} on GitHub ↗
+          </a>
+        )}
+        <span className="font-mono text-xs">
+          {shortSha(review.base_sha)}…
+          {onGitHub ? (
+            <a
+              href={commitUrl(repo.full_name, review.head_sha)}
+              target="_blank"
+              rel="noreferrer"
+              className="hover:underline"
+            >
+              {shortSha(review.head_sha)}
+            </a>
+          ) : (
+            shortSha(review.head_sha)
+          )}
+        </span>
+        {review.model && <span>{review.model}</span>}
+        {took && <span>took {took}</span>}
+        <DateTime iso={review.started_at ?? review.created_at} />
+      </p>
+      {review.status === "completed" && (
+        <p className="mt-2 text-sm">
+          <SeverityCountsView counts={review.counts} />
+        </p>
+      )}
+    </header>
+  );
+}
+
+const CHANGE_STYLES: Record<Seed["change"], string> = {
+  added: "text-emerald-700 dark:text-emerald-400",
+  modified: "text-amber-700 dark:text-amber-400",
+  deleted: "text-red-700 dark:text-red-400",
+};
+
+/** The changed definitions the review started from (its seeds). */
+function ChangedCode({ seeds }: { seeds: Seed[] }) {
+  return (
+    <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+      <h2 className="text-sm font-semibold">Changed code</h2>
+      <ul className="mt-2 space-y-1.5 text-xs">
+        {seeds.map((seed) => (
+          <li key={`${seed.path}:${seed.qualified_name}`} className="min-w-0">
+            <span className={`mr-1.5 ${CHANGE_STYLES[seed.change]}`}>{seed.change}</span>
+            <span className="break-all font-mono">{seed.qualified_name}</span>
+            {seed.signature_changed && <span className="ml-1.5 text-zinc-500">(signature)</span>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function Usage({ usage }: { usage: Record<string, number> }) {
+  const rows = [
+    ["Prompt tokens", usage.input_tokens],
+    ["Tokens written", usage.output_tokens],
+  ] as const;
+  return (
+    <section className="rounded-lg border border-zinc-200 p-4 text-xs dark:border-zinc-800">
+      <h2 className="text-sm font-semibold">Model usage</h2>
+      <dl className="mt-2 grid grid-cols-2 gap-1">
+        {rows.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="text-zinc-500">{label}</dt>
+            <dd className="text-right tabular-nums">{value?.toLocaleString("en") ?? "—"}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
