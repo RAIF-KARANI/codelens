@@ -2,7 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
-import { config } from "@/lib/config";
+import { config, isDemo } from "@/lib/config";
 import {
   openSession,
   sealSession,
@@ -21,6 +21,24 @@ function cookieOptions(maxAge: number) {
     path: "/",
     maxAge,
   };
+}
+
+/** Every visitor of an open demo (D117): no session, no installations. The
+ * API's demo mode shows such a token every repo of the demo (D115); a write
+ * is refused all the same. */
+export const DEMO_VISITOR: SessionUser = {
+  id: "demo-visitor",
+  login: "visitor",
+  name: "Demo visitor",
+  avatarUrl: "",
+  installations: [],
+};
+
+/** Who is making this request: the demo's visitor on a demo, otherwise the
+ * user in the session cookie (or null). Route handlers and Server Actions ask
+ * here; pages go through lib/dal.ts. */
+export async function requestUser(): Promise<SessionUser | null> {
+  return isDemo() ? DEMO_VISITOR : readSession();
 }
 
 /** The user in this request's session cookie, or null. Callers that render

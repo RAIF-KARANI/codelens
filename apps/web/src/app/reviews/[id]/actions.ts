@@ -3,14 +3,14 @@
 import { redirect } from "next/navigation";
 
 import { ApiError, callApi, type FeedbackOut, type Vote } from "@/lib/api";
-import { readSession } from "@/lib/session";
+import { requestUser } from "@/lib/session";
 
 export type VoteResult = { ok: true; feedback: FeedbackOut } | { ok: false; message: string };
 
 /** 👍 (1), 👎 (-1), or take the vote back (null). Like any Server Action, it
  * checks the session itself, and the API checks the finding's access. */
 export async function vote(findingId: number, value: Vote | null): Promise<VoteResult> {
-  const user = await readSession();
+  const user = await requestUser();
   if (!user) redirect("/login");
   if (!Number.isSafeInteger(findingId) || findingId < 1 || ![1, -1, null].includes(value)) {
     return { ok: false, message: "Invalid vote." };

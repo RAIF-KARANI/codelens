@@ -2,12 +2,12 @@ import type { NextRequest } from "next/server";
 
 import { ApiError, callApi, type CodeNode } from "@/lib/api";
 import { parseId } from "@/lib/params";
-import { readSession } from "@/lib/session";
+import { requestUser } from "@/lib/session";
 
 /** A code node, for the evidence drawer: the browser asks here, and this
  * server asks the API as the signed-in user. */
 export async function GET(_request: NextRequest, ctx: RouteContext<"/api/nodes/[id]">) {
-  const user = await readSession();
+  const user = await requestUser();
   if (!user) {
     return Response.json({ error: { code: "unauthenticated" } }, { status: 401 });
   }

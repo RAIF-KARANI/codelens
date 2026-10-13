@@ -6,6 +6,10 @@ import { openSession, SESSION_COOKIE } from "@/lib/tokens";
  * only a shortcut: the real check is in lib/dal.ts, next to the data, so a
  * page is safe even if this matcher misses it. */
 export async function proxy(request: NextRequest) {
+  // An open demo lets everyone in (D117).
+  if (process.env.DEMO_MODE === "true") {
+    return NextResponse.next();
+  }
   const secret = process.env.SESSION_SECRET ?? "";
   const user = await openSession(request.cookies.get(SESSION_COOKIE)?.value, secret);
   if (user) {

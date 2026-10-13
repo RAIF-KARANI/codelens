@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
 
 import { OAUTH_COOKIE, redirectUri } from "@/lib/oauth";
-import { config } from "@/lib/config";
+import { config, isDemo } from "@/lib/config";
 import { authorizeUrl } from "@/lib/github";
 import { safeNext } from "@/lib/paths";
 
@@ -12,6 +12,8 @@ import { safeNext } from "@/lib/paths";
  * that brings both back, so another site can't complete a login of its own
  * choosing in this browser (CSRF). */
 export async function GET(request: NextRequest) {
+  // An open demo has no sign-in (D117).
+  if (isDemo()) return NextResponse.redirect(new URL("/repos", request.url));
   // The request first (see the callback).
   const next = safeNext(request.nextUrl.searchParams.get("next"));
   const { appUrl, githubClientId } = config();

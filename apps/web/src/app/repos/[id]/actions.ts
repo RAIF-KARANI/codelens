@@ -4,7 +4,7 @@ import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { ApiError, callApi } from "@/lib/api";
-import { readSession } from "@/lib/session";
+import { requestUser } from "@/lib/session";
 
 export type ReindexState = { ok: boolean; message: string } | null;
 
@@ -20,7 +20,7 @@ const MESSAGES: Record<string, string> = {
  * repo's access, as for any call (D111). useActionState also passes the
  * previous state and the form data; this action needs neither. */
 export async function reindex(repoId: number): Promise<ReindexState> {
-  const user = await readSession();
+  const user = await requestUser();
   if (!user) redirect("/login");
   if (!Number.isSafeInteger(repoId) || repoId < 1) {
     return { ok: false, message: MESSAGES.not_found };
