@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from core.github import GitHubClient, GitHubError, InstallationTokens, app_jwt
 from core.github.auth import APP_JWT_LIFETIME, CLOCK_SKEW
 from core.github.manifest import (
+    DASHBOARD_CALLBACK_URL,
     EVENTS,
     PERMISSIONS,
     AppCredentials,
@@ -159,6 +160,7 @@ def test_manifest_asks_for_least_privilege() -> None:
     assert manifest["default_events"] == EVENTS
     assert manifest["public"] is False
     assert manifest["hook_attributes"] == {"url": "https://smee.io/x", "active": True}
+    assert manifest["callback_urls"] == [DASHBOARD_CALLBACK_URL]  # the dashboard's login
 
 
 def test_credentials_are_saved_for_env(tmp_path: Path) -> None:

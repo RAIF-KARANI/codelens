@@ -8,7 +8,8 @@
 **Last updated:** 2026-10-13 · **Current position:** Phases 1–4 complete. Phase 4 adopted anchoring (test F1 0.654 → 0.767); every
 change aimed at making qwen3:8b reason over context was rejected (D83, D85–D87). Phase 5 (GitHub App) is done: PRs on a real repo get
 inline comments in 9–49 s, and a re-push repeats nothing (#20–#26). Phase 6 (dashboard) in progress: step 1
-(the API it reads, with per-repo access checks) is in review.
+(the API it reads, with per-repo access checks) is merged (#27); step 2 (GitHub login, the API client, the repos
+page) is in review.
 
 ---
 
@@ -223,7 +224,7 @@ latency for uncertain gain), fine-tuning.
 | HTTP clients | httpx (async) | Ollama, reranker, GitHub API | aiohttp |
 | GitHub | GitHub App (REST v3) + PyJWT for the App JWT | Fine-grained permissions, installation tokens | OAuth app + PAT (weaker security story) |
 | Frontend | Next.js 16 (App Router) + TypeScript + Tailwind + shadcn/ui | Standard, fast to build | — |
-| Frontend extras | React Flow (graph), react-diff-view (diff), react-markdown (comments), Auth.js (GitHub OAuth) | One library per job | Cytoscape.js (graph) |
+| Frontend extras | React Flow (graph), react-diff-view (diff), react-markdown (comments); GitHub login is our own code with `jose` (D113, instead of Auth.js) | One library per job | Cytoscape.js (graph) |
 | Tooling | uv, ruff, pytest, pnpm, pre-commit, Docker Compose, GitHub Actions | Fast, standard | — |
 | Observability | Own trace tables first; Langfuse optional later (§13) | Keeps code local; the trace view is a feature | Langfuse from day 1 |
 
@@ -575,8 +576,9 @@ schemas in `api/schemas/`. Errors use the shape
 authenticated by HMAC. With `DEMO_MODE=true`, all mutating endpoints return `403`.
 *As built in 5.1 (D92):* tokens are verified (secret ≥ 32 bytes; unset = every request is
 refused), and `python -m api.token` mints one for development. The per-repo access check
-moved to Phase 6 (D101): the dashboard's GitHub login will put the user's installation ids
-in the JWT. Until then any valid token sees every repo.
+moved to Phase 6 (D101): the dashboard's GitHub login puts the user's installation ids
+in the JWT (D111, 6.1), and the dashboard's server signs a fresh token for every call
+(6.2, D113).
 
 | Method | Path | Auth | Purpose | Phase |
 |---|---|---|---|---|
@@ -657,13 +659,15 @@ codelens/
 ├── configs/
 │   └── pipeline/                   📋2 b0.yaml (baseline), u1_fts.yaml, … full.yaml, default.yaml
 ├── anti_patterns/                  📋4 global anti-pattern YAML library
-├── apps/web/                       ✅ Next.js (empty) → 📋6 dashboard
-│   └── src/
-│       ├── app/(auth)/ …           📋6 Auth.js routes
-│       ├── app/repos/[id]/ …       📋6
-│       ├── app/reviews/[id]/{page,graph,trace}/   📋6
-│       ├── components/{diff,findings,graph,trace}/ 📋6
-│       └── lib/{api.ts,sse.ts,auth.ts}            📋6
+├── apps/web/                       ✅ Next.js dashboard (6.2: login, layout, repos page)
+│   ├── src/proxy.ts                ✅ early redirect when signed out
+│   ├── src/app/api/auth/{login,callback,logout}/  ✅ GitHub login (D113)
+│   ├── src/app/{login,repos}/      ✅
+│   ├── src/app/repos/[id]/ …       📋6
+│   ├── src/app/reviews/[id]/{page,graph,trace}/   📋6
+│   ├── src/components/{diff,findings,graph,trace}/ 📋6
+│   ├── src/lib/                    ✅ config, tokens, session, dal, github, oauth, paths, api · 📋6 sse.ts
+│   └── test/                       ✅ vitest
 ├── packages/core/
 │   ├── alembic.ini                 ✅
 │   ├── src/core/
@@ -805,8 +809,8 @@ budget; a re-push doesn't duplicate comments.
 | 5 ✅ #26 | End to end in Docker on a private test repo (`codelens-playground`, sqlite-utils), via smee: 5 PR events, 9–49 s from open/push to posted review (§6.4), all planted bugs found, no repeats on re-push. **Exit criterion met.** Q17 answered with embedding slices (D107), Q18 with the whole PR diff (D108), comment placement clipped to hunks (D109); runbook `docs/e2e.md` | added the playground to the App |
 
 ### Phase 6: Dashboard
-Auth.js (GitHub) → JWT to the API, carrying the user's installation ids, and per-repo
-access checks in the API (moved from Phase 5, D101); pages: repos, repo, reviews, **review detail**
+GitHub login (our own, D113; planned as Auth.js) → JWT to the API, carrying the user's
+installation ids, and per-repo access checks in the API (moved from Phase 5, D101); pages: repos, repo, reviews, **review detail**
 (diff + inline findings + live SSE + evidence drawer + 👍/👎), **graph** (React Flow),
 **trace** (stage scores), anti-patterns CRUD.
 **Exit:** watch a review stream live and click any finding through to its evidence and
@@ -814,8 +818,8 @@ graph.
 
 | Step | Deliverable | User action |
 |---|---|---|
-| 1 🔍 | The API the dashboard reads: per-repo access checks (JWT `installations` claim + `API_ADMIN_LOGINS`, D111); a review's diff and seeds stored with it (D110); `/reviews/{id}/diff`, `/trace`, `/graph`, `/nodes/{id}`, `/findings/{id}/feedback`; migration (`finding_feedback`, `reviews.diff`, `reviews.seeds`) | none |
-| 2 | Web foundation: Auth.js GitHub login with the App's OAuth client; the server-side API client that signs the JWT (with the user's installations from `GET /user/installations`); layout, navigation; the repos page | set the App's OAuth callback URL |
+| 1 ✅ #27 | The API the dashboard reads: per-repo access checks (JWT `installations` claim + `API_ADMIN_LOGINS`, D111); a review's diff and seeds stored with it (D110); `/reviews/{id}/diff`, `/trace`, `/graph`, `/nodes/{id}`, `/findings/{id}/feedback`; migration (`finding_feedback`, `reviews.diff`, `reviews.seeds`) | none |
+| 2 🔍 | Web foundation: GitHub login with the App's OAuth client, our own code (D113): state cookie, code exchange, `GET /user` + `GET /user/installations`, a signed session cookie, the GitHub token dropped; `proxy.ts` redirects early, the data access layer decides; the server-side API client that signs a 5-minute JWT per call; layout, navigation; the repos page; vitest | add `http://localhost:3000/api/auth/callback` as the App's redirect URI (`docs/github-app.md` §5) |
 | 3 | Repo and reviews pages: index history, re-index, review lists | none |
 | 4 | Review detail: the diff with inline findings, the live SSE timeline (proxied by Next.js, which holds the JWT), the evidence drawer, 👍/👎 | none |
 | 5 | Graph view (React Flow) and trace view | none |
@@ -1197,6 +1201,7 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D110 | A review stores what it reviewed: the raw unified diff (capped at 1 MB) and its changed nodes (`seeds`: path, qualified name, kind, change, lines, signature changed) | Recompute the diff from git when asked | The API container has neither git nor the repos' mirrors, and Phase 7's hosted demo has only a database copy. Stored, a review is a complete record, the diff is exactly what the model saw (a branch can move on), and the graph view starts from the real seeds. Older reviews have neither, and their diff view says so (`not_recorded`) |
 | D111 | Per-repo access: a repo is visible to a token whose `installations` claim (GitHub installation ids, filled by the dashboard from `GET /user/installations` at login) contains the repo's installation, and to logins in `API_ADMIN_LOGINS` (the user's choice for local and eval repos, which have no installation); every route checks through `api/access.py`; anything not visible is a 404 | Check GitHub on every request; let every signed-in user see local/eval repos | GitHub itself decides which installations a user can reach, once per login; the API only checks a signed claim, so no GitHub call per request. Admin is decided by the server from the login, never by a claim. A 404 for hidden repos doesn't reveal that a private repo exists |
 | D112 | The anti-patterns editor (CRUD) is deferred with U5 (user's choice, 2026-10-13) | Build it in Phase 6 | Nothing reads the anti-patterns table until U5; an editor for unused data adds pages without showing anything |
+| D113 | The dashboard's GitHub login is our own code (~200 lines in `apps/web`): GitHub's web flow with the App's OAuth client and a `state` cookie; at the callback, `GET /user` and `GET /user/installations`; then an httpOnly session cookie signed with `jose` (HS256, its own `SESSION_SECRET`, 8 h) holding the user and their installation ids. The GitHub user token is dropped. The server mints a 5-minute API token per call from the session | Auth.js, as §3 planned | Auth.js v5 is still a beta, and its examples predate Next 16's `proxy.ts` and Cache Components. We need one provider plus one extra call, which in Auth.js means callbacks around a flow you can't see. Our own is short, readable and tested (CSRF state, open-redirect guard, forged, expired and `alg: none` cookies). Without a stored GitHub token, a stolen cookie can't act on GitHub. The cost: new installations show after the next sign-in |
 
 ---
 

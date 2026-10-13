@@ -91,6 +91,27 @@ settings page → **Advanced** → **Recent deliveries** lists every delivery, a
 docker compose exec postgres psql -U codelens -c "SELECT github_installation_id, account_login FROM installations"
 ```
 
+## 5. Let the dashboard sign users in
+
+The dashboard (`apps/web`) signs users in with the App's own OAuth client, so GitHub must
+know where to send them back. Apps registered after Phase 6 step 2 have this already;
+for an older App:
+
+1. Open the App's settings: `https://github.com/settings/apps/<slug>` (for an organisation's
+   App, the organisation's **Settings → Developer settings → GitHub Apps**).
+2. Under **Identifying and authorizing users**, type
+   `http://localhost:3000/api/auth/callback` into the **Redirect URI** box (older GitHub
+   pages call it **Callback URL**; **Add redirect URI** adds another box once one is
+   used). Leave **Allow wildcard matching**, **Request user authorization (OAuth) during
+   installation** and **Enable Device Flow** unticked.
+3. Scroll to the bottom of the page and press **Save changes**.
+
+Then copy `apps/web/.env.example` to `apps/web/.env.local` and fill it in: the client id
+and secret are the `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` from `.env`, and
+`API_JWT_SECRET` must match the API's. On **Sign in with GitHub**, GitHub asks you once to
+authorize the App; you then see the repos of every installation you can access. Logins
+in `API_ADMIN_LOGINS` also see local and eval repos.
+
 ## What the webhook endpoint does (Phase 5 steps 2–3b)
 
 `POST /webhooks/github`:
