@@ -24,6 +24,7 @@ SCHEMA_TABLES = {
     "review_events",
     "installations",
     "webhook_deliveries",
+    "finding_feedback",
 }
 
 

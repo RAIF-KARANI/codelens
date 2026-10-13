@@ -156,6 +156,8 @@ async def run_review(
             model=providers.llm.model,
             config=config,
             review_id=review_id,
+            diff=changes.diff,
+            seeds=changes.seeds,
         )
         usage = Usage()
         try:

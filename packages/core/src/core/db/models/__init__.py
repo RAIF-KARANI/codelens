@@ -5,7 +5,13 @@ from core.db.models.anti_pattern import AntiPattern
 from core.db.models.code_graph import CodeEdge, CodeNode
 from core.db.models.github import Installation, WebhookDelivery
 from core.db.models.repo import File, IndexRun, Repo
-from core.db.models.review import Finding, Review, ReviewContextItem, ReviewEvent
+from core.db.models.review import (
+    Finding,
+    FindingFeedback,
+    Review,
+    ReviewContextItem,
+    ReviewEvent,
+)
 
 __all__ = [
     "AntiPattern",
@@ -13,6 +19,7 @@ __all__ = [
     "CodeNode",
     "File",
     "Finding",
+    "FindingFeedback",
     "IndexRun",
     "Installation",
     "Repo",

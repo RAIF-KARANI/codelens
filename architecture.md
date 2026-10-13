@@ -2,7 +2,7 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-13: Phases 1–5.
+> follows. It describes `main` as of 2026-10-13: Phases 1–5 and Phase 6 step 1.
 >
 > | File | Answers |
 > |---|---|
@@ -80,7 +80,8 @@ and code and prompts never leave the machine (D20).
 | Reviewing pull requests and posting the reviews on GitHub | ✅ Phase 5 step 3b |
 | Live review progress over SSE | ✅ Phase 5 step 4 |
 | End to end in Docker on a real repo, within the latency budget (`docs/e2e.md`) | ✅ Phase 5 step 5 |
-| Dashboard | Phase 6 (`apps/web` is an empty Next.js app) |
+| The dashboard's API: access checks, diff, trace, graph, nodes, 👍/👎 | ✅ Phase 6 step 1 |
+| Dashboard pages | Phase 6 steps 2–6 (`apps/web` is an empty Next.js app) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -187,8 +188,8 @@ codelens/
 
 ## 4. Data model
 
-One Postgres 16 database with pgvector 0.8. Six migrations so far (D29: one per phase,
-never edited once applied); head is `e53885814355`.
+One Postgres 16 database with pgvector 0.8. Seven migrations so far (D29: one per phase,
+never edited once applied); head is `b474f5043e49`.
 
 ```mermaid
 erDiagram
@@ -201,6 +202,7 @@ erDiagram
     code_nodes ||--o{ code_edges : "src"
     code_nodes |o--o{ code_edges : "dst (nullable)"
     reviews ||--o{ findings : produces
+    findings ||--o{ finding_feedback : "👍/👎"
     reviews ||--o{ review_context_items : "trace"
     reviews ||--o{ review_events : "timeline"
     code_nodes |o--o{ review_context_items : "node (SET NULL)"
@@ -290,6 +292,8 @@ erDiagram
         jsonb pipeline_config "exact config used"
         text error
         bigint github_review_id "the review posted on the PR"
+        text diff "what was reviewed (D110)"
+        jsonb seeds "the changed nodes (D110)"
     }
     findings {
         bigint id PK
@@ -307,6 +311,12 @@ erDiagram
         text topic "across pushes: file + function + its hash (D104)"
         varchar status "posted | dropped"
         text drop_reason
+    }
+    finding_feedback {
+        bigint id PK
+        bigint finding_id FK
+        text github_user_id "UNIQUE(finding_id, github_user_id)"
+        smallint vote "-1 or 1"
     }
     review_context_items {
         bigint id PK
@@ -349,7 +359,12 @@ erDiagram
 
 **Phase 5 step 2 added** `installations` (mirrored from `installation` webhook events),
 `webhook_deliveries` (the delivery log that makes webhooks idempotent) and
-`repos.installation_id`. Still planned: `finding_feedback` (Phase 6).
+`repos.installation_id`.
+
+**Phase 6 step 1 added** `finding_feedback` (one 👍/👎 per user per finding, changeable)
+and, on `reviews`, the raw `diff` and the changed nodes (`seeds`). With those, a review is
+a complete record of what was reviewed: the dashboard needs no git access to show it, and
+neither will Phase 7's hosted demo, which has only the database (D110).
 
 ---
 
@@ -900,6 +915,11 @@ FastAPI (`services/api`). `/health` is public; everything under `/api/v1` needs 
 | POST | `/api/v1/reviews` | Queue a manual review `{repo_id, base, head}`; `202 {review_id, status, head_sha}` |
 | GET | `/api/v1/reviews/{id}` | A review: summary, counts, token usage, exact pipeline config, findings (`?include_dropped=true`) |
 | GET | `/api/v1/reviews/{id}/events` | The review's timeline as **Server-Sent Events**: replay after `Last-Event-ID` (or `?after=`), then live, until `end` (§10.2) |
+| GET | `/api/v1/reviews/{id}/diff` | The unified diff and the changed nodes, as stored with the review (D110) |
+| GET | `/api/v1/reviews/{id}/trace` | Every retrieved candidate per chunk, included or not, with its stage scores; the packing budgets |
+| GET | `/api/v1/reviews/{id}/graph` | The seeds, their callers and callees (≤ 15 per seed and direction), the context nodes, and the edges between them, for React Flow |
+| GET | `/api/v1/nodes/{id}` | A code node's source and metadata (the evidence drawer) |
+| POST / DELETE | `/api/v1/findings/{id}/feedback` | 👍 (`1`) / 👎 (`-1`), one per user, changeable; every finding in `GET /reviews/{id}` carries its counts and the caller's `my_vote` |
 | POST | `/webhooks/github` | GitHub's events (HMAC-signed); `202 {delivery_id, event, status}` (§10.1) |
 
 **Conventions:**
@@ -911,8 +931,14 @@ FastAPI (`services/api`). `/health` is public; everything under `/api/v1` needs 
     required;
   - with no secret set, every `/api/v1` request is refused (503 `auth_not_configured`):
     the API fails closed;
-  - `python -m api.token` mints a development token. Until installations exist (step 3),
-    any valid token sees every repo.
+  - `python -m api.token` mints a development token (`--installation ID` to grant one).
+- **Access** (D111, `api/access.py`): a repo is visible to a token whose `installations`
+  claim lists the repo's App installation (the dashboard fills it from GitHub,
+  `GET /user/installations`, at login), and to the logins in `API_ADMIN_LOGINS`, who also see
+  local and eval repos. Reviews, findings and code nodes are reached through their repo.
+  Anything not visible is a 404, like something missing, so a private repo's existence
+  doesn't leak. Being an admin is the server's decision, from the login; it is never a
+  claim.
 - **`DEMO_MODE=true`** → every mutating route returns 403 (the public read-only demo, §15
   of `planning.md`).
 - **One error shape** for every error, including framework 404s and validation errors:
@@ -1136,12 +1162,11 @@ rejected: caller tags, split diffs, thinking at 8k and 16k, and a verification p
 | GitHub credentials | The App's key and webhook secret come from the manifest flow straight into gitignored `secrets/` (0600 where supported), never printed; the callback needs a random `state`; installation tokens live in memory only (D93, D96) |
 | Leaking internals | `/health` and broker errors expose only exception class names; details go to the server log |
 | Secrets | `.env` and `secrets/` are gitignored; `SecretStr` for the JWT key; pre-commit `detect-private-key` |
-| Cross-repo leakage | Every retrieval query is scoped by `repo_id` |
+| Cross-repo leakage | Every retrieval query is scoped by `repo_id`; every API route checks the caller may see the repo, and answers 404 otherwise (D111) |
 
 Mirrors (D99, D100): bare repos read as git objects, so nothing from a repo is checked
 out or executed; the installation token reaches git only through environment variables.
-Per-repo access checks for API users moved to Phase 6, with the dashboard's GitHub login
-(D101).
+Per-repo access checks for API users: §10, D111.
 
 ### 13.2 Observability
 
@@ -1208,10 +1233,15 @@ latency with identical tokens, so latency is only compared between back-to-back 
 
 ## 15. Not built yet, and known gaps
 
-**Next, Phase 6** (`planning.md` §9): the dashboard, with GitHub login (Auth.js) and the
-per-repo access checks moved there (D101). Its pages are repos, reviews, a review's detail
-with the diff, inline findings, the live SSE timeline and an evidence drawer, the graph
-view and the trace view.
+**Next, Phase 6 steps 2–6** (`planning.md` §9): the dashboard pages.
+- **Step 2:** GitHub login (Auth.js); the server-side API client that signs the JWT.
+- **Step 3:** the repos and reviews pages.
+- **Step 4:** a review's detail: the diff, inline findings, the live SSE timeline, the
+  evidence drawer, 👍/👎.
+- **Step 5:** the graph and trace views.
+- **Step 6:** the end-to-end check in the browser.
+
+The anti-patterns editor waits for U5 (D112).
 
 **Deferred upgrades:** FTS + RRF (U1), graph expansion (U2), a cross-encoder reranker (U3),
 a PageRank prior (U4) and anti-patterns (U5). Their schema columns (`tsv`, `centrality`,

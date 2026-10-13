@@ -6,9 +6,9 @@
 > decisions D18+.
 
 **Last updated:** 2026-10-13 · **Current position:** Phases 1–4 complete. Phase 4 adopted anchoring (test F1 0.654 → 0.767); every
-change aimed at making qwen3:8b reason over context was rejected (D83, D85–D87). Phase 5 (GitHub App) met its exit
-criterion end to end in Docker (step 5, in review): PRs on a real repo get inline comments in 9–49 s, and a re-push
-repeats nothing. Next: Phase 6 (dashboard).
+change aimed at making qwen3:8b reason over context was rejected (D83, D85–D87). Phase 5 (GitHub App) is done: PRs on a real repo get
+inline comments in 9–49 s, and a re-push repeats nothing (#20–#26). Phase 6 (dashboard) in progress: step 1
+(the API it reads, with per-repo access checks) is in review.
 
 ---
 
@@ -265,7 +265,8 @@ repos ─┬─< files ─< code_nodes >─< code_edges (src_node_id, dst_node_i
 | 4 | `anti_patterns` | + `slug TEXT` (unique per repo/global), + `language?`, + `category` | Upsert from YAML; filtering |
 | 5 ✅ | **`installations`** | `id, github_installation_id, account_id, account_login, account_type, repository_selection?, suspended_at?`, timestamps + `repos.installation_id` (`SET NULL`) (migration `f93b1ce2b1ca`) | GitHub App |
 | 5 ✅ | **`webhook_deliveries`** | `delivery_id PK, event, action?, installation_id?, received_at, processed_at?` | Idempotent webhook handling (D95) |
-| 6 | **`finding_feedback`** | `finding_id, github_user_id, vote (+1/-1), created_at`; unique per user | 👍/👎 and suppression |
+| 6 ✅ | **`finding_feedback`** | `finding_id, github_user_id, vote (+1/-1)`, timestamps; unique per user (migration `b474f5043e49`) | 👍/👎 and suppression |
+| 6 ✅ | `reviews` | + `diff TEXT`, + `seeds JSONB` (same migration) | What was reviewed, kept with the review (D110) |
 
 ### 4.3 Invariants (enforced by constraints or tests)
 
@@ -589,12 +590,12 @@ in the JWT. Until then any valid token sees every repo.
 | POST | `/api/v1/reviews` | JWT | Manual review `{repo_id, pr_number}` or `{repo_id, base, head}` → `202 {review_id}` | ✅ 5.1 `{repo_id, base, head}` (local repos); `pr_number` in 5.3 |
 | GET | `/api/v1/reviews/{review_id}` | JWT | Review + findings (posted; `?include_dropped=true`) | ✅ 5.1 |
 | GET | `/api/v1/reviews/{review_id}/events` | JWT | **SSE** stream (replay + live; `Last-Event-ID` or `?after=`) | ✅ 5.4 |
-| GET | `/api/v1/reviews/{review_id}/diff` | JWT | Unified diff for the viewer | 6 |
-| GET | `/api/v1/reviews/{review_id}/graph` | JWT | Nodes + edges around the seeds for React Flow `{nodes:[{id,label,kind,depth,centrality,is_seed}], edges:[{src,dst,kind,resolved}]}` | 6 |
-| GET | `/api/v1/reviews/{review_id}/trace` | JWT | Per-chunk context items with all stage scores; dropped findings with reasons | 6 |
-| GET | `/api/v1/nodes/{node_id}` | JWT | Node code + metadata (evidence drawer) | 6 |
-| POST | `/api/v1/findings/{finding_id}/feedback` | JWT | `{vote: 1 \| -1}` | 6 |
-| GET / POST / PATCH / DELETE | `/api/v1/anti-patterns[/{id}]` | JWT | Library CRUD (`?repo_id=` or global) | 6 |
+| GET | `/api/v1/reviews/{review_id}/diff` | JWT | Unified diff for the viewer, + the changed nodes (stored with the review, D110) | ✅ 6.1 |
+| GET | `/api/v1/reviews/{review_id}/graph` | JWT | Nodes + edges around the seeds for React Flow `{nodes:[{id,label,kind,depth,centrality,is_seed}], edges:[{src,dst,kind,resolved}]}` | ✅ 6.1 (`in_context` instead of `centrality`, which U4 hasn't computed; resolved edges only) |
+| GET | `/api/v1/reviews/{review_id}/trace` | JWT | Per-chunk context items with all stage scores; dropped findings with reasons | ✅ 6.1 (+ the packing budgets; dropped findings: `GET /reviews/{id}?include_dropped=true`) |
+| GET | `/api/v1/nodes/{node_id}` | JWT | Node code + metadata (evidence drawer) | ✅ 6.1 |
+| POST | `/api/v1/findings/{finding_id}/feedback` | JWT | `{vote: 1 \| -1}` | ✅ 6.1 (+ `DELETE` to take a vote back; votes and `my_vote` on every finding of `GET /reviews/{id}`) |
+| GET / POST / PATCH / DELETE | `/api/v1/anti-patterns[/{id}]` | JWT | Library CRUD (`?repo_id=` or global) | deferred with U5 (D112) |
 | GET | `/api/v1/repos/{repo_id}/search?q=&mode=vector\|fts\|hybrid` | JWT | Retrieval debugging (also a demo feature) | 4 |
 
 **SSE events** (`event:` name, `data:` JSON, `id:` = `review_events.seq`):
@@ -801,7 +802,7 @@ budget; a re-push doesn't duplicate comments.
 | 3a ✅ #23 | Repos from events (D101): `installation` created and `installation_repositories` attach repos (keyed by GitHub id) and queue indexing; removed repos are detached; a push to the default branch re-indexes. Bare mirrors refreshed with an installation token (D99); indexing straight from git objects (`parse_revision`, `index_revision`; D100); webhook state → jobs → processed, in that order (D98) | none |
 | 3b ✅ #24 | Pull requests (D102): `opened`/`synchronize`/`reopened`/`ready_for_review` (open, not drafts) queue a review of the PR head (`refs/pull/N/head`) against its base, with the PR title in the prompt; one `COMMENT` review per push: inline comments plus a summary even when nothing new (D101); a newer push supersedes older reviews (D103); no repeats on unchanged functions (topics, D104). Verified on a real PR | none |
 | 4 ✅ #25 | `GET /api/v1/reviews/{id}/events` (SSE): replay after `Last-Event-ID`, then live through a Redis doorbell over the `review_events` rows (D105), until an `end` event (D106); heartbeats every 15 s. Verified live on a real PR | none |
-| 5 🔍 | End to end in Docker on a private test repo (`codelens-playground`, sqlite-utils), via smee: 5 PR events, 9–49 s from open/push to posted review (§6.4), all planted bugs found, no repeats on re-push. **Exit criterion met.** Q17 answered with embedding slices (D107), Q18 with the whole PR diff (D108), comment placement clipped to hunks (D109); runbook `docs/e2e.md` | added the playground to the App |
+| 5 ✅ #26 | End to end in Docker on a private test repo (`codelens-playground`, sqlite-utils), via smee: 5 PR events, 9–49 s from open/push to posted review (§6.4), all planted bugs found, no repeats on re-push. **Exit criterion met.** Q17 answered with embedding slices (D107), Q18 with the whole PR diff (D108), comment placement clipped to hunks (D109); runbook `docs/e2e.md` | added the playground to the App |
 
 ### Phase 6: Dashboard
 Auth.js (GitHub) → JWT to the API, carrying the user's installation ids, and per-repo
@@ -810,6 +811,17 @@ access checks in the API (moved from Phase 5, D101); pages: repos, repo, reviews
 **trace** (stage scores), anti-patterns CRUD.
 **Exit:** watch a review stream live and click any finding through to its evidence and
 graph.
+
+| Step | Deliverable | User action |
+|---|---|---|
+| 1 🔍 | The API the dashboard reads: per-repo access checks (JWT `installations` claim + `API_ADMIN_LOGINS`, D111); a review's diff and seeds stored with it (D110); `/reviews/{id}/diff`, `/trace`, `/graph`, `/nodes/{id}`, `/findings/{id}/feedback`; migration (`finding_feedback`, `reviews.diff`, `reviews.seeds`) | none |
+| 2 | Web foundation: Auth.js GitHub login with the App's OAuth client; the server-side API client that signs the JWT (with the user's installations from `GET /user/installations`); layout, navigation; the repos page | set the App's OAuth callback URL |
+| 3 | Repo and reviews pages: index history, re-index, review lists | none |
+| 4 | Review detail: the diff with inline findings, the live SSE timeline (proxied by Next.js, which holds the JWT), the evidence drawer, 👍/👎 | none |
+| 5 | Graph view (React Flow) and trace view | none |
+| 6 | End to end in the browser (the exit criterion) | none |
+
+Anti-patterns CRUD is deferred with U5 (D112).
 
 ### Phase 7: Demo, observability, hardening
 `DEMO_MODE`, demo data export/import, hosted deploy (§15), optional Langfuse
@@ -1182,6 +1194,9 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D107 | `embed_repo` embeds at most 512 nodes per run (~20 s), then re-queues itself if stale nodes remain, so a review queued meanwhile runs before the next slice (answers Q17) | Celery priorities; a separate queue for reviews; one long task | The Redis transport's priorities are emulated and approximate, and two queues on one concurrency-1 worker still don't pre-empt a running task. Slicing bounds the wait by construction, needs no broker features, and `embed_repository` already took a `limit`. Measured live: a PR opened mid-embedding waited 6 s and was posted 25 s after it was opened; without slices it would wait for the whole job (~9 min for 14k nodes). Cost: a review may run while the repo is still partly embedded, so retrieval sees fewer vectors |
 | D108 | Each push is reviewed on the whole PR diff, not just its own commits (answers Q18; user's choice, 2026-10-13) | Review only the files changed since the last reviewed head | It's the diff GitHub shows reviewers, findings must sit on PR diff lines anyway, and a later push can expose a bug in code from an earlier one. Topics (D104) keep the cost to the author at zero repeated comments; the cost is GPU time (7–30 s per push here) |
 | D109 | An inline comment's range is clipped to the first diff hunk it overlaps | Require the finding's own first and last lines to be in a hunk | Measured on a real PR: the model flagged a swapped parameter as lines 2263–2321 (the whole function) around a 6-line hunk, and a removed guard as 842–850. Two of four true findings went to the review body. Clipped, all four were inline on the next PR |
+| D110 | A review stores what it reviewed: the raw unified diff (capped at 1 MB) and its changed nodes (`seeds`: path, qualified name, kind, change, lines, signature changed) | Recompute the diff from git when asked | The API container has neither git nor the repos' mirrors, and Phase 7's hosted demo has only a database copy. Stored, a review is a complete record, the diff is exactly what the model saw (a branch can move on), and the graph view starts from the real seeds. Older reviews have neither, and their diff view says so (`not_recorded`) |
+| D111 | Per-repo access: a repo is visible to a token whose `installations` claim (GitHub installation ids, filled by the dashboard from `GET /user/installations` at login) contains the repo's installation, and to logins in `API_ADMIN_LOGINS` (the user's choice for local and eval repos, which have no installation); every route checks through `api/access.py`; anything not visible is a 404 | Check GitHub on every request; let every signed-in user see local/eval repos | GitHub itself decides which installations a user can reach, once per login; the API only checks a signed claim, so no GitHub call per request. Admin is decided by the server from the login, never by a claim. A 404 for hidden repos doesn't reveal that a private repo exists |
+| D112 | The anti-patterns editor (CRUD) is deferred with U5 (user's choice, 2026-10-13) | Build it in Phase 6 | Nothing reads the anti-patterns table until U5; an editor for unused data adds pages without showing anything |
 
 ---
 

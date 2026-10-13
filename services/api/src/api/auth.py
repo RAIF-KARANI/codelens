@@ -3,10 +3,13 @@
 5-minute expiry, `sub` = the GitHub user id, `login` = their handle
 (planning.md §7).
 
-Until GitHub installations exist (Phase 5 step 3), any valid token can see
-every repo; the per-repo access check arrives with them.
+What the caller may see (D111): the token's `installations` claim lists the
+GitHub App installation ids its user can access (the dashboard asks GitHub,
+GET /user/installations, at login), and logins in API_ADMIN_LOGINS see every
+repo. The checks themselves are in api/access.py.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -31,11 +34,26 @@ _CHALLENGE = {"WWW-Authenticate": "Bearer"}
 class User:
     github_id: str
     login: str
+    installations: frozenset[int] = frozenset()  # GitHub installation ids it can access
+    is_admin: bool = False  # sees every repo, including local and eval ones
 
 
-def issue_token(secret: str, github_id: str, login: str, *, ttl: timedelta = TOKEN_TTL) -> str:
+def issue_token(
+    secret: str,
+    github_id: str,
+    login: str,
+    *,
+    installations: Sequence[int] = (),
+    ttl: timedelta = TOKEN_TTL,
+) -> str:
     now = datetime.now(UTC)
-    claims = {"sub": github_id, "login": login, "iat": now, "exp": now + ttl}
+    claims = {
+        "sub": github_id,
+        "login": login,
+        "installations": list(installations),
+        "iat": now,
+        "exp": now + ttl,
+    }
     return jwt.encode(claims, secret, algorithm=ALGORITHM)
 
 
@@ -62,7 +80,19 @@ def current_user(
         # The exception class names the problem (ExpiredSignatureError, ...)
         # without echoing anything from the token.
         raise ApiError(401, "invalid_token", type(exc).__name__, headers=_CHALLENGE) from exc
-    return User(github_id=str(claims["sub"]), login=str(claims.get("login", "")))
+    installations = claims.get("installations") or []
+    if not isinstance(installations, list) or not all(
+        isinstance(i, int) and not isinstance(i, bool) for i in installations
+    ):
+        raise ApiError(401, "invalid_token", "installations must be a list of ids")
+    login = str(claims.get("login", ""))
+    return User(
+        github_id=str(claims["sub"]),
+        login=login,
+        installations=frozenset(installations),
+        # Admin is the server's decision (API_ADMIN_LOGINS), never a claim.
+        is_admin=login.lower() in settings.admin_logins,
+    )
 
 
 def require_writable(settings: Annotated[Settings, Depends(get_settings)]) -> None:

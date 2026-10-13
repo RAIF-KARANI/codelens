@@ -18,13 +18,28 @@ def main() -> None:
     parser.add_argument("--sub", default="1", help="GitHub user id (default 1)")
     parser.add_argument("--login", default="dev", help="GitHub login (default dev)")
     parser.add_argument("--minutes", type=int, default=60, help="lifetime (default 60)")
+    parser.add_argument(
+        "--installation",
+        type=int,
+        action="append",
+        default=[],
+        help="a GitHub installation id the token may access (repeatable); "
+        "logins in API_ADMIN_LOGINS see every repo without one",
+    )
     args = parser.parse_args()
 
     secret = get_settings().api_jwt_secret.get_secret_value()
     if not secret:
         print("error: API_JWT_SECRET is not set", file=sys.stderr)
         raise SystemExit(1)
-    print(issue_token(secret, args.sub, args.login, ttl=timedelta(minutes=args.minutes)))
+    token = issue_token(
+        secret,
+        args.sub,
+        args.login,
+        installations=args.installation,
+        ttl=timedelta(minutes=args.minutes),
+    )
+    print(token)
 
 
 if __name__ == "__main__":
