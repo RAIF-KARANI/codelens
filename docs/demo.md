@@ -70,5 +70,65 @@ nothing else should write to the demo's database.
 | API | `DEMO_MODE=true`, `DATABASE_URL` (the demo's database), `API_JWT_SECRET` |
 | Dashboard | `DEMO_MODE=true`, `API_URL` (the API's address), `API_JWT_SECRET` (the same value) |
 
-No GitHub, session or Redis settings are needed. Hosting it (Vercel + Supabase, D116) is
-Phase 7 step 3.
+No GitHub, session or Redis settings are needed.
+
+## 5. Host it: Supabase + Vercel + your subdomain (D116)
+
+The demo runs at **`https://codelens.raifkarani.in`**: the dashboard and the API on
+Vercel, the database on Supabase. Put the database and the API in the **same region**
+(here Mumbai): every page makes several database queries.
+
+### Supabase: the database
+
+1. Create a project (e.g. `codelens-demo`), region **South Asia (Mumbai)**. Keep the
+   database password in your password manager.
+2. **Connect** → **Session pooler** (port 5432; the direct address is IPv6-only, which
+   Vercel can't reach). Turn its URI into an asyncpg URL:
+   `postgresql+asyncpg://postgres.<ref>:<password>@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?ssl=require`
+3. Put it in `.env.demo` at the repo root (gitignored), next to the demo's own token
+   secret:
+
+   ```
+   DEMO_DATABASE_URL=postgresql+asyncpg://...
+   DEMO_API_JWT_SECRET=<at least 32 random bytes>
+   ```
+
+4. Load the demo into it (migrations, then the export; an import replaces those repos,
+   so this is also how to refresh the demo after new reviews):
+
+   ```bash
+   python scripts/publish_demo.py
+   ```
+
+### Vercel: two projects from this repository
+
+| | API | Dashboard |
+|---|---|---|
+| Project name | `codelens-api` | `codelens` |
+| Root Directory | `deploy/api` (`deploy/api/README.md`) | `apps/web` |
+| Framework | FastAPI (detected) | Next.js (detected) |
+| `DEMO_MODE` | `true` | `true` |
+| `DATABASE_URL` | the value of `DEMO_DATABASE_URL` | — |
+| `API_URL` | — | `https://codelens-api.vercel.app` (the API project's address) |
+| `API_JWT_SECRET` | the value of `DEMO_API_JWT_SECRET` | the same value |
+| Function region | Mumbai (`bom1`) | Mumbai (`bom1`) |
+
+Every push to `main` redeploys both. The API project's daily cron (`deploy/api/vercel.json`)
+calls `/health`, which keeps the free Supabase project from pausing after a week idle.
+
+### Cloudflare: the subdomain
+
+1. In the dashboard project on Vercel: **Settings → Domains → Add**
+   `codelens.raifkarani.in`.
+2. In Cloudflare, DNS for `raifkarani.in`: add a **CNAME** record, name `codelens`, target
+   the value Vercel shows (e.g. `cname.vercel-dns.com`), proxy status **DNS only** (grey
+   cloud), so Vercel can issue the HTTPS certificate.
+3. Vercel shows the domain as valid within minutes.
+
+### Check it
+
+- `https://codelens.raifkarani.in` opens the repos without a sign-in, with the demo
+  banner, and `RAIF-KARANI/codelens-demo` is the only repo.
+- A review's page, graph and trace work; the timeline replays.
+- `https://codelens-api.vercel.app/health` is ok with `"redis": null`;
+  `https://codelens-api.vercel.app/api/v1/repos` answers 401 (no token).
