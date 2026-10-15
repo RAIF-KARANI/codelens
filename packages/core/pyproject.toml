@@ -25,6 +25,10 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+# `uv run codelens doctor`: running your own CodeLens (Phase 8, core/setup).
+[project.scripts]
+codelens = "core.setup.__main__:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

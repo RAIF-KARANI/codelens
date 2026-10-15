@@ -187,6 +187,7 @@ codelens/
 | `diff/` | `git.py` (read-only git plumbing), `unified.py` (diff parser) | `python -m core.changes` |
 | `review/` | The review pipeline, one module per stage (§7) | `python -m core.review` |
 | `demo/` | Moving public demo repos to the hosted demo's database: `export` (only the named repos; refuses any that isn't public on GitHub; leaves out embeddings and votes), `import` (replaces those repos, keeps ids) (`docs/demo.md`) | `python -m core.demo export \| import` |
+| `setup/` | Running your own CodeLens (Phase 8): `checks.py` (each machine requirement as an ok / warn / fail `Check` with its fix; commands and HTTP injected, so tests fake any machine) | `codelens doctor` |
 | `github/` | The GitHub App: REST client, App JWT and installation tokens, manifest and registration, bare mirrors (`mirror.py`), webhook signatures and events → state + jobs (`webhooks.py`), a finished review → one GitHub review (`publish.py`) (§5.5, §7 S11, §10.1) | `python -m core.github register \| check` |
 
 ### 3.2 `api` and `worker`
@@ -1419,12 +1420,9 @@ latency with identical tokens, so latency is only compared between back-to-back 
 
 ## 15. Not built yet, and known gaps
 
-**Left in Phase 7:** recording the demo video (`docs/demo-video.md` is its script). The
-README (step 5) now leads with the demo, the results and how it works; the developer
-reference moved to `docs/development.md`.
-
-**Deferred (Q20):** a guided "run your own CodeLens" setup command, so someone else can
-review their repos on their own machine with their own App.
+**Phase 8, run your own CodeLens** (`planning.md` §9): step 1, `codelens doctor`, is
+built; next, `codelens setup` (step 2) does what doctor asks for, and a fresh-clone
+rehearsal with a guide for a friend (step 3).
 
 **Later, as a separate upgrade:** CodeLens as a hosted service other people install on
 their own repos, with their reviews on the website (`docs/hosted-service.md`): hosted
