@@ -138,43 +138,34 @@ Every run, with its setup and caveats: [`evals/RESULTS.md`](evals/RESULTS.md).
 
 ## Run it on your own repos
 
-You need **Docker**, **[Ollama](https://ollama.com)** and **[uv](https://docs.astral.sh/uv/)**,
-plus Node for the webhook relay. A GPU with 8 GB (or Apple silicon) reviews a pull request
-in under a minute; on a CPU it takes a few minutes.
+You need **Docker**, **[Ollama](https://ollama.com)** and **[uv](https://docs.astral.sh/uv/)**.
+A GPU with 8 GB (or Apple silicon) reviews a pull request in under a minute; on a CPU it
+takes a few minutes.
 
 ```bash
 git clone https://github.com/RAIF-KARANI/codelens && cd codelens
 uv sync
 uv run codelens doctor        # what this machine has, what's missing, and how to fix it
-cp .env.example .env
-ollama pull qwen3:8b && ollama pull qwen3-embedding:0.6b
+uv run codelens setup         # set it all up; safe to run again
 ```
 
-`codelens doctor` checks Git, Docker and Compose, Node, Ollama and both models, the GPU,
-`.env`, your App's settings and credentials (live, against GitHub), the ports and the
-running stack, then prints an ordered to-do list. It changes nothing; run it again at any
-point.
+`codelens setup` does each step only if it isn't done yet:
 
-GitHub delivers webhooks to a public URL; [smee.io](https://smee.io/new) relays them to
-your machine. Create a channel, then create **your own GitHub App** from this repo's
-manifest. One command opens GitHub, and it writes the App's id, key and secrets to
-`secrets/` (and lists you as an allowed account):
+1. creates `.env` from `.env.example`, with a generated `API_JWT_SECRET`;
+2. creates a [smee.io](https://smee.io) channel, which relays GitHub's webhooks to your
+   machine (`SMEE_URL`);
+3. creates **your own GitHub App** from this repo's manifest: your browser opens, you
+   confirm on GitHub, and its id, key and secrets land in `secrets/` and `.env`, with you
+   as the allowed account;
+4. pulls the two models with Ollama, after asking (about 6 GB);
+5. starts everything with Docker Compose, the relay included, and waits until it's healthy;
+6. prints your App's install link, then `codelens doctor`'s report.
 
-```bash
-uv run python -m core.github register --name "CodeLens (your-login)" --webhook-url https://smee.io/<channel>
-```
-
-Copy `secrets/github-app.env` into `.env`, then start everything:
-
-```bash
-docker compose up --build -d          # Postgres, Redis, API, two workers
-npx smee-client --url https://smee.io/<channel> --target http://localhost:8000/webhooks/github
-uv run python -m core.github check    # the App, its permissions, its installations
-```
-
-Install the App on a repository (`https://github.com/apps/<your-app>/installations/new`)
-and open a pull request that changes Python, JavaScript or TypeScript. The dashboard is
-optional: `pnpm --dir apps/web dev`, after its one-time setup.
+Install the App on a repository and open a pull request that changes Python, JavaScript or
+TypeScript. `codelens doctor` checks Git, Docker and Compose, Ollama and both models, the
+GPU, `.env`, your App (live, against GitHub), the relay, the ports and the running stack,
+and prints an ordered to-do list; it changes nothing. The dashboard is optional:
+`pnpm --dir apps/web dev`, after its one-time setup.
 
 Step by step, with troubleshooting: [`docs/github-app.md`](docs/github-app.md) (the App,
 and letting a friend use it) and [`docs/e2e.md`](docs/e2e.md) (running and watching it).

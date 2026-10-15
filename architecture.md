@@ -187,7 +187,7 @@ codelens/
 | `diff/` | `git.py` (read-only git plumbing), `unified.py` (diff parser) | `python -m core.changes` |
 | `review/` | The review pipeline, one module per stage (§7) | `python -m core.review` |
 | `demo/` | Moving public demo repos to the hosted demo's database: `export` (only the named repos; refuses any that isn't public on GitHub; leaves out embeddings and votes), `import` (replaces those repos, keeps ids) (`docs/demo.md`) | `python -m core.demo export \| import` |
-| `setup/` | Running your own CodeLens (Phase 8): `checks.py` (each machine requirement as an ok / warn / fail `Check` with its fix; commands and HTTP injected, so tests fake any machine) | `codelens doctor` |
+| `setup/` | Running your own CodeLens (Phase 8): `checks.py` (each machine requirement as an ok / warn / fail `Check` with its fix), `setup.py` (the idempotent setup steps: `.env`, the smee channel, the App by the manifest flow, the models, Compose with the relay, `/health`), `envfile.py` (edit `.env` in place, comments kept). Commands, HTTP, prompts and the browser flow are injected, so tests replay any machine | `codelens doctor`, `codelens setup` |
 | `github/` | The GitHub App: REST client, App JWT and installation tokens, manifest and registration, bare mirrors (`mirror.py`), webhook signatures and events → state + jobs (`webhooks.py`), a finished review → one GitHub review (`publish.py`) (§5.5, §7 S11, §10.1) | `python -m core.github register \| check` |
 
 ### 3.2 `api` and `worker`
@@ -1421,7 +1421,7 @@ latency with identical tokens, so latency is only compared between back-to-back 
 ## 15. Not built yet, and known gaps
 
 **Phase 8, run your own CodeLens** (`planning.md` §9): step 1, `codelens doctor`, is
-built; next, `codelens setup` (step 2) does what doctor asks for, and a fresh-clone
+built, and `codelens setup` (step 2) does what doctor asks for; next, a fresh-clone
 rehearsal with a guide for a friend (step 3).
 
 **Later, as a separate upgrade:** CodeLens as a hosted service other people install on

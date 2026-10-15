@@ -190,7 +190,7 @@ def test_a_ready_machine_passes(tmp_path: Path, capsys: pytest.CaptureFixture[st
     key = tmp_path / "app.pem"
     key.write_text("key")
     env = tmp_path / ".env"
-    env.write_text("")
+    env.write_text("SMEE_URL=https://smee.io/abc\n")
     s = settings(
         github_app_id=5,
         github_webhook_secret="w",
@@ -206,8 +206,7 @@ def test_a_ready_machine_passes(tmp_path: Path, capsys: pytest.CaptureFixture[st
         run=machine(
             git=Ran(0, "git version 2.50.0"),
             **{"docker info": Ran(0, "29.8.0"), "docker compose": Ran(0, "2.40.0")},
-            npx=Ran(0, "10.9.2"),
-            **{"docker compose ps": Ran(0, "postgres\nredis\napi\n")},
+            **{"docker compose ps": Ran(0, "postgres\nredis\napi\nsmee\n")},
             **{"nvidia-smi": Ran(0, "NVIDIA RTX 4060, 8188")},
         ),
         get=http(
@@ -225,3 +224,12 @@ def test_a_ready_machine_passes(tmp_path: Path, capsys: pytest.CaptureFixture[st
         c for c in checks if c.status is not Status.OK
     ]
     assert "All set" in capsys.readouterr().out
+
+
+def test_relay_states() -> None:
+    from core.setup.checks import check_relay
+
+    assert check_relay(None, set()).fix.startswith("codelens setup")
+    assert check_relay("https://smee.io/abc", {"smee"}).status is Status.OK
+    stopped = check_relay("https://smee.io/abc", {"api"})
+    assert (stopped.status, stopped.fix) == (Status.WARN, "docker compose --profile relay up -d")

@@ -25,6 +25,10 @@ npx smee-client --url https://smee.io/AbC123xyz --target http://localhost:8000/w
 > Why not `gh webhook forward`? It forwards repository and organisation webhooks
 > only; a GitHub App's webhook is configured on the App itself (D94).
 
+> **The quick way:** `uv run codelens setup` does sections 1–4 for you (a smee channel,
+> the App, `.env`, the models, the stack with the relay) and `uv run codelens doctor`
+> checks the result. The sections below are what it does, step by step.
+
 ## 2. Create the App from its manifest
 
 The App's permissions and events are defined in code

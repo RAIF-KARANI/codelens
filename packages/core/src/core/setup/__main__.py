@@ -1,20 +1,26 @@
 """Run your own CodeLens (Phase 8).
 
     codelens doctor          # what this machine has, and what's missing
-    python -m core.setup doctor
+    codelens setup           # set it up: .env, the relay, your App, models, the stack
+    python -m core.setup doctor | setup
 
 `codelens` is installed with the workspace (`uv sync`): run it as
-`uv run codelens doctor` from the repo root, where `.env` lives.
+`uv run codelens ...` from the repo root, where `.env` lives.
 """
 
 import argparse
 import asyncio
+import subprocess
 import sys
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
+
+import httpx
 
 from core.config import Settings, get_settings
 from core.github import GitHubClient, GitHubError, app_jwt, load_private_key
+from core.github.__main__ import RegistrationFailed, create_app
+from core.github.manifest import AppCredentials
 from core.setup.checks import (
     Check,
     Fetcher,
@@ -25,17 +31,22 @@ from core.setup.checks import (
     check_git,
     check_github_settings,
     check_gpu,
-    check_node,
     check_ollama,
     check_ports,
+    check_relay,
     check_stack,
     fetch,
     port_is_free,
     run_command,
     running_services,
 )
+from core.setup.envfile import read_env
+from core.setup.setup import SMEE_PREFIX, AppInfo, SetupStopped, Tools, setup
 
 MARK = {Status.OK: "ok  ", Status.WARN: "warn", Status.FAIL: "FAIL"}
+
+
+# --- doctor
 
 
 async def check_github_app(settings: Settings) -> Check:
@@ -78,14 +89,16 @@ def doctor(
     port_free: Callable[[int], bool] = port_is_free,
     github_app: Callable[[Settings], Check] | None = None,
 ) -> list[Check]:
-    checks: list[Check] = [check_git(run), *check_docker(run), check_node(run)]
+    checks: list[Check] = [check_git(run), *check_docker(run)]
     checks += [*check_ollama(settings, get), check_gpu(run)]
     checks.append(check_env_file(env_path))
     github = check_github_settings(settings)
     checks += github
     if all(c.status is not Status.FAIL for c in github if c.name == "GitHub App settings"):
         checks.append((github_app or _github_app_sync)(settings))
-    checks += [*check_ports(running_services(run), port_free), check_stack(api_url, get)]
+    ours = running_services(run)
+    checks.append(check_relay(read_env(env_path).get("SMEE_URL"), ours))
+    checks += [*check_ports(ours, port_free), check_stack(api_url, get)]
     return checks
 
 
@@ -114,16 +127,106 @@ def report(checks: Iterable[Check]) -> int:
     return 1 if failed else 0
 
 
+# --- setup: the real tools
+
+
+def stream_command(cmd: Sequence[str]) -> int:
+    """A long command (a model download, a Docker build) with its output shown."""
+    try:
+        return subprocess.run(list(cmd), check=False).returncode
+    except FileNotFoundError:
+        return 127
+
+
+def ask(question: str, default: str | None) -> str:
+    while True:
+        suffix = f" [{default}]" if default else ""
+        answer = input(f"{question}{suffix}: ").strip()
+        if answer or default:
+            return answer or default  # type: ignore[return-value]
+
+
+def new_smee_channel() -> str:
+    """smee.io makes a channel on GET /new and redirects to it."""
+    response = httpx.get(f"{SMEE_PREFIX}new", follow_redirects=False, timeout=20)
+    url = response.headers.get("location", "")
+    if not url.startswith(SMEE_PREFIX):
+        raise SetupStopped("smee.io didn't create a channel; try again, or set SMEE_URL yourself")
+    return url
+
+
+def app_info(settings: Settings) -> AppInfo:
+    async def go() -> AppInfo:
+        key = load_private_key(settings.github_app_private_key_path)
+        async with GitHubClient(settings.github_api_url) as gh:
+            token = app_jwt(settings.github_app_id, key)  # type: ignore[arg-type]
+            app = await gh.get_app(token)
+            hook = await gh.get_app_hook_config(token)
+        return AppInfo(app["slug"], app["html_url"], app["owner"]["login"], hook.get("url"))
+
+    try:
+        return asyncio.run(go())
+    except (GitHubError, OSError, ValueError) as exc:
+        raise SetupStopped(
+            f"GitHub refused the App in .env ({type(exc).__name__}): "
+            "check it with uv run python -m core.github check"
+        ) from exc
+
+
+def real_tools(root: Path, *, yes: bool) -> Tools:
+    def confirm(question: str) -> bool:
+        return yes or input(f"{question} [y/N]: ").strip().lower() in ("y", "yes")
+
+    def make_app(name: str, webhook_url: str) -> tuple[AppCredentials, Path, Path]:
+        try:
+            return create_app(
+                Settings(_env_file=root / ".env"),  # type: ignore[call-arg]
+                name=name,
+                webhook_url=webhook_url,
+                secrets_dir=root / "secrets",
+            )
+        except RegistrationFailed as exc:
+            raise SetupStopped(f"the App wasn't created: {exc}") from exc
+
+    return Tools(
+        run=run_command,
+        stream=stream_command,
+        get=fetch,
+        ask=ask,
+        confirm=confirm,
+        new_smee_channel=new_smee_channel,
+        create_app=make_app,
+        app_info=app_info,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="codelens", description="Run your own CodeLens.")
     sub = parser.add_subparsers(dest="command", required=True)
-    doc = sub.add_parser("doctor", help="check what this machine has, and what's missing")
-    doc.add_argument("--env-file", type=Path, default=Path(".env"))
-    doc.add_argument("--api-url", default="http://localhost:8000")
+    for name, help_ in (
+        ("doctor", "check what this machine has, and what's missing (changes nothing)"),
+        ("setup", "set CodeLens up on this machine; safe to run again"),
+    ):
+        p = sub.add_parser(name, help=help_)
+        p.add_argument("--env-file", type=Path, default=Path(".env"))
+        p.add_argument("--api-url", default="http://localhost:8000")
+        if name == "setup":
+            p.add_argument("--yes", action="store_true", help="pull missing models without asking")
     args = parser.parse_args()
 
-    settings = get_settings()
-    print("CodeLens doctor: checking this machine (nothing is changed)\n")
+    if args.command == "doctor":
+        print("CodeLens doctor: checking this machine (nothing is changed)\n")
+        sys.exit(report(doctor(get_settings(), env_path=args.env_file, api_url=args.api_url)))
+
+    root = args.env_file.resolve().parent
+    print("CodeLens setup: each step is skipped if it's already done\n")
+    try:
+        setup(root, real_tools(root, yes=args.yes), api_url=args.api_url)
+    except SetupStopped as exc:
+        print(f"\nSetup stopped: {exc}", file=sys.stderr)
+        sys.exit(1)
+    print("\nChecking the result:\n")
+    settings = Settings(_env_file=args.env_file)  # type: ignore[call-arg]
     sys.exit(report(doctor(settings, env_path=args.env_file, api_url=args.api_url)))
 
 

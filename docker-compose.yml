@@ -118,5 +118,18 @@ services:
     <<: *worker
     command: celery -A worker.celery_app worker -Q gpu -c 1 -n gpu@%h --loglevel=INFO
 
+  # The webhook relay (Phase 8): forwards GitHub's events from your smee.io
+  # channel (SMEE_URL in .env) to the API, so no Node is needed on the host.
+  # Opt-in, because a relay is only one way in: `codelens setup` starts it with
+  # `docker compose --profile relay up -d`.
+  smee:
+    image: node:22-alpine
+    profiles: ["relay"]
+    command: ["npx", "-y", "smee-client@5.0.0", "--url", "${SMEE_URL:-}", "--target", "http://api:8000/webhooks/github"]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   pgdata:

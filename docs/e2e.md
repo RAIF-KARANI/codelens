@@ -38,6 +38,8 @@ docker compose up --build -d
 docker compose ps                      # api healthy; worker, worker-gpu up
 curl localhost:8000/health             # "ok"; "degraded" = Ollama is down or lacks a model
 npx smee-client --url https://smee.io/<channel> --target http://localhost:8000/webhooks/github
+# or, with SMEE_URL in .env, the relay as a container (what `codelens setup` does):
+# docker compose --profile relay up -d
 pnpm --dir apps/web dev                # the dashboard, http://localhost:3000
 ```
 

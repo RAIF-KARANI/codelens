@@ -67,6 +67,10 @@ class GitHubClient:
         """The App itself: name, slug, permissions, events."""
         return await self._request("GET", "/app", token=app_jwt)
 
+    async def get_app_hook_config(self, app_jwt: str) -> dict[str, Any]:
+        """Where the App sends its webhooks (`url`); the secret comes back masked."""
+        return await self._request("GET", "/app/hook/config", token=app_jwt)
+
     async def list_installations(self, app_jwt: str) -> list[dict[str, Any]]:
         """Accounts that installed the App (first 100, plenty for a laptop)."""
         return await self._request("GET", "/app/installations?per_page=100", token=app_jwt)

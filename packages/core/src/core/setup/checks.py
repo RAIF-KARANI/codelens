@@ -126,17 +126,24 @@ def check_docker(run: Runner) -> list[Check]:
     return checks
 
 
-def check_node(run: Runner) -> Check:
-    # The webhook relay is `npx smee-client`.
-    ran = run(["npx", "--version"])
-    if ran.missing:
+def check_relay(smee_url: str | None, ours: set[str]) -> Check:
+    """GitHub's webhooks reach this machine through a smee.io channel, relayed by
+    the `smee` Compose service (`--profile relay`)."""
+    if not smee_url:
         return Check(
-            "Node (npx)",
+            "webhook relay",
             Status.WARN,
-            "not installed: needed for the webhook relay (smee)",
-            "install Node 22: https://nodejs.org",
+            "no SMEE_URL in .env: GitHub's events can't reach this machine",
+            "codelens setup (it creates a channel), or run your own tunnel",
         )
-    return Check("Node (npx)", Status.OK, f"npx {ran.out}")
+    if "smee" in ours:
+        return Check("webhook relay", Status.OK, f"relaying {smee_url}")
+    return Check(
+        "webhook relay",
+        Status.WARN,
+        f"{smee_url} set, but the relay isn't running",
+        "docker compose --profile relay up -d",
+    )
 
 
 # --- models and hardware
