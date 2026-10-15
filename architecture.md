@@ -89,7 +89,7 @@ and code and prompts never leave the machine (D20).
 | Demo mode: read-only, on Postgres alone | ✅ Phase 7 step 1 |
 | The open demo (no login) and demo-data export/import (`docs/demo.md`) | ✅ Phase 7 step 2a |
 | The public demo repo (`codelens-demo`), reviewed and exported | ✅ Phase 7 step 2b |
-| Hosting the demo (Vercel + Supabase, `codelens.raifkarani.in`) | Phase 7 step 3 (set up; the accounts are the user's) |
+| Hosting the demo: live at `https://codelens.raifkarani.in` (Vercel + Supabase, Mumbai; API through the transaction pooler, D118) | ✅ Phase 7 step 3 |
 | Hardening, README | Phase 7 steps 4–5 |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
