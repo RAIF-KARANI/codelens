@@ -91,7 +91,8 @@ and code and prompts never leave the machine (D20).
 | The public demo repo (`codelens-demo`), reviewed and exported | ✅ Phase 7 step 2b |
 | Hosting the demo: live at `https://codelens.raifkarani.in` (Vercel + Supabase, Mumbai; API through the transaction pooler, D118) | ✅ Phase 7 step 3 |
 | Installation allowlist and an hourly review cap per account (D119, D120) | ✅ Phase 7 step 4a |
-| Hardening (JSON logs, Ollama health, demo rate limits), README | Phase 7 steps 4b, 4c, 5 |
+| Structured logs (text or JSON, request and job ids) and `/health` checking Ollama (D121, D122) | ✅ Phase 7 step 4b |
+| Demo rate limits, README | Phase 7 steps 4c, 5 |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -927,7 +928,7 @@ FastAPI (`services/api`). `/health` is public; everything under `/api/v1` needs 
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/health` | DB + Redis probes, run concurrently, 2 s timeout each; 200 or 503. Only exception class names are exposed |
+| GET | `/health` | DB, Redis and Ollama probes (each only where used: a demo has no Redis or models; fake providers need no Ollama), run concurrently, 2 s timeout each. `ok` 200; `degraded` 200 when only Ollama fails or lacks a model; `unavailable` 503 when the DB or Redis does (D122). Only exception class names are exposed |
 | GET | `/api/v1/repos` | All repos, with status, last indexed SHA and last review time |
 | GET | `/api/v1/repos/{id}` | A repo + its latest index run (with stats) |
 | POST | `/api/v1/repos/{id}/index` | Queue index → embed; `202 {repo_id, status}` (local repos) |
@@ -1229,6 +1230,7 @@ Graph, Trace) and one evidence drawer that every tab can open.
 
 | Group | Settings (defaults) |
 |---|---|
+| Logging | `LOG_LEVEL` (`INFO`), `LOG_FORMAT` (`text` or `json`, D121) |
 | Infrastructure | `DATABASE_URL` (asyncpg, port 5433), `DATABASE_TRANSACTION_POOLER` (behind a transaction-mode pooler, D118), `REDIS_URL`, `EMBED_DIM` (1024, ≤ 2000), `LOG_LEVEL` |
 | Providers | `LLM_PROVIDER` / `EMBED_PROVIDER` (`ollama` \| `fake`), `OLLAMA_BASE_URL` |
 | LLM | `LLM_MODEL` (qwen3:8b), `LLM_NUM_CTX` (8192), `LLM_TEMPERATURE` (0.1), `LLM_SEED` (42), `LLM_MAX_OUTPUT_TOKENS`, `LLM_TIMEOUT_S` (300) |
@@ -1342,6 +1344,25 @@ There is no external tracing; the trace **is** the database (D27):
 
 The eval scorecards, and later the dashboard's trace page (Phase 6), read exactly these
 tables.
+
+**Logs (D121, `core/logs.py`).** The API, the workers and the hosted demo log through one
+setup, to stdout, in `LOG_FORMAT`:
+- `text` (default): `2026-10-15 09:00:00,587 INFO worker.tasks: …`, for a terminal or
+  `docker compose logs`;
+- `json`: one object per line, `{"ts", "level", "logger", "message", …}` plus every
+  `extra=` field, for a log service. The hosted demo's entrypoint defaults to it.
+
+Every line logged while handling a request carries its **`request_id`**, and every line
+logged inside a job carries **`task_id`** and **`task`** (a `ContextVar`, set by the API's
+middleware and by Celery's `task_prerun` signal). The API writes **one access line per
+request** (`api/middleware.py`, logger `api.access`): method, path, status,
+`duration_ms`, request id. That id is answered in `X-Request-ID`; a caller's own id is
+kept if it's plain (`[A-Za-z0-9._-]{1,64}`), so it can't forge log lines. It replaces
+uvicorn's access log; uvicorn's other lines go through the same handler. Passing
+`/health` probes aren't logged (compose sends one every 10 s), and the API silences
+`httpx`'s per-request lines (its only outgoing calls are those probes). Celery no longer
+configures logging itself (`setup_logging` signal), so `--loglevel` gives way to
+`LOG_LEVEL`.
 
 ### 13.3 Conventions that keep the async code correct
 

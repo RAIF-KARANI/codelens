@@ -1,5 +1,6 @@
 """FastAPI application entrypoint: `uvicorn api.main:app`."""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -7,10 +8,12 @@ from fastapi import FastAPI
 from redis.asyncio import Redis
 
 from api.errors import install_error_handlers
+from api.middleware import RequestLog
 from api.queue import CeleryJobQueue
 from api.routes import health, inspect, repos, reviews, webhooks
 from core.config import Settings, get_settings
 from core.db import create_engine, create_session_factory
+from core.logs import configure_logging
 
 
 @asynccontextmanager
@@ -46,7 +49,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # A factory lets tests build an app with their own settings, and gives one
     # obvious place to register routers.
     app = FastAPI(title="CodeLens API", version="0.1.0", lifespan=lifespan)
-    app.state.settings = settings or get_settings()
+    app.state.settings = settings = settings or get_settings()
+    configure_logging(settings.log_level, settings.log_format)
+    # The API's only outgoing HTTP is /health asking Ollama for its models, and
+    # compose probes /health every 10 s: httpx's line per request is noise here.
+    # (The workers keep it: there it shows each GitHub and model call.)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    app.add_middleware(RequestLog)
     install_error_handlers(app)
     app.include_router(health.router)
     app.include_router(repos.router)

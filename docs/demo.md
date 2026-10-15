@@ -174,7 +174,8 @@ calls `/health`, which keeps the free Supabase project from pausing after a week
 - `https://codelens.raifkarani.in` opens the repos without a sign-in, with the demo
   banner, and `RAIF-KARANI/codelens-demo` is the only repo.
 - A review's page, graph and trace work; the timeline replays.
-- `https://codelens-api-beta.vercel.app/health` is ok with `"redis": null`;
+- `https://codelens-api-beta.vercel.app/health` is ok with `"redis": null` and
+  `"ollama": null` (a demo uses neither);
   `https://codelens-api-beta.vercel.app/api/v1/repos` answers 401 (no token).
 - Its responses carry `X-Vercel-Id: bom1::bom1::…`: the second part is where the function
   ran. `bom1::iad1::…` means Washington, and every database round trip then crosses the
@@ -183,5 +184,7 @@ calls `/health`, which keeps the free Supabase project from pausing after a week
 **Live since 2026-10-15** (projects `codelens-api` and `codelens`, both Mumbai): all of
 the above checked on the live site, plus 6 bursts of 16 parallel API calls (a review
 page's calls, twice), 96/96 OK. If a page shows an error, the dashboard project's
-**Logs** say which call failed; `Error: HTTP 500` there is the API crashing, so look at
+**Logs** say which call failed. The API project logs JSON (its entrypoint sets
+`LOG_FORMAT=json`): one `api.access` line per request with its status, `duration_ms` and
+`request_id`, so its Logs view can filter by any of them; `Error: HTTP 500` there is the API crashing, so look at
 the API project's logs and Supabase's (**Logs → Pooler**).
