@@ -43,6 +43,9 @@ class Check:
     status: Status
     detail: str
     fix: str | None = None
+    # `codelens setup` takes care of it: the report then says so once,
+    # instead of listing each manual fix (seen in the fresh-clone rehearsal).
+    by_setup: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +138,7 @@ def check_relay(smee_url: str | None, ours: set[str]) -> Check:
             Status.WARN,
             "no SMEE_URL in .env: GitHub's events can't reach this machine",
             "codelens setup (it creates a channel), or run your own tunnel",
+            by_setup=True,
         )
     if "smee" in ours:
         return Check("webhook relay", Status.OK, f"relaying {smee_url}")
@@ -214,7 +218,7 @@ def check_gpu(run: Runner, *, system: str | None = None, machine: str | None = N
 def check_env_file(path: Path) -> Check:
     if path.exists():
         return Check(".env", Status.OK, str(path))
-    return Check(".env", Status.FAIL, "missing", "cp .env.example .env")
+    return Check(".env", Status.FAIL, "missing", "cp .env.example .env", by_setup=True)
 
 
 def check_github_settings(settings: Settings) -> list[Check]:
@@ -228,6 +232,7 @@ def check_github_settings(settings: Settings) -> list[Check]:
                 "GITHUB_APP_ID / GITHUB_WEBHOOK_SECRET not set",
                 "create your App: uv run python -m core.github register (docs/github-app.md §2), "
                 "then copy secrets/github-app.env into .env",
+                by_setup=True,
             )
         )
     elif not settings.github_app_private_key_path.exists():
@@ -252,6 +257,7 @@ def check_github_settings(settings: Settings) -> list[Check]:
                 Status.FAIL,
                 "GITHUB_ALLOWED_ACCOUNTS is empty, so no installation is acted on (D119)",
                 "add your GitHub login to GITHUB_ALLOWED_ACCOUNTS in .env",
+                by_setup=True,
             )
         )
     if not settings.api_jwt_secret.get_secret_value():
@@ -262,6 +268,7 @@ def check_github_settings(settings: Settings) -> list[Check]:
                 "not set: reviews work, but the dashboard can't call the API",
                 "set it to a long random value, e.g. the output of "
                 '`python -c "import secrets; print(secrets.token_urlsafe(48))"`',
+                by_setup=True,
             )
         )
     return checks
@@ -305,6 +312,7 @@ def check_stack(api_url: str, get: Fetcher) -> Check:
             Status.WARN,
             f"not running at {api_url}",
             "docker compose up --build -d",
+            by_setup=True,
         )
     status = body.get("status")
     if status == "ok":

@@ -184,6 +184,9 @@ def test_a_bare_machine_gets_an_ordered_to_do_list(
     assert statuses["Docker"].status is Status.FAIL
     assert "GitHub App" not in statuses  # not tried without settings
     assert "To do, in order:" in out and "1. Docker: install Docker Desktop" in out
+    # What setup fixes comes once, last: it needs Docker and Ollama first.
+    last = out.split("To do, in order:")[1].strip().splitlines()[-3]
+    assert "uv run codelens setup  (it takes care of: .env, GitHub App settings" in last
 
 
 def test_a_ready_machine_passes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
