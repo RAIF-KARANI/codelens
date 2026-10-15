@@ -179,3 +179,9 @@ calls `/health`, which keeps the free Supabase project from pausing after a week
 - Its responses carry `X-Vercel-Id: bom1::bom1::…`: the second part is where the function
   ran. `bom1::iad1::…` means Washington, and every database round trip then crosses the
   world (a new connection took 1.2 s instead of about 0.1 s).
+
+**Live since 2026-10-15** (projects `codelens-api` and `codelens`, both Mumbai): all of
+the above checked on the live site, plus 6 bursts of 16 parallel API calls (a review
+page's calls, twice), 96/96 OK. If a page shows an error, the dashboard project's
+**Logs** say which call failed; `Error: HTTP 500` there is the API crashing, so look at
+the API project's logs and Supabase's (**Logs → Pooler**).
