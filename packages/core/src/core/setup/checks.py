@@ -244,6 +244,19 @@ def check_github_settings(settings: Settings) -> list[Check]:
                 "run from the repo root, or fix GITHUB_APP_PRIVATE_KEY_PATH",
             )
         )
+    elif settings.github_app_private_key_path.is_absolute():
+        # The workers read it in their containers, where only the repo's
+        # secrets/ is mounted (/app/secrets).
+        checks.append(
+            Check(
+                "GitHub App settings",
+                Status.FAIL,
+                f"key path {settings.github_app_private_key_path} is absolute: "
+                "the workers' containers can't read it",
+                "set GITHUB_APP_PRIVATE_KEY_PATH=secrets/github-app.pem (setup repairs it)",
+                by_setup=True,
+            )
+        )
     else:
         checks.append(Check("GitHub App settings", Status.OK, f"App id {settings.github_app_id}"))
     if settings.allowed_accounts:

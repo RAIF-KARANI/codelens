@@ -114,8 +114,10 @@ def test_github_settings_fail_closed() -> None:
     assert empty["API_JWT_SECRET"].status is Status.WARN
 
 
-def test_github_settings_complete(tmp_path: Path) -> None:
-    key = tmp_path / "app.pem"
+def test_github_settings_complete(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A real setup names the key relative to the repo root (the containers mount secrets/).
+    monkeypatch.chdir(tmp_path)
+    key = Path("app.pem")
     key.write_text("key")
     s = settings(
         github_app_id=5,
@@ -189,8 +191,11 @@ def test_a_bare_machine_gets_an_ordered_to_do_list(
     assert "uv run codelens setup  (it takes care of: .env, GitHub App settings" in last
 
 
-def test_a_ready_machine_passes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    key = tmp_path / "app.pem"
+def test_a_ready_machine_passes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    key = Path("app.pem")
     key.write_text("key")
     env = tmp_path / ".env"
     env.write_text("SMEE_URL=https://smee.io/abc\n")
@@ -236,3 +241,13 @@ def test_relay_states() -> None:
     assert check_relay("https://smee.io/abc", {"smee"}).status is Status.OK
     stopped = check_relay("https://smee.io/abc", {"api"})
     assert (stopped.status, stopped.fix) == (Status.WARN, "docker compose --profile relay up -d")
+
+
+def test_an_absolute_key_path_fails_because_containers_cant_read_it(tmp_path: Path) -> None:
+    key = tmp_path / "app.pem"
+    key.write_text("key")
+    s = settings(
+        github_app_id=5, github_webhook_secret="w", github_app_private_key_path=key.resolve()
+    )
+    [app] = [c for c in check_github_settings(s) if c.name == "GitHub App settings"]
+    assert app.status is Status.FAIL and app.by_setup

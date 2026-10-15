@@ -120,6 +120,7 @@ def _github_app(root: Path, env: Path, tools: Tools) -> tuple[AppInfo | None, st
                     f"webhook relay: the App sends webhooks to {info.webhook_url or 'nowhere'}, "
                     "not smee.io; keep your own tunnel running"
                 )
+        _key_path_for_containers(root, env, tools)
         _allow(env, info.owner, tools)
         return info, None
 
@@ -131,8 +132,32 @@ def _github_app(root: Path, env: Path, tools: Tools) -> tuple[AppInfo | None, st
     saved = read_env(app_env)
     set_env(env, {key: saved[key] for key in APP_KEYS if key in saved})
     tools.say(f"GitHub App: created {creds.slug}; its settings are in .env")
+    _key_path_for_containers(root, env, tools)
     _allow(env, creds.owner, tools)
     return None, f"{creds.html_url}/installations/new"
+
+
+def _key_path_for_containers(root: Path, env: Path, tools: Tools) -> None:
+    """The workers read the App's key inside their containers, where the repo's
+    `secrets/` is mounted at `/app/secrets`, so `.env` must name it relative to
+    the repo root. The manifest flow writes the path it was given, which is
+    absolute when setup runs it: the fresh-clone rehearsal's first index jobs
+    failed on `C:/Users/.../secrets/github-app.pem`. This also repairs such a
+    path left by an earlier run."""
+    value = read_env(env).get("GITHUB_APP_PRIVATE_KEY_PATH", "")
+    path = Path(value)
+    if not value or not path.is_absolute():
+        return
+    try:
+        relative = path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        tools.say(
+            f"warning: the App's key is outside this checkout ({value}); the containers "
+            "can't read it: move it to secrets/ and set GITHUB_APP_PRIVATE_KEY_PATH"
+        )
+        return
+    set_env(env, {"GITHUB_APP_PRIVATE_KEY_PATH": relative})
+    tools.say(f"GitHub App key: {relative} (relative, so the containers can read it)")
 
 
 def _new_channel(env: Path, tools: Tools) -> str:
