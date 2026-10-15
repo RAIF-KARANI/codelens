@@ -139,10 +139,16 @@ in under a minute; on a CPU it takes a few minutes.
 
 ```bash
 git clone https://github.com/RAIF-KARANI/codelens && cd codelens
+uv sync
+uv run codelens doctor        # what this machine has, what's missing, and how to fix it
 cp .env.example .env
 ollama pull qwen3:8b && ollama pull qwen3-embedding:0.6b
-uv sync
 ```
+
+`codelens doctor` checks Git, Docker and Compose, Node, Ollama and both models, the GPU,
+`.env`, your App's settings and credentials (live, against GitHub), the ports and the
+running stack, then prints an ordered to-do list. It changes nothing; run it again at any
+point.
 
 GitHub delivers webhooks to a public URL; [smee.io](https://smee.io/new) relays them to
 your machine. Create a channel, then create **your own GitHub App** from this repo's
