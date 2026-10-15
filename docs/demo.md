@@ -176,7 +176,8 @@ calls `/health`, which keeps the free Supabase project from pausing after a week
 - A review's page, graph and trace work; the timeline replays.
 - `https://codelens-api-beta.vercel.app/health` is ok with `"redis": null` and
   `"ollama": null` (a demo uses neither);
-  `https://codelens-api-beta.vercel.app/api/v1/repos` answers 401 (no token).
+  `https://codelens-api-beta.vercel.app/api/v1/repos` without a token is refused at the
+  edge (`403`, `X-Vercel-Mitigated: deny`), see below; with a wrong token, our API says 401.
 - Its responses carry `X-Vercel-Id: bom1::bom1::…`: the second part is where the function
   ran. `bom1::iad1::…` means Washington, and every database round trip then crosses the
   world (a new connection took 1.2 s instead of about 0.1 s).
@@ -186,5 +187,33 @@ the above checked on the live site, plus 6 bursts of 16 parallel API calls (a re
 page's calls, twice), 96/96 OK. If a page shows an error, the dashboard project's
 **Logs** say which call failed. The API project logs JSON (its entrypoint sets
 `LOG_FORMAT=json`): one `api.access` line per request with its status, `duration_ms` and
-`request_id`, so its Logs view can filter by any of them; `Error: HTTP 500` there is the API crashing, so look at
-the API project's logs and Supabase's (**Logs → Pooler**).
+`request_id`, so its Logs view can filter by any of them. `Error: HTTP 500` in the
+dashboard's logs is the API crashing: look at the API project's logs and Supabase's
+(**Logs → Pooler**).
+
+### Abuse and cost (Phase 7 step 4c, D123)
+
+**What abuse can cost: no money, only downtime.** Vercel's Hobby plan has no billing:
+past a monthly limit, the feature pauses for up to 30 days. Supabase's free plan likewise
+restricts instead of charging. The tightest Hobby limits are 4 CPU-hours of function
+time and 1,000,000 function invocations a month, so a flood could take the demo down
+for the rest of the month. The defence is to stop floods before our code runs, with
+Vercel's firewall (on the free plan: one rate-limit rule and three custom rules per
+project), plus its DDoS mitigation, which is always on.
+
+| Project | Rule (Firewall → Configure → New Rule) | Why |
+|---|---|---|
+| `codelens` (dashboard) | **Rate limit visitors:** if Request Path does not start with `/_next/` → Rate Limit, fixed window 60 s, 100 requests, key IP, 429 | A visit to a repo, a review, its graph and its trace is 18 requests to our code (pages and prefetches) plus ~15 static files under `/_next/`, so 100 a minute never touches a person and caps a script at ~1.7 a second |
+| `codelens-api` | **Only the dashboard:** if Request Header `authorization` does not exist AND Request Path does not equal `/health` → Deny | Only the dashboard holds the token secret, so a tokenless call is never legitimate; refusing it at the edge costs no function time. `/health` stays open for the daily cron (which keeps Supabase awake) and for checks |
+
+Both are dashboard settings, not files: after recreating a project, add them again.
+
+**Checked 2026-10-15:** 110 parallel requests from one IP to `/repos`: 99 × 200, then
+429 (`X-Vercel-Mitigated: deny`) for the rest of the minute; the API without a token:
+403 at the edge, `/health` 200, a request with a token still reaches the API. Watch them
+work in each project's **Firewall** overview.
+
+**If it ever isn't enough:** the demo's data never changes between `publish_demo.py`
+runs, so its pages could be cached (prerendered, or `use cache` on the API calls in
+demo mode), making a visit cost almost no function time. Not built: the rules cover a
+portfolio demo's traffic.
