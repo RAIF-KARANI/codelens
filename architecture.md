@@ -2,7 +2,7 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-13: Phases 1–6 and Phase 7 steps 1–2b, with step 3's deployment setup.
+> follows. It describes `main` as of 2026-10-15: Phases 1–8 (the public demo, hardening, and running your own CodeLens).
 >
 > | File | Answers |
 > |---|---|
@@ -93,7 +93,10 @@ and code and prompts never leave the machine (D20).
 | Installation allowlist and an hourly review cap per account (D119, D120) | ✅ Phase 7 step 4a |
 | Structured logs (text or JSON, request and job ids) and `/health` checking Ollama (D121, D122) | ✅ Phase 7 step 4b |
 | The demo behind Vercel's firewall: a per-IP rate limit on the dashboard, tokenless API calls denied at the edge (D123) | ✅ Phase 7 step 4c |
-| README (demo, results and the evaluation story, how it works, run it yourself), screenshots, a demo video script | ✅ Phase 7 step 5 (the video itself: the user records it) |
+| README (demo, results and the evaluation story, how it works, run it yourself), screenshots, a demo video script | ✅ Phase 7 step 5; a 24 s launch video in the README (#45); the narrated walkthrough is optional |
+| `codelens doctor`: a machine's requirements checked, each with its fix (D125) | ✅ Phase 8 step 1 |
+| `codelens setup`: a fresh clone to a running stack with the user's own App; the webhook relay as a Compose service (D126) | ✅ Phase 8 step 2 |
+| A fresh-clone rehearsal (a review posted 37 s after a push) and `docs/run-your-own.md` | ✅ Phase 8 step 3 |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -116,7 +119,7 @@ flowchart TB
     end
     WEB -- "Bearer JWT (5 min)" --> API
     WEB -- "login: OAuth, /user, /user/installations" --> GH
-    GH(["GitHub"]) -- webhooks --> SMEE(["smee.io relay"]) -- "smee-client" --> API
+    GH(["GitHub"]) -- webhooks --> SMEE(["smee.io relay"]) -- "smee-client<br/>(the smee service)" --> API
     MIG --> PG
     API --> PG
     API -- enqueue --> RD
@@ -135,7 +138,7 @@ flowchart TB
 | **migrate** | Runs Alembic once, then exits; `api` and the workers wait for it | App code never runs against an old schema (D16) |
 | **web** | The dashboard (Next.js 16), run on the host with `pnpm dev` | Signs users in with GitHub and calls the API from its server only (§10.3) |
 | **api** | Thin HTTP layer: `/health`, `/api/v1/*`, `/webhooks/github` | No heavy work in requests; enqueues jobs by name (D91) |
-| **smee.io + `smee-client`** | Relays GitHub's webhooks to the laptop in development | `gh webhook forward` can't forward an App's webhook (D94); `docs/github-app.md` |
+| **smee.io + `smee-client`** | Relays GitHub's webhooks to the laptop: the `smee` Compose service (`--profile relay`, channel in `SMEE_URL`), or `npx smee-client` on the host | `gh webhook forward` can't forward an App's webhook (D94); the container removes Node from the host (D126); `docs/github-app.md` |
 | **worker** | Celery, queue `index`: parse and persist | Concurrency 2 |
 | **worker-gpu** | Celery, queue `gpu`: embedding and whole reviews | Concurrency 1, so two jobs never compete for VRAM (D88) |
 
@@ -1239,7 +1242,7 @@ Graph, Trace) and one evidence drawer that every tab can open.
 | Embedder | `EMBED_MODEL` (qwen3-embedding:0.6b), `EMBED_BATCH_SIZE` (32), `EMBED_MAX_TOKENS` (1024), `EMBED_NUM_CTX` (2048), `EMBED_QUERY_ON_CPU` (false), `EMBED_TIMEOUT_S` |
 | Pipeline | `PIPELINE_CONFIG` (`configs/pipeline/default.yaml`) |
 | API | `API_JWT_SECRET` (empty = refuse all; else ≥ 32 bytes), `DEMO_MODE` |
-| GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH` (`secrets/github-app.pem`), `GITHUB_WEBHOOK_SECRET` (empty = refuse every delivery), `GITHUB_ALLOWED_ACCOUNTS` (whose installations count; empty = nobody, D119), `GITHUB_REVIEWS_PER_HOUR` (per account, 10; 0 = no cap, D120), `GITHUB_API_URL`, `GITHUB_WEB_URL` (clone URLs) |
+| GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH` (`secrets/github-app.pem`), `GITHUB_WEBHOOK_SECRET` (empty = refuse every delivery), `GITHUB_ALLOWED_ACCOUNTS` (whose installations count; empty = nobody, D119), `GITHUB_REVIEWS_PER_HOUR` (per account, 10; 0 = no cap, D120), `GITHUB_API_URL`, `GITHUB_WEB_URL` (clone URLs); `SMEE_URL`, the relay's channel, read only by Compose (`smee` service) and `codelens setup`, not by the services |
 | Storage | `DATA_DIR` (`data`): bare mirrors in `DATA_DIR/repos/`. Compose mounts `./data` and `./secrets` (read-only) into the workers |
 
 Empty values count as unset (`env_ignore_empty`), so lines copied empty from

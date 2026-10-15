@@ -133,7 +133,7 @@ Every run, with its setup and caveats: [`evals/RESULTS.md`](evals/RESULTS.md).
   functions pinned next to the database, Supabase's transaction pooler for serverless
   connections, and rate limits at Vercel's edge. Reviews are made on the laptop and
   exported, since GPU hosting isn't free ([`docs/demo.md`](docs/demo.md)).
-- **Tested:** 330+ Python tests (unit and against real Postgres and Redis) and 65
+- **Tested:** 360+ Python tests (unit and against real Postgres and Redis) and 65
   dashboard tests, run in CI on every pull request.
 
 ## Run it on your own repos
@@ -199,6 +199,7 @@ docs/              runbooks
 | Document | What's in it |
 |---|---|
 | [`docs/run-your-own.md`](docs/run-your-own.md) | Running CodeLens on your own machine with your own App: the friend's guide |
+| [`docs/flow.md`](docs/flow.md) | The flows, in diagrams: a push becoming a review, the owner's side (laptop, demo, deploys), and running your own |
 | [`docs/development.md`](docs/development.md) | Running the stack, the CLIs, tests, migrations, the API |
 | [`architecture.md`](architecture.md) | How every component works, as built |
 | [`planning.md`](planning.md) | The plan, every decision with its alternatives and reasons (D1–D126) |

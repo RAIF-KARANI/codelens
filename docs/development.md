@@ -43,6 +43,7 @@ This starts:
 | `api`      | http://localhost:8000   | `/health`, `/docs`; hot-reloads        |
 | `worker`   | n/a                     | Celery, `index` queue (2 at a time) |
 | `worker-gpu` | n/a                   | Celery, `gpu` queue: embedding and reviews, one at a time; `docker compose restart worker worker-gpu` after edits |
+| `smee`     | n/a                     | Opt-in (`docker compose --profile relay up -d`): relays GitHub's webhooks from `SMEE_URL` to the API |
 
 Check it:
 
