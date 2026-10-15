@@ -137,10 +137,10 @@ token and one signed with the laptop's secret (401).
 | Root Directory | `deploy/api` (`deploy/api/README.md`) | `apps/web` |
 | Framework | FastAPI (detected) | Next.js (detected) |
 | `DEMO_MODE` | `true` | `true` |
-| `DATABASE_URL` | the value of `DEMO_DATABASE_URL` | — |
-| `API_URL` | — | `https://codelens-api.vercel.app` (the API project's address) |
+| `DATABASE_URL` | the value of `DEMO_DATABASE_URL`: the **Session pooler** address (`postgres.<ref>@aws-0-…pooler.supabase.com:5432`), with `postgresql+asyncpg://` and `?ssl=require`. Not the direct `db.<ref>.supabase.co` one: Vercel has no IPv6, so it times out | — |
+| `API_URL` | — | the API project's production address, without a trailing slash: ours is `https://codelens-api-beta.vercel.app` (`codelens-api.vercel.app` belongs to someone else) |
 | `API_JWT_SECRET` | the value of `DEMO_API_JWT_SECRET` | the same value |
-| Function region | Mumbai (`bom1`) | Mumbai (`bom1`) |
+| Function region | Mumbai (`bom1`), set by `deploy/api/vercel.json` | Mumbai (`bom1`), set by `apps/web/vercel.json` |
 
 Every push to `main` redeploys both. The API project's daily cron (`deploy/api/vercel.json`)
 calls `/health`, which keeps the free Supabase project from pausing after a week idle.
@@ -159,5 +159,8 @@ calls `/health`, which keeps the free Supabase project from pausing after a week
 - `https://codelens.raifkarani.in` opens the repos without a sign-in, with the demo
   banner, and `RAIF-KARANI/codelens-demo` is the only repo.
 - A review's page, graph and trace work; the timeline replays.
-- `https://codelens-api.vercel.app/health` is ok with `"redis": null`;
-  `https://codelens-api.vercel.app/api/v1/repos` answers 401 (no token).
+- `https://codelens-api-beta.vercel.app/health` is ok with `"redis": null`;
+  `https://codelens-api-beta.vercel.app/api/v1/repos` answers 401 (no token).
+- Its responses carry `X-Vercel-Id: bom1::bom1::…`: the second part is where the function
+  ran. `bom1::iad1::…` means Washington, and every database round trip then crosses the
+  world (a new connection took 1.2 s instead of about 0.1 s).
