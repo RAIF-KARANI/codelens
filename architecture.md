@@ -92,7 +92,8 @@ and code and prompts never leave the machine (D20).
 | Hosting the demo: live at `https://codelens.raifkarani.in` (Vercel + Supabase, Mumbai; API through the transaction pooler, D118) | ✅ Phase 7 step 3 |
 | Installation allowlist and an hourly review cap per account (D119, D120) | ✅ Phase 7 step 4a |
 | Structured logs (text or JSON, request and job ids) and `/health` checking Ollama (D121, D122) | ✅ Phase 7 step 4b |
-| Demo rate limits, README | Phase 7 steps 4c, 5 |
+| The demo behind Vercel's firewall: a per-IP rate limit on the dashboard, tokenless API calls denied at the edge (D123) | ✅ Phase 7 step 4c |
+| README, demo video | Phase 7 step 5 |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -1322,6 +1323,7 @@ rejected: caller tags, split diffs, thinking at 8k and 16k, and a verification p
 | Forged API calls | HS256 JWT with a pinned algorithm, required `exp` and `sub`, a minimum key length, and fail-closed when unconfigured |
 | Dashboard sessions | Signed httpOnly cookie, its own secret, algorithm pinned, 8 h; OAuth `state` checked in constant time; post-login redirects limited to local paths; the GitHub user token is never stored; API tokens are minted on the server per call, and the browser reaches the API's event stream and code nodes only through session-checked route handlers (§10.3, D113) |
 | Forged or replayed webhooks | HMAC-SHA256 of the raw body under the webhook secret, compared in constant time, before parsing; fail-closed without a secret; deliveries deduplicated by id (D95, D97) |
+| Floods against the public demo | Vercel's firewall, before any function runs: 100 requests a minute per IP on the dashboard (static files excluded), tokenless API calls denied except `/health`; DDoS mitigation always on. The free plans can't bill, only pause (D123, `docs/demo.md` §5) |
 | Strangers using the laptop's GPU | Installations by accounts outside `GITHUB_ALLOWED_ACCOUNTS` are ignored (empty = nobody), checked on every event; each account may start `GITHUB_REVIEWS_PER_HOUR` reviews an hour (D119, D120) |
 | GitHub credentials | The App's key and webhook secret come from the manifest flow straight into gitignored `secrets/` (0600 where supported), never printed; the callback needs a random `state`; installation tokens live in memory only (D93, D96) |
 | Leaking internals | `/health` and broker errors expose only exception class names; details go to the server log |
