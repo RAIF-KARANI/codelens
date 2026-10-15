@@ -133,7 +133,7 @@ Every run, with its setup and caveats: [`evals/RESULTS.md`](evals/RESULTS.md).
   functions pinned next to the database, Supabase's transaction pooler for serverless
   connections, and rate limits at Vercel's edge. Reviews are made on the laptop and
   exported, since GPU hosting isn't free ([`docs/demo.md`](docs/demo.md)).
-- **Tested:** 330+ Python tests (unit and against real Postgres and Redis) and 65
+- **Tested:** 360+ Python tests (unit and against real Postgres and Redis) and 65
   dashboard tests, run in CI on every pull request.
 
 ## Run it on your own repos
