@@ -4,12 +4,37 @@ celery -A worker.celery_app worker -Q index -c 2
 celery -A worker.celery_app worker -Q gpu -c 1
 """
 
-from celery import Celery
+from typing import Any
+
+from celery import Celery, Task, signals
 
 from core import jobs
 from core.config import get_settings
+from core.logs import configure_logging, log_context
 
 settings = get_settings()
+
+
+# Connecting to setup_logging tells Celery not to configure logging itself:
+# its lines then come out in the same format as the API's (D121), at
+# LOG_LEVEL (the CLI's --loglevel no longer applies).
+@signals.setup_logging.connect
+def _configure_logging(**_: Any) -> None:
+    configure_logging(settings.log_level, settings.log_format)
+
+
+# Each job's log lines carry its id and name, like a request's carry its id.
+# The task runs in the thread that sent these signals, so the context reaches
+# everything it logs, including inside its asyncio.run().
+@signals.task_prerun.connect
+def _enter_task(task_id: str, task: Task, **_: Any) -> None:
+    log_context.set({"task_id": task_id, "task": task.name})
+
+
+@signals.task_postrun.connect
+def _leave_task(**_: Any) -> None:
+    log_context.set(None)
+
 
 celery_app = Celery(
     "codelens",

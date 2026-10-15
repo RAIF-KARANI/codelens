@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     embed_dim: int = Field(default=1024, gt=0, le=2000)
 
     log_level: str = "INFO"
+    # "text" for people (a terminal, `docker compose logs`), "json" for a log
+    # service: one JSON object per line (core/logs.py, D121).
+    log_format: Literal["text", "json"] = "text"
 
     # --- model providers ("fake" = deterministic, offline; used by tests/CI)
     llm_provider: Literal["ollama", "fake"] = "ollama"
