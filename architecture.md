@@ -93,7 +93,7 @@ and code and prompts never leave the machine (D20).
 | Installation allowlist and an hourly review cap per account (D119, D120) | ✅ Phase 7 step 4a |
 | Structured logs (text or JSON, request and job ids) and `/health` checking Ollama (D121, D122) | ✅ Phase 7 step 4b |
 | The demo behind Vercel's firewall: a per-IP rate limit on the dashboard, tokenless API calls denied at the edge (D123) | ✅ Phase 7 step 4c |
-| README, demo video | Phase 7 step 5 |
+| README (demo, results and the evaluation story, how it works, run it yourself), screenshots, a demo video script | ✅ Phase 7 step 5 (the video itself: the user records it) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -1419,13 +1419,12 @@ latency with identical tokens, so latency is only compared between back-to-back 
 
 ## 15. Not built yet, and known gaps
 
-**Next, Phase 7 steps 2–5** (`planning.md` §9):
-- **Step 3:** hosting on Vercel (dashboard and the read-only API) and Supabase (Postgres)
-  (D116).
-- **Step 4:** rate limits, structured logs, health checks, and an installation
-  allowlist so the App can review a few chosen accounts' repos.
-- **Step 5:** the README's diagram, results table and evaluation story, "Run it on your
-  own repos"; a demo video.
+**Left in Phase 7:** recording the demo video (`docs/demo-video.md` is its script). The
+README (step 5) now leads with the demo, the results and how it works; the developer
+reference moved to `docs/development.md`.
+
+**Deferred (Q20):** a guided "run your own CodeLens" setup command, so someone else can
+review their repos on their own machine with their own App.
 
 **Later, as a separate upgrade:** CodeLens as a hosted service other people install on
 their own repos, with their reviews on the website (`docs/hosted-service.md`): hosted
