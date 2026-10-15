@@ -8,21 +8,28 @@ before its body is even parsed.
 
 `apply_event` only writes rows and says which jobs to queue; it never does
 slow work itself (GitHub gives a delivery 10 seconds).
+
+Who it works for is a `Policy`: only installations by allowed accounts are
+mirrored, indexed and reviewed (D119), and each account may start a limited
+number of reviews per hour (D120). The reviews run on one machine's GPU.
 """
 
 import hashlib
 import hmac
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Literal
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import ColumnElement, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from core.db.models import Installation, Repo, Review
 from core.enums import RepoSource, ReviewSource, ReviewStatus
+
+logger = logging.getLogger(__name__)
 
 SIGNATURE_HEADER = "X-Hub-Signature-256"
 EVENT_HEADER = "X-GitHub-Event"
@@ -47,6 +54,18 @@ def verify_signature(secret: str, body: bytes, header: str | None) -> bool:
 
 
 @dataclass(frozen=True, slots=True)
+class Policy:
+    """Whose installations CodeLens acts on, and how much it reviews for each."""
+
+    # Lowercased GitHub logins (users or organisations). Empty: nobody.
+    allowed_accounts: frozenset[str]
+    reviews_per_hour: int = 0  # per account; 0 means no cap
+
+    def allows(self, login: str) -> bool:
+        return login.lower() in self.allowed_accounts
+
+
+@dataclass(frozen=True, slots=True)
 class QueuedReview:
     review_id: int
     base_sha: str  # the PR's base branch tip; the diff is against its merge-base
@@ -66,7 +85,11 @@ REVIEWED_ACTIONS = frozenset({"opened", "synchronize", "reopened", "ready_for_re
 
 
 async def apply_event(
-    conn: AsyncConnection, event: str, action: str | None, payload: dict[str, Any]
+    conn: AsyncConnection,
+    event: str,
+    action: str | None,
+    payload: dict[str, Any],
+    policy: Policy,
 ) -> EventOutcome:
     """Apply one event to the database; return what to queue for it.
 
@@ -78,9 +101,21 @@ async def apply_event(
     | `push` to a default branch | the default branch | re-index that repo |
     | `pull_request` with new code | a queued review (older queued ones superseded) | review |
 
-    Everything else (pushes to other branches, drafts, ...) is ignored.
+    Everything else (pushes to other branches, drafts, ...) is ignored, and so
+    is every event from an installation by an account the policy doesn't
+    allow, except `deleted`: removing what an uninstall leaves is always safe.
     """
     if event in ("installation", "installation_repositories") and "installation" in payload:
+        account = payload["installation"]["account"]["login"]
+        if action != "deleted" and not policy.allows(account):
+            # A warning, not an error: it is what the allowlist is for. It
+            # also tells the owner who forgot to list themselves.
+            logger.warning(
+                "installation %s by %s ignored: not in GITHUB_ALLOWED_ACCOUNTS",
+                payload["installation"]["id"],
+                account,
+            )
+            return EventOutcome("ignored")
         installation_id = await apply_installation_event(conn, action, payload)
         if installation_id is None:  # uninstalled
             return EventOutcome("processed")
@@ -95,10 +130,22 @@ async def apply_event(
         ids = await attach_repositories(conn, installation_id, added or [])
         return EventOutcome("processed", ids if wants_index else [])
     if event == "push":
-        return await _push(conn, payload)
+        return await _push(conn, payload, policy)
     if event == "pull_request":
-        return await _pull_request(conn, action, payload)
+        return await _pull_request(conn, action, payload, policy)
     return EventOutcome("ignored")
+
+
+def _covered_for(policy: Policy, github_repo_id: object) -> list[ColumnElement[bool]]:
+    """WHERE clauses for a repo the App covers for an allowed account. Push
+    and pull request payloads name only the installation's id, so the account
+    comes from the mirrored installation. Checking it on every event means
+    removing an account from the list takes effect at once."""
+    return [
+        repos_t.c.github_id == github_repo_id,
+        repos_t.c.installation_id == installations_t.c.id,
+        func.lower(installations_t.c.account_login).in_(policy.allowed_accounts),
+    ]
 
 
 async def apply_installation_event(
@@ -180,7 +227,7 @@ async def detach_repositories(conn: AsyncConnection, github_ids: Sequence[int]) 
         )
 
 
-async def _push(conn: AsyncConnection, payload: dict[str, Any]) -> EventOutcome:
+async def _push(conn: AsyncConnection, payload: dict[str, Any], policy: Policy) -> EventOutcome:
     repository = payload.get("repository") or {}
     default_branch = repository.get("default_branch")
     # Only the default branch is indexed: PR branches are read straight from
@@ -189,7 +236,7 @@ async def _push(conn: AsyncConnection, payload: dict[str, Any]) -> EventOutcome:
         return EventOutcome("ignored")
     repo_id = await conn.scalar(
         update(repos_t)
-        .where(repos_t.c.github_id == repository.get("id"), repos_t.c.installation_id.is_not(None))
+        .where(*_covered_for(policy, repository.get("id")))
         .values(default_branch=default_branch, updated_at=func.now())
         .returning(repos_t.c.id)
     )
@@ -199,19 +246,21 @@ async def _push(conn: AsyncConnection, payload: dict[str, Any]) -> EventOutcome:
 
 
 async def _pull_request(
-    conn: AsyncConnection, action: str | None, payload: dict[str, Any]
+    conn: AsyncConnection, action: str | None, payload: dict[str, Any], policy: Policy
 ) -> EventOutcome:
     pr = payload.get("pull_request") or {}
     if action not in REVIEWED_ACTIONS or pr.get("draft") or pr.get("state") != "open":
         return EventOutcome("ignored")
-    repo_id = await conn.scalar(
-        select(repos_t.c.id).where(
-            repos_t.c.github_id == (payload.get("repository") or {}).get("id"),
-            repos_t.c.installation_id.is_not(None),
+    covered = (
+        await conn.execute(
+            select(repos_t.c.id, installations_t.c.account_login).where(
+                *_covered_for(policy, (payload.get("repository") or {}).get("id"))
+            )
         )
-    )
-    if repo_id is None:
+    ).first()
+    if covered is None:
         return EventOutcome("ignored")
+    repo_id, account = covered
     number, head_sha = pr["number"], pr["head"]["sha"]
 
     same_pr = (reviews_t.c.repo_id == repo_id) & (reviews_t.c.pr_number == number)
@@ -228,6 +277,36 @@ async def _pull_request(
     )
     if done is not None:
         return EventOutcome("ignored")
+    if policy.reviews_per_hour:
+        started = await _reviews_started(conn, account, besides=same_pr)
+        if started >= policy.reviews_per_hour:
+            # Recorded, not queued: the dashboard says why. A failed review
+            # may be retried, so the next push, or reopening the PR, reviews
+            # it once the hour has room again.
+            await conn.execute(
+                insert(reviews_t).values(
+                    repo_id=repo_id,
+                    source=ReviewSource.GITHUB,
+                    pr_number=number,
+                    title=pr.get("title"),
+                    head_sha=head_sha,
+                    status=ReviewStatus.FAILED,
+                    finished_at=func.now(),
+                    error=(
+                        f"not reviewed: {account} started {started} reviews in the last hour,"
+                        f" the limit (GITHUB_REVIEWS_PER_HOUR={policy.reviews_per_hour});"
+                        " push again or reopen the PR later to review this commit"
+                    ),
+                )
+            )
+            full_name = (payload.get("repository") or {}).get("full_name")
+            logger.warning(
+                "review of %s#%s not queued: %s is over its hourly limit",
+                full_name,
+                number,
+                account,
+            )
+            return EventOutcome("processed")
     # A newer push makes queued reviews of older heads pointless (D103).
     # Running ones are left to finish; the worker won't post them (stale).
     await conn.execute(
@@ -253,6 +332,31 @@ async def _pull_request(
     )
     queued = QueuedReview(review_id, pr["base"]["sha"], pr.get("title"))
     return EventOutcome("processed", reviews=[queued])
+
+
+async def _reviews_started(
+    conn: AsyncConnection, account: str, *, besides: ColumnElement[bool]
+) -> int:
+    """Reviews of `account`'s repos that started in the last hour or are
+    waiting to: what uses, or will use, the GPU. Reviews refused for the
+    limit and superseded ones never start, so they don't count; neither do
+    the PR's own queued reviews (`besides`), which the new one supersedes."""
+    return await conn.scalar(
+        select(func.count())
+        .select_from(
+            reviews_t.join(repos_t, reviews_t.c.repo_id == repos_t.c.id).join(
+                installations_t, repos_t.c.installation_id == installations_t.c.id
+            )
+        )
+        .where(
+            func.lower(installations_t.c.account_login) == account.lower(),
+            or_(
+                reviews_t.c.status == ReviewStatus.QUEUED,
+                reviews_t.c.started_at > func.now() - timedelta(hours=1),
+            ),
+            ~(besides & (reviews_t.c.status == ReviewStatus.QUEUED)),
+        )
+    )
 
 
 def _timestamp(value: str | None) -> datetime | None:

@@ -90,7 +90,8 @@ and code and prompts never leave the machine (D20).
 | The open demo (no login) and demo-data export/import (`docs/demo.md`) | ✅ Phase 7 step 2a |
 | The public demo repo (`codelens-demo`), reviewed and exported | ✅ Phase 7 step 2b |
 | Hosting the demo: live at `https://codelens.raifkarani.in` (Vercel + Supabase, Mumbai; API through the transaction pooler, D118) | ✅ Phase 7 step 3 |
-| Hardening, README | Phase 7 steps 4–5 |
+| Installation allowlist and an hourly review cap per account (D119, D120) | ✅ Phase 7 step 4a |
+| Hardening (JSON logs, Ollama health, demo rate limits), README | Phase 7 steps 4b, 4c, 5 |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -1017,7 +1018,9 @@ flowchart TB
     SIG -- no --> R401["401 invalid_signature<br/>(body never parsed)"]
     SIG -- yes --> CLAIM["upsert webhook_deliveries<br/>by X-GitHub-Delivery<br/>where processed_at IS NULL"]
     CLAIM -- "already processed" --> DUP["202 duplicate"]
-    CLAIM -- claimed --> EV{"event"}
+    CLAIM -- claimed --> ALLOW{"account in<br/>GITHUB_ALLOWED_ACCOUNTS?<br/>(or an uninstall)"}
+    ALLOW -- no --> IGN
+    ALLOW -- yes --> EV{"event"}
     EV -- "installation,<br/>installation_repositories" --> INST["upsert installation;<br/>attach added repos, detach removed"]
     EV -- "push to the<br/>default branch" --> PUSH["note the default branch"]
     EV -- "anything else" --> IGN["recorded only"]
@@ -1038,6 +1041,17 @@ flowchart TB
 | `push` to the default branch | the repo's default branch | re-index it |
 | `pull_request` opened / synchronize / reopened / ready_for_review (open, not draft) | a queued review of the head; older queued reviews of the PR superseded; a head already queued, running or reviewed is skipped | review (§9.4) |
 | everything else (other PR actions, issues, …) | recorded | none |
+
+**Whose events count (D119).** Only installations by accounts in `GITHUB_ALLOWED_ACCOUNTS`
+are acted on; unset means nobody (fail closed). `installation` events carry the account,
+so a stranger's install is recorded as `ignored` with nothing stored. Push and pull
+request payloads name only the installation id, so their repo lookup joins the mirrored
+installation and filters by the list: taking an account off the list stops its events
+at once. `deleted` is applied for anyone. **How much (D120):** a pull request review is
+queued only if the account has fewer than `GITHUB_REVIEWS_PER_HOUR` reviews started in
+the last hour or waiting (the PR's own queued ones, which it supersedes, don't count);
+otherwise it's inserted as `failed` with the reason and no job, and since a failed head
+may be retried, the next push or reopen reviews it.
 
 Only a *handled* delivery counts as seen (D95), and the three steps run in order (D98).
 A broker outage at step 2 leaves the delivery unprocessed, so "Redeliver" in the App's
@@ -1221,7 +1235,7 @@ Graph, Trace) and one evidence drawer that every tab can open.
 | Embedder | `EMBED_MODEL` (qwen3-embedding:0.6b), `EMBED_BATCH_SIZE` (32), `EMBED_MAX_TOKENS` (1024), `EMBED_NUM_CTX` (2048), `EMBED_QUERY_ON_CPU` (false), `EMBED_TIMEOUT_S` |
 | Pipeline | `PIPELINE_CONFIG` (`configs/pipeline/default.yaml`) |
 | API | `API_JWT_SECRET` (empty = refuse all; else ≥ 32 bytes), `DEMO_MODE` |
-| GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH` (`secrets/github-app.pem`), `GITHUB_WEBHOOK_SECRET` (empty = refuse every delivery), `GITHUB_API_URL`, `GITHUB_WEB_URL` (clone URLs) |
+| GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH` (`secrets/github-app.pem`), `GITHUB_WEBHOOK_SECRET` (empty = refuse every delivery), `GITHUB_ALLOWED_ACCOUNTS` (whose installations count; empty = nobody, D119), `GITHUB_REVIEWS_PER_HOUR` (per account, 10; 0 = no cap, D120), `GITHUB_API_URL`, `GITHUB_WEB_URL` (clone URLs) |
 | Storage | `DATA_DIR` (`data`): bare mirrors in `DATA_DIR/repos/`. Compose mounts `./data` and `./secrets` (read-only) into the workers |
 
 Empty values count as unset (`env_ignore_empty`), so lines copied empty from
@@ -1306,6 +1320,7 @@ rejected: caller tags, split diffs, thinking at 8k and 16k, and a verification p
 | Forged API calls | HS256 JWT with a pinned algorithm, required `exp` and `sub`, a minimum key length, and fail-closed when unconfigured |
 | Dashboard sessions | Signed httpOnly cookie, its own secret, algorithm pinned, 8 h; OAuth `state` checked in constant time; post-login redirects limited to local paths; the GitHub user token is never stored; API tokens are minted on the server per call, and the browser reaches the API's event stream and code nodes only through session-checked route handlers (§10.3, D113) |
 | Forged or replayed webhooks | HMAC-SHA256 of the raw body under the webhook secret, compared in constant time, before parsing; fail-closed without a secret; deliveries deduplicated by id (D95, D97) |
+| Strangers using the laptop's GPU | Installations by accounts outside `GITHUB_ALLOWED_ACCOUNTS` are ignored (empty = nobody), checked on every event; each account may start `GITHUB_REVIEWS_PER_HOUR` reviews an hour (D119, D120) |
 | GitHub credentials | The App's key and webhook secret come from the manifest flow straight into gitignored `secrets/` (0600 where supported), never printed; the callback needs a random `state`; installation tokens live in memory only (D93, D96) |
 | Leaking internals | `/health` and broker errors expose only exception class names; details go to the server log |
 | Secrets | `.env` and `secrets/` are gitignored; `SecretStr` for the JWT key; pre-commit `detect-private-key` |

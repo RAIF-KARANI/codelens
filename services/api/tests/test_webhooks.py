@@ -353,14 +353,15 @@ def pr_event(
     draft: bool = False,
     state: str = "open",
     repo_github_id: int = 1,
+    number: int = 7,
 ) -> dict[str, Any]:
     return {
         "action": action,
-        "number": 7,
+        "number": number,
         "installation": {"id": 99},
         "repository": repo_payload(repo_github_id, "octo/api"),
         "pull_request": {
-            "number": 7,
+            "number": number,
             "title": "Make @admin happy",
             "state": state,
             "draft": draft,
@@ -441,3 +442,138 @@ def test_a_head_is_reviewed_once_and_newer_pushes_supersede(
     assert [(r.head_sha[0], r.status) for r in rows] == [("a", "superseded"), ("c", "queued")]
     assert "superseded by a push of ccccccc" in rows[0].error
     assert [job[0] for job in queue.jobs] == ["review", "review"]
+
+
+# --- whose installations, and how much (Phase 7 step 4a: D119, D120)
+
+
+def allowing(settings: Settings, accounts: str, **overrides: object) -> Settings:
+    return settings.model_copy(update={"github_allowed_accounts": accounts, **overrides})
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("accounts", ["someone-else", ""], ids=["not-listed", "unset"])
+def test_installations_by_other_accounts_are_ignored(
+    settings: Settings, sql: Sql, accounts: str
+) -> None:
+    # Unset fails closed: nobody, not everybody.
+    secret = settings.github_webhook_secret.get_secret_value()
+    payload = {**installation("created"), "repositories": [repo_payload(1, "octo/api")]}
+    queue = RecordingQueue()
+    with client(allowing(settings, accounts), queue) as c:
+        response = deliver(c, secret, "installation", payload)
+
+    assert response.json()["status"] == "ignored"
+    assert sql("SELECT id FROM installations") == []
+    assert sql("SELECT id FROM repos") == []
+    assert queue.jobs == []
+    # Still logged as delivered, so GitHub's redelivery doesn't repeat it.
+    assert sql("SELECT processed_at FROM webhook_deliveries")[0].processed_at is not None
+
+
+@pytest.mark.integration
+def test_accounts_match_whatever_the_case(settings: Settings, sql: Sql) -> None:
+    secret = settings.github_webhook_secret.get_secret_value()
+    with client(allowing(settings, " Someone , OCTO ")) as c:
+        response = deliver(c, secret, "installation", installation("created"))
+    assert response.json()["status"] == "processed"
+    assert len(sql("SELECT id FROM installations")) == 1
+
+
+@pytest.mark.integration
+def test_an_account_taken_off_the_list_stops_at_once(
+    settings: Settings, sql: Sql, installed: str
+) -> None:
+    # octo/api was installed while octo was listed; now the list moves on.
+    push = {
+        "ref": "refs/heads/main",
+        "installation": {"id": 99},
+        "repository": {**repo_payload(1, "octo/api"), "default_branch": "main"},
+    }
+    queue = RecordingQueue()
+    with client(allowing(settings, "someone-else"), queue) as c:
+        pr = deliver(c, installed, "pull_request", pr_event("opened"), delivery="pr")
+        pushed = deliver(c, installed, "push", push, delivery="push")
+        suspended = deliver(
+            c,
+            installed,
+            "installation",
+            installation("suspend", suspended_at="2026-10-15T09:00:00Z"),
+            delivery="suspend",
+        )
+        uninstalled = deliver(c, installed, "installation", installation("deleted"), delivery="del")
+
+    assert [r.json()["status"] for r in (pr, pushed, suspended)] == ["ignored"] * 3
+    assert queue.jobs == []
+    assert sql("SELECT id FROM reviews") == []
+    # An uninstall is still mirrored: dropping what it leaves is always safe.
+    assert uninstalled.json()["status"] == "processed"
+    assert sql("SELECT id FROM installations") == []
+
+
+@pytest.mark.integration
+def test_reviews_over_the_hourly_limit_are_recorded_not_queued(
+    settings: Settings, sql: Sql, installed: str
+) -> None:
+    queue = RecordingQueue()
+    with client(allowing(settings, "octo", github_reviews_per_hour=2), queue) as c:
+        for n in (1, 2, 3):
+            deliver(c, installed, "pull_request", pr_event("opened", number=n), delivery=f"pr{n}")
+
+    rows = sql("SELECT pr_number, status, error, finished_at FROM reviews ORDER BY pr_number")
+    assert [(r.pr_number, r.status) for r in rows] == [(1, "queued"), (2, "queued"), (3, "failed")]
+    assert "octo started 2 reviews in the last hour" in rows[2].error
+    assert "GITHUB_REVIEWS_PER_HOUR=2" in rows[2].error
+    assert rows[2].finished_at is not None
+    assert [job[0] for job in queue.jobs] == ["review", "review"]
+
+
+@pytest.mark.integration
+def test_a_newer_push_to_the_same_pr_is_not_held_back_by_the_one_it_replaces(
+    settings: Settings, sql: Sql, installed: str
+) -> None:
+    queue = RecordingQueue()
+    with client(allowing(settings, "octo", github_reviews_per_hour=1), queue) as c:
+        deliver(c, installed, "pull_request", pr_event("opened"), delivery="1")
+        newer = deliver(
+            c, installed, "pull_request", pr_event("synchronize", head="c" * 40), delivery="2"
+        )
+
+    assert newer.json()["status"] == "processed"
+    rows = sql("SELECT head_sha, status FROM reviews ORDER BY id")
+    assert [(r.head_sha[0], r.status) for r in rows] == [("a", "superseded"), ("c", "queued")]
+
+
+@pytest.mark.integration
+def test_a_held_back_commit_is_reviewed_once_the_hour_has_room(
+    settings: Settings, sql: Sql, installed: str
+) -> None:
+    capped = allowing(settings, "octo", github_reviews_per_hour=1)
+    queue = RecordingQueue()
+    with client(capped, queue) as c:
+        deliver(c, installed, "pull_request", pr_event("opened", number=1), delivery="1")
+        held = deliver(c, installed, "pull_request", pr_event("opened", number=2), delivery="2")
+        # PR 1's review ran two hours ago...
+        sql(
+            "UPDATE reviews SET status = 'completed', started_at = now() - interval '2 hours'"
+            " WHERE pr_number = 1"
+        )
+        # ...so reopening PR 2 (same commit) reviews it: a failed review may be retried.
+        retried = deliver(
+            c, installed, "pull_request", pr_event("reopened", number=2), delivery="3"
+        )
+
+    assert held.json()["status"] == "processed"
+    assert retried.json()["status"] == "processed"
+    rows = sql("SELECT status FROM reviews WHERE pr_number = 2 ORDER BY id")
+    assert [r.status for r in rows] == ["failed", "queued"]
+    assert [job[0] for job in queue.jobs] == ["review", "review"]
+
+
+@pytest.mark.integration
+def test_no_cap_when_the_limit_is_zero(settings: Settings, sql: Sql, installed: str) -> None:
+    queue = RecordingQueue()
+    with client(allowing(settings, "octo", github_reviews_per_hour=0), queue) as c:
+        for n in range(1, 13):
+            deliver(c, installed, "pull_request", pr_event("opened", number=n), delivery=f"{n}")
+    assert len(queue.jobs) == 12

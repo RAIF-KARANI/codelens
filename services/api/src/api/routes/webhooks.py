@@ -24,6 +24,7 @@ from core.github.webhooks import (
     DELIVERY_HEADER,
     EVENT_HEADER,
     SIGNATURE_HEADER,
+    Policy,
     apply_event,
     verify_signature,
 )
@@ -101,7 +102,8 @@ async def github_webhook(
     #    delivery stays unprocessed, so a redelivery queues them again; every
     #    job is idempotent);
     # 3. only then, mark the delivery processed.
-    outcome = await apply_event(conn, event, action, payload)
+    policy = Policy(settings.allowed_accounts, settings.github_reviews_per_hour)
+    outcome = await apply_event(conn, event, action, payload, policy)
     await session.commit()
     for repo_id in outcome.index:
         await queue.index_repo(repo_id)

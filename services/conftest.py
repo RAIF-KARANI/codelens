@@ -66,6 +66,7 @@ def settings(migrated_database_url: str) -> Settings:
         embed_provider="fake",
         api_jwt_secret=JWT_SECRET,
         github_webhook_secret=WEBHOOK_SECRET,
+        github_allowed_accounts="octo",  # the webhook tests' installing account
         api_admin_logins="tester",  # auth_headers' login: sees every repo (D111)
         pipeline_config=ROOT / "configs" / "pipeline" / "default.yaml",
     )

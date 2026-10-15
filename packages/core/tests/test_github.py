@@ -148,6 +148,7 @@ CONVERSION = {
     "webhook_secret": "whsec",
     "client_id": "Iv1.abc",
     "client_secret": "cs",
+    "owner": {"login": "octo", "type": "User"},
 }
 
 
@@ -172,6 +173,8 @@ def test_credentials_are_saved_for_env(tmp_path: Path) -> None:
     assert env["GITHUB_APP_ID"] == str(APP_ID)
     assert env["GITHUB_WEBHOOK_SECRET"] == "whsec"
     assert env["GITHUB_APP_PRIVATE_KEY_PATH"] == key_path.as_posix()
+    # The allowlist fails closed when unset, so the owner is listed from the start.
+    assert env["GITHUB_ALLOWED_ACCOUNTS"] == "octo"
 
 
 def test_registration_flow(tmp_path: Path) -> None:
