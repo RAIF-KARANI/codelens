@@ -18,7 +18,23 @@ from core.github.register import Registration
 REGISTER_TIMEOUT_S = 15 * 60
 
 
-def register(args: argparse.Namespace, settings: Settings) -> int:
+class RegistrationFailed(Exception):
+    pass
+
+
+def create_app(
+    settings: Settings,
+    *,
+    name: str,
+    webhook_url: str,
+    secrets_dir: Path,
+    org: str | None = None,
+    port: int = 8765,
+) -> tuple[AppCredentials, Path, Path]:
+    """Run the manifest flow in the user's browser; returns the saved credentials
+    and where they were written (the key, the env file). Also used by
+    `codelens setup`."""
+
     def convert(code: str) -> AppCredentials:
         async def go() -> AppCredentials:
             async with GitHubClient(settings.github_api_url) as gh:
@@ -27,12 +43,12 @@ def register(args: argparse.Namespace, settings: Settings) -> int:
         return asyncio.run(go())
 
     registration = Registration(
-        name=args.name,
-        webhook_url=args.webhook_url,
+        name=name,
+        webhook_url=webhook_url,
         convert=convert,
-        secrets_dir=args.secrets_dir,
-        org=args.org,
-        port=args.port,
+        secrets_dir=secrets_dir,
+        org=org,
+        port=port,
     )
     registration.start()
     print(f"Open {registration.url}/ to create the App (opening your browser) ...", flush=True)
@@ -40,12 +56,25 @@ def register(args: argparse.Namespace, settings: Settings) -> int:
     finished = registration.done.wait(REGISTER_TIMEOUT_S)
     registration.stop()
     if not finished:
-        print("error: timed out waiting for GitHub's redirect", file=sys.stderr)
-        return 1
+        raise RegistrationFailed("timed out waiting for GitHub's redirect")
     if registration.saved is None:
-        print(f"error: {registration.error}", file=sys.stderr)
+        raise RegistrationFailed(registration.error or "the App was not created")
+    return registration.saved
+
+
+def register(args: argparse.Namespace, settings: Settings) -> int:
+    try:
+        creds, key_path, env_path = create_app(
+            settings,
+            name=args.name,
+            webhook_url=args.webhook_url,
+            secrets_dir=args.secrets_dir,
+            org=args.org,
+            port=args.port,
+        )
+    except RegistrationFailed as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 1
-    creds, key_path, env_path = registration.saved
     print(
         f"\nCreated {creds.slug} (App id {creds.app_id}).\n"
         f"  private key  {key_path}\n"
