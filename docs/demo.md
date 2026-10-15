@@ -82,9 +82,12 @@ Vercel, the database on Supabase. Put the database and the API in the **same reg
 
 1. Create a project (e.g. `codelens-demo`), region **South Asia (Mumbai)**. Keep the
    database password in your password manager.
-2. **Connect** → **Session pooler** (port 5432; the direct address is IPv6-only, which
-   Vercel can't reach). Turn its URI into an asyncpg URL:
+2. **Connect** → **Session pooler** (port 5432; the direct address
+   `db.<ref>.supabase.co` is IPv6-only, which Vercel can't reach). Turn its URI into an
+   asyncpg URL; note the user is `postgres.<ref>`, not `postgres`:
    `postgresql+asyncpg://postgres.<ref>:<password>@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?ssl=require`
+   (for the demo project `yisrqwbbadkcdnyttisl`, `aws-0-ap-south-1` answers;
+   `aws-1-ap-south-1` says the tenant doesn't exist).
 3. Put it in `.env.demo` at the repo root (gitignored), next to the demo's own token
    secret:
 
@@ -99,6 +102,32 @@ Vercel, the database on Supabase. Put the database and the API in the **same reg
    ```bash
    python scripts/publish_demo.py
    ```
+
+**Row-level security.** Supabase also serves every `public` table through its own REST
+API, to anyone holding the project's public (anon) key. New Supabase projects switch
+row-level security on for every new table, and with no policies that API can read and
+write nothing, while our API, connecting as the tables' owner, is unaffected. Check after
+loading, in Supabase's SQL editor:
+
+```sql
+select relname, relrowsecurity from pg_class
+where relnamespace = 'public'::regnamespace and relkind = 'r';  -- all true
+select count(*) from pg_policies where schemaname = 'public';      -- 0
+```
+
+If a table shows `false`: `alter table <name> enable row level security;`.
+
+**Changing the database password** (do it whenever it may have leaked): reset it in
+Supabase (**Settings → Database**), then put the new one in `.env.demo`'s
+`DEMO_DATABASE_URL` (and `SUPABASE_DIRECT_URL`, if kept) and in the API project's
+`DATABASE_URL` on Vercel, and redeploy that project.
+
+**Done on 2026-10-15:** the project `codelens-demo` (`yisrqwbbadkcdnyttisl`, Mumbai,
+Postgres 17) is migrated to `cd53acf29082` and holds `RAIF-KARANI/codelens-demo` only
+(3 reviews, 5 findings); row-level security on for all 14 tables, no policies. Run
+locally against it, `deploy/api`'s `main:app` served `/health`, the repos, a review, its
+diff, trace, graph and events (0.4–0.9 s per call from the laptop), refused a missing
+token and one signed with the laptop's secret (401).
 
 ### Vercel: two projects from this repository
 
