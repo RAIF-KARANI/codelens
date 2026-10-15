@@ -31,6 +31,12 @@ def test_jwt_secret_is_empty_or_at_least_32_bytes(monkeypatch: pytest.MonkeyPatc
         Settings(_env_file=None)
 
 
+def test_allowed_accounts_are_a_case_insensitive_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert Settings(_env_file=None).allowed_accounts == frozenset()  # unset: nobody
+    monkeypatch.setenv("GITHUB_ALLOWED_ACCOUNTS", " RAIF-KARANI, a-friend ,,")
+    assert Settings(_env_file=None).allowed_accounts == {"raif-karani", "a-friend"}
+
+
 def test_empty_variables_mean_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     # As in .env.example: `GITHUB_APP_ID=` must not fail to parse as a number.
     monkeypatch.setenv("GITHUB_APP_ID", "")

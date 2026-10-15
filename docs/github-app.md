@@ -50,8 +50,8 @@ uv run python -m core.github register --name "CodeLens (your-login)" --webhook-u
   gitignored `secrets/` folder:
   - `secrets/github-app.pem`: the App's private key;
   - `secrets/github-app.env`: `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH`,
-    `GITHUB_WEBHOOK_SECRET`, plus an OAuth client id and secret for the Phase 6
-    dashboard.
+    `GITHUB_WEBHOOK_SECRET`, `GITHUB_ALLOWED_ACCOUNTS` (you, the App's owner; see §6),
+    plus an OAuth client id and secret for the Phase 6 dashboard.
 - **App names are global on GitHub,** hence your login in the name. Add `--org my-org`
   to create the App under an organisation.
 
@@ -112,6 +112,37 @@ and secret are the `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` from `.env`, an
 authorize the App; you then see the repos of every installation you can access. Logins
 in `API_ADMIN_LOGINS` also see local and eval repos.
 
+## 6. Let a friend use it on their repos (D119, D120)
+
+The App is created **"Only on this account"**, so nobody else can install it. Opening it
+to someone (Phase 7 step 4a) is safe because CodeLens only acts on installations by the
+accounts in **`GITHUB_ALLOWED_ACCOUNTS`**:
+
+1. **List the accounts** in `.env`, comma-separated GitHub logins (users or
+   organisations, any case), yourself included:
+   `GITHUB_ALLOWED_ACCOUNTS=your-login,friends-login`. Unset means **nobody**: it fails
+   closed like the secrets, so a missing line can never open your GPU to strangers.
+   Restart the API.
+2. **Open the App:** its settings page (`https://github.com/settings/apps/<slug>`) →
+   **Advanced** → **Make this GitHub App public** → confirm. ("Public" only means others
+   may install it; it gets no access to anything they don't grant.)
+3. **Send your friend the install link** (`https://github.com/apps/<slug>/installations/new`).
+   They choose **Only select repositories** and pick theirs. Their repos are indexed,
+   and their PRs reviewed, by your laptop while the API, workers and smee client run.
+   They see the reviews on their PRs; your local dashboard shows their repos to you if
+   you're in `API_ADMIN_LOGINS`.
+
+Anyone else who installs it is **ignored**: the delivery is logged as `ignored`, the
+API log says `installation … by … ignored: not in GITHUB_ALLOWED_ACCOUNTS`, and nothing
+is stored, indexed or reviewed. Taking an account off the list stops its pushes and PRs
+at the next event; its uninstall is still applied.
+
+**Review cap.** Each account may start **`GITHUB_REVIEWS_PER_HOUR`** reviews an hour
+(default 10; 0 = no cap). Reviews that ran or are waiting count; pushes that replace a
+queued review of the same PR don't add one. Over the cap, the review is recorded as
+**failed** with the reason (the dashboard shows it), not run; the next push, or
+reopening the PR, reviews that commit once the hour has room.
+
 ## What the webhook endpoint does (Phase 5 steps 2–3b)
 
 `POST /webhooks/github`:
@@ -124,7 +155,8 @@ in `API_ADMIN_LOGINS` also see local and eval repos.
 3. **Records the delivery** by its `X-GitHub-Delivery` id. A delivery already handled
    is answered `duplicate` and skipped; one that failed halfway is handled again (D95).
 4. **Mirrors `installation` events** (created, suspend, unsuspend, deleted,
-   new_permissions_accepted) into the `installations` table.
+   new_permissions_accepted) into the `installations` table, for accounts in
+   `GITHUB_ALLOWED_ACCOUNTS` only (§6); others are recorded as `ignored`.
 5. **Attaches repositories:** installing the App, or adding repos to an installation,
    creates a repo row for each and queues **index → embed**. The worker keeps a bare
    mirror of each repo in `data/repos/<id>.git` and indexes its default branch. Removed
@@ -157,6 +189,8 @@ On Windows without a global `uv`, run the commands with the repo's interpreter i
 |---|---|
 | Deliveries show **401** in GitHub's "Recent deliveries" | `GITHUB_WEBHOOK_SECRET` in `.env` doesn't match the App's secret (restart the API after editing `.env`) |
 | **503 webhook_not_configured** | `GITHUB_WEBHOOK_SECRET` isn't set |
+| Deliveries say `"status": "ignored"` for your own installation, PRs and pushes; the API log says `not in GITHUB_ALLOWED_ACCOUNTS` | Your login isn't in `GITHUB_ALLOWED_ACCOUNTS` (unset means nobody). Add it, restart the API, and **Redeliver** the installation event from the App's "Recent deliveries" |
+| A review shows **failed: not reviewed: … the limit (GITHUB_REVIEWS_PER_HOUR=…)** | That account started that many reviews in the last hour; push again or reopen the PR later |
 | Nothing arrives | The smee client isn't running, or `--target` points at the wrong port |
 | `check`: **401 Bad credentials** / "A JSON web token could not be decoded" | Wrong `GITHUB_APP_ID` or private key, or your clock is off by minutes |
 | `check`: private key not found | `GITHUB_APP_PRIVATE_KEY_PATH` is relative to where you run the command: run it from the repo root |

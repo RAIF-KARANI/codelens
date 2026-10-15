@@ -56,6 +56,7 @@ class AppCredentials:
     webhook_secret: str
     client_id: str
     client_secret: str
+    owner: str  # the account that created the App: the first one it works for
 
     @classmethod
     def from_conversion(cls, data: dict[str, Any]) -> "AppCredentials":
@@ -67,6 +68,7 @@ class AppCredentials:
             webhook_secret=data["webhook_secret"],
             client_id=data["client_id"],
             client_secret=data["client_secret"],
+            owner=data["owner"]["login"],
         )
 
 
@@ -87,6 +89,8 @@ def save_credentials(creds: AppCredentials, secrets_dir: Path) -> tuple[Path, Pa
         f"GITHUB_APP_ID={creds.app_id}\n"
         f"GITHUB_APP_PRIVATE_KEY_PATH={key_path.as_posix()}\n"
         f"GITHUB_WEBHOOK_SECRET={creds.webhook_secret}\n"
+        "# Whose installations are acted on (comma-separated); unset means nobody.\n"
+        f"GITHUB_ALLOWED_ACCOUNTS={creds.owner}\n"
         "# For GitHub login on the dashboard (Phase 6); unused until then.\n"
         f"GITHUB_CLIENT_ID={creds.client_id}\n"
         f"GITHUB_CLIENT_SECRET={creds.client_secret}\n",

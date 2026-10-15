@@ -97,9 +97,25 @@ class Settings(BaseSettings):
     # Signs every webhook delivery (HMAC SHA-256). Unset means the webhook
     # endpoint refuses everything, like the API without its JWT secret.
     github_webhook_secret: SecretStr = SecretStr("")
+    # The GitHub accounts (users or organisations, comma-separated) whose
+    # installations CodeLens acts on: their repos are indexed and their pull
+    # requests reviewed. Any other installation is ignored, so the App can be
+    # installable by "Any account" without strangers' PRs running on this
+    # machine's GPU. Unset means nobody: it fails closed like the secrets.
+    github_allowed_accounts: str = ""
+    # Pull request reviews one account may start per hour (0: no cap). The
+    # one over the cap is recorded as failed, saying why, and not queued.
+    github_reviews_per_hour: int = Field(default=10, ge=0)
     github_api_url: str = "https://api.github.com"
     # Clone URLs are "<github_web_url>/<owner>/<name>.git".
     github_web_url: str = "https://github.com"
+
+    @property
+    def allowed_accounts(self) -> frozenset[str]:
+        # GitHub logins are case-insensitive.
+        return frozenset(
+            x.strip().lower() for x in self.github_allowed_accounts.split(",") if x.strip()
+        )
 
     # --- storage: bare mirrors of GitHub repos live in DATA_DIR/repos/ (gitignored)
     data_dir: Path = Path("data")
