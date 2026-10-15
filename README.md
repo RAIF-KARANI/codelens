@@ -199,6 +199,7 @@ docs/              runbooks
 | Document | What's in it |
 |---|---|
 | [`docs/run-your-own.md`](docs/run-your-own.md) | Running CodeLens on your own machine with your own App: the friend's guide |
+| [`docs/flow.md`](docs/flow.md) | The flows, in diagrams: a push becoming a review, the owner's side (laptop, demo, deploys), and running your own |
 | [`docs/development.md`](docs/development.md) | Running the stack, the CLIs, tests, migrations, the API |
 | [`architecture.md`](architecture.md) | How every component works, as built |
 | [`planning.md`](planning.md) | The plan, every decision with its alternatives and reasons (D1–D126) |
