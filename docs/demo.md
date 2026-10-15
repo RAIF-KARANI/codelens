@@ -70,5 +70,94 @@ nothing else should write to the demo's database.
 | API | `DEMO_MODE=true`, `DATABASE_URL` (the demo's database), `API_JWT_SECRET` |
 | Dashboard | `DEMO_MODE=true`, `API_URL` (the API's address), `API_JWT_SECRET` (the same value) |
 
-No GitHub, session or Redis settings are needed. Hosting it (Vercel + Supabase, D116) is
-Phase 7 step 3.
+No GitHub, session or Redis settings are needed.
+
+## 5. Host it: Supabase + Vercel + your subdomain (D116)
+
+The demo runs at **`https://codelens.raifkarani.in`**: the dashboard and the API on
+Vercel, the database on Supabase. Put the database and the API in the **same region**
+(here Mumbai): every page makes several database queries.
+
+### Supabase: the database
+
+1. Create a project (e.g. `codelens-demo`), region **South Asia (Mumbai)**. Keep the
+   database password in your password manager.
+2. **Connect** → **Session pooler** (port 5432; the direct address
+   `db.<ref>.supabase.co` is IPv6-only, which Vercel can't reach). Turn its URI into an
+   asyncpg URL; note the user is `postgres.<ref>`, not `postgres`:
+   `postgresql+asyncpg://postgres.<ref>:<password>@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?ssl=require`
+   (for the demo project `yisrqwbbadkcdnyttisl`, `aws-0-ap-south-1` answers;
+   `aws-1-ap-south-1` says the tenant doesn't exist).
+3. Put it in `.env.demo` at the repo root (gitignored), next to the demo's own token
+   secret:
+
+   ```
+   DEMO_DATABASE_URL=postgresql+asyncpg://...
+   DEMO_API_JWT_SECRET=<at least 32 random bytes>
+   ```
+
+4. Load the demo into it (migrations, then the export; an import replaces those repos,
+   so this is also how to refresh the demo after new reviews):
+
+   ```bash
+   python scripts/publish_demo.py
+   ```
+
+**Row-level security.** Supabase also serves every `public` table through its own REST
+API, to anyone holding the project's public (anon) key. New Supabase projects switch
+row-level security on for every new table, and with no policies that API can read and
+write nothing, while our API, connecting as the tables' owner, is unaffected. Check after
+loading, in Supabase's SQL editor:
+
+```sql
+select relname, relrowsecurity from pg_class
+where relnamespace = 'public'::regnamespace and relkind = 'r';  -- all true
+select count(*) from pg_policies where schemaname = 'public';      -- 0
+```
+
+If a table shows `false`: `alter table <name> enable row level security;`.
+
+**Changing the database password** (do it whenever it may have leaked): reset it in
+Supabase (**Settings → Database**), then put the new one in `.env.demo`'s
+`DEMO_DATABASE_URL` (and `SUPABASE_DIRECT_URL`, if kept) and in the API project's
+`DATABASE_URL` on Vercel, and redeploy that project.
+
+**Done on 2026-10-15:** the project `codelens-demo` (`yisrqwbbadkcdnyttisl`, Mumbai,
+Postgres 17) is migrated to `cd53acf29082` and holds `RAIF-KARANI/codelens-demo` only
+(3 reviews, 5 findings); row-level security on for all 14 tables, no policies. Run
+locally against it, `deploy/api`'s `main:app` served `/health`, the repos, a review, its
+diff, trace, graph and events (0.4–0.9 s per call from the laptop), refused a missing
+token and one signed with the laptop's secret (401).
+
+### Vercel: two projects from this repository
+
+| | API | Dashboard |
+|---|---|---|
+| Project name | `codelens-api` | `codelens` |
+| Root Directory | `deploy/api` (`deploy/api/README.md`) | `apps/web` |
+| Framework | FastAPI (detected) | Next.js (detected) |
+| `DEMO_MODE` | `true` | `true` |
+| `DATABASE_URL` | the value of `DEMO_DATABASE_URL` | — |
+| `API_URL` | — | `https://codelens-api.vercel.app` (the API project's address) |
+| `API_JWT_SECRET` | the value of `DEMO_API_JWT_SECRET` | the same value |
+| Function region | Mumbai (`bom1`) | Mumbai (`bom1`) |
+
+Every push to `main` redeploys both. The API project's daily cron (`deploy/api/vercel.json`)
+calls `/health`, which keeps the free Supabase project from pausing after a week idle.
+
+### Cloudflare: the subdomain
+
+1. In the dashboard project on Vercel: **Settings → Domains → Add**
+   `codelens.raifkarani.in`.
+2. In Cloudflare, DNS for `raifkarani.in`: add a **CNAME** record, name `codelens`, target
+   the value Vercel shows (e.g. `cname.vercel-dns.com`), proxy status **DNS only** (grey
+   cloud), so Vercel can issue the HTTPS certificate.
+3. Vercel shows the domain as valid within minutes.
+
+### Check it
+
+- `https://codelens.raifkarani.in` opens the repos without a sign-in, with the demo
+  banner, and `RAIF-KARANI/codelens-demo` is the only repo.
+- A review's page, graph and trace work; the timeline replays.
+- `https://codelens-api.vercel.app/health` is ok with `"redis": null`;
+  `https://codelens-api.vercel.app/api/v1/repos` answers 401 (no token).

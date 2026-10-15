@@ -2,7 +2,7 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-13: Phases 1–6 and Phase 7 steps 1–2b.
+> follows. It describes `main` as of 2026-10-13: Phases 1–6 and Phase 7 steps 1–2b, with step 3's deployment setup.
 >
 > | File | Answers |
 > |---|---|
@@ -89,7 +89,8 @@ and code and prompts never leave the machine (D20).
 | Demo mode: read-only, on Postgres alone | ✅ Phase 7 step 1 |
 | The open demo (no login) and demo-data export/import (`docs/demo.md`) | ✅ Phase 7 step 2a |
 | The public demo repo (`codelens-demo`), reviewed and exported | ✅ Phase 7 step 2b |
-| Hosting, hardening, README | Phase 7 steps 3–5 |
+| Hosting the demo (Vercel + Supabase, `codelens.raifkarani.in`) | Phase 7 step 3 (set up; the accounts are the user's) |
+| Hardening, README | Phase 7 steps 4–5 |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -158,9 +159,10 @@ codelens/
 ├── evals/                       evaluation harness (a plain package at the repo root)
 ├── configs/pipeline/*.yaml      pipeline configs: the default and every measured ablation
 ├── docs/github-app.md           creating, installing and checking the GitHub App
-├── docs/e2e.md, docs/demo.md     running it end to end; the public demo
+├── docs/e2e.md, docs/demo.md     running it end to end; the public demo and its hosting
+├── deploy/api/                  the demo API's Vercel root: entrypoint, pinned requirements, cron
 ├── docs/hosted-service.md       the future upgrade: CodeLens hosted for other people
-├── scripts/                     GPU benchmarks (bench_llm.py, bench_embed.py)
+├── scripts/                     GPU benchmarks; the demo's requirements export and publish_demo.py
 ├── apps/web/                    Next.js dashboard (Phase 6; §10.3)
 └── docker-compose.yml, .env.example, .github/workflows/ci.yml
 ```
