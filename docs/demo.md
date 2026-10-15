@@ -67,7 +67,7 @@ nothing else should write to the demo's database.
 
 | Service | Settings |
 |---|---|
-| API | `DEMO_MODE=true`, `DATABASE_URL` (the demo's database), `API_JWT_SECRET` |
+| API | `DEMO_MODE=true`, `DATABASE_URL` (the demo's database), `API_JWT_SECRET`; behind a transaction-mode pooler also `DATABASE_TRANSACTION_POOLER=true` |
 | Dashboard | `DEMO_MODE=true`, `API_URL` (the API's address), `API_JWT_SECRET` (the same value) |
 
 No GitHub, session or Redis settings are needed.
@@ -89,12 +89,26 @@ Vercel, the database on Supabase. Put the database and the API in the **same reg
    (for the demo project `yisrqwbbadkcdnyttisl`, `aws-0-ap-south-1` answers;
    `aws-1-ap-south-1` says the tenant doesn't exist).
 3. Put it in `.env.demo` at the repo root (gitignored), next to the demo's own token
-   secret:
+   secret, and the same address on port **6543** (the **Transaction pooler**) for the
+   hosted API:
 
    ```
-   DEMO_DATABASE_URL=postgresql+asyncpg://...
+   DEMO_DATABASE_URL=postgresql+asyncpg://...:5432/postgres?ssl=require
+   DEMO_API_DATABASE_URL=postgresql+asyncpg://...:6543/postgres?ssl=require
    DEMO_API_JWT_SECRET=<at least 32 random bytes>
    ```
+
+   **Why two poolers.** The session pooler gives each client its own server connection
+   and allows only 15 at once (`pool_size` on the free plan). Every Vercel instance keeps
+   its own few connections and a review page makes ~8 calls at once, so the hosted API
+   ran out: `(EMAXCONNSESSION) max clients reached in session mode` in Supabase's logs,
+   and a plain-text 500 for the call. The transaction pooler lends a server connection
+   per transaction, so many clients share a few. It can't keep prepared statements
+   between transactions, which `DATABASE_TRANSACTION_POOLER=true` handles (asyncpg's
+   statement caches off, unique statement names; without it, ~1 call in 5 failed with
+   `prepared statement "__asyncpg_stmt_8__" does not exist`). Migrations and
+   `publish_demo.py` keep the session pooler (`DEMO_DATABASE_URL`): DDL and the
+   import's long transactions want one connection throughout.
 
 4. Load the demo into it (migrations, then the export; an import replaces those repos,
    so this is also how to refresh the demo after new reviews):
@@ -119,8 +133,8 @@ If a table shows `false`: `alter table <name> enable row level security;`.
 
 **Changing the database password** (do it whenever it may have leaked): reset it in
 Supabase (**Settings → Database**), then put the new one in `.env.demo`'s
-`DEMO_DATABASE_URL` (and `SUPABASE_DIRECT_URL`, if kept) and in the API project's
-`DATABASE_URL` on Vercel, and redeploy that project.
+`DEMO_DATABASE_URL` and `DEMO_API_DATABASE_URL` (and `SUPABASE_DIRECT_URL`, if kept)
+and in the API project's `DATABASE_URL` on Vercel, and redeploy that project.
 
 **Done on 2026-10-15:** the project `codelens-demo` (`yisrqwbbadkcdnyttisl`, Mumbai,
 Postgres 17) is migrated to `cd53acf29082` and holds `RAIF-KARANI/codelens-demo` only
@@ -137,7 +151,8 @@ token and one signed with the laptop's secret (401).
 | Root Directory | `deploy/api` (`deploy/api/README.md`) | `apps/web` |
 | Framework | FastAPI (detected) | Next.js (detected) |
 | `DEMO_MODE` | `true` | `true` |
-| `DATABASE_URL` | the value of `DEMO_DATABASE_URL`: the **Session pooler** address (`postgres.<ref>@aws-0-…pooler.supabase.com:5432`), with `postgresql+asyncpg://` and `?ssl=require`. Not the direct `db.<ref>.supabase.co` one: Vercel has no IPv6, so it times out | — |
+| `DATABASE_URL` | the value of `DEMO_API_DATABASE_URL`: the **Transaction pooler** address (`postgres.<ref>@aws-0-…pooler.supabase.com:6543`), with `postgresql+asyncpg://` and `?ssl=require`. Not the direct `db.<ref>.supabase.co` one (Vercel has no IPv6, so it times out), nor the session pooler's 5432 (15 connections in all) | — |
+| `DATABASE_TRANSACTION_POOLER` | `true` | — |
 | `API_URL` | — | the API project's production address, without a trailing slash: ours is `https://codelens-api-beta.vercel.app` (`codelens-api.vercel.app` belongs to someone else) |
 | `API_JWT_SECRET` | the value of `DEMO_API_JWT_SECRET` | the same value |
 | Function region | Mumbai (`bom1`), set by `deploy/api/vercel.json` | Mumbai (`bom1`), set by `apps/web/vercel.json` |

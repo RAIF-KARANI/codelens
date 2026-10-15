@@ -972,6 +972,11 @@ FastAPI (`services/api`). `/health` is public; everything under `/api/v1` needs 
     The API still checks a token on every request, and only the dashboard holds
     `API_JWT_SECRET`, so a direct request gets a 401. A demo needs only `API_URL`,
     `API_JWT_SECRET` and `DEMO_MODE` (`docs/demo.md`).
+  - hosted on Vercel, the API reaches Supabase through its **transaction-mode pooler**
+    (many short-lived instances share a few server connections; the session pooler
+    allows 15 in all), with `DATABASE_TRANSACTION_POOLER=true`: `core.db.create_engine`
+    then turns off asyncpg's prepared-statement caches and names each statement
+    uniquely (D118).
 - **One error shape** for every error, including framework 404s and validation errors:
   `{"error": {"code": "not_found", "message": "...", "details": {...}}}`. Broker
   failures return `503 queue_unavailable` and never leak hostnames.
@@ -1210,7 +1215,7 @@ Graph, Trace) and one evidence drawer that every tab can open.
 
 | Group | Settings (defaults) |
 |---|---|
-| Infrastructure | `DATABASE_URL` (asyncpg, port 5433), `REDIS_URL`, `EMBED_DIM` (1024, ≤ 2000), `LOG_LEVEL` |
+| Infrastructure | `DATABASE_URL` (asyncpg, port 5433), `DATABASE_TRANSACTION_POOLER` (behind a transaction-mode pooler, D118), `REDIS_URL`, `EMBED_DIM` (1024, ≤ 2000), `LOG_LEVEL` |
 | Providers | `LLM_PROVIDER` / `EMBED_PROVIDER` (`ollama` \| `fake`), `OLLAMA_BASE_URL` |
 | LLM | `LLM_MODEL` (qwen3:8b), `LLM_NUM_CTX` (8192), `LLM_TEMPERATURE` (0.1), `LLM_SEED` (42), `LLM_MAX_OUTPUT_TOKENS`, `LLM_TIMEOUT_S` (300) |
 | Embedder | `EMBED_MODEL` (qwen3-embedding:0.6b), `EMBED_BATCH_SIZE` (32), `EMBED_MAX_TOKENS` (1024), `EMBED_NUM_CTX` (2048), `EMBED_QUERY_ON_CPU` (false), `EMBED_TIMEOUT_S` |

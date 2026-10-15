@@ -18,6 +18,10 @@ class Settings(BaseSettings):
 
     # Async driver URL; SQLAlchemy uses asyncpg through the `+asyncpg` dialect.
     database_url: str = "postgresql+asyncpg://codelens:codelens@localhost:5433/codelens"
+    # DATABASE_URL goes through a pooler in transaction mode (Supabase's port
+    # 6543): the hosted demo's API, where many short-lived instances share one
+    # database (docs/demo.md). Turns off asyncpg's prepared-statement caches.
+    database_transaction_pooler: bool = False
     redis_url: str = "redis://localhost:6379/0"
 
     # pgvector stores a fixed dimension per column, so this value is baked into

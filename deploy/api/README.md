@@ -24,7 +24,8 @@ Environment variables:
 | Name | Value |
 |---|---|
 | `DEMO_MODE` | `true` |
-| `DATABASE_URL` | Supabase's **Session pooler** connection string, as `postgresql+asyncpg://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres?ssl=require` |
+| `DATABASE_URL` | Supabase's **Transaction pooler** connection string (port 6543), as `postgresql+asyncpg://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres?ssl=require` |
+| `DATABASE_TRANSACTION_POOLER` | `true`: asyncpg's prepared-statement caches off, which a transaction-mode pooler needs (`docs/demo.md` §5) |
 | `API_JWT_SECRET` | the demo's own secret (`.env.demo`), the same value as the dashboard's |
 
 No Redis, GitHub or model settings: a demo runs on Postgres alone.

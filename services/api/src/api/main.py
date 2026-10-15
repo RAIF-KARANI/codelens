@@ -19,7 +19,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # them connects eagerly, so the API still boots (and /health reports the
     # problem) when Postgres or Redis is down.
     settings: Settings = app.state.settings
-    app.state.engine = create_engine(settings.database_url)
+    app.state.engine = create_engine(
+        settings.database_url, transaction_pooler=settings.database_transaction_pooler
+    )
     app.state.session_factory = create_session_factory(app.state.engine)
     if settings.demo_mode:
         # A read-only demo runs on Postgres alone (planning.md §15): nothing
