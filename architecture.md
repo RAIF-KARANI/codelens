@@ -1420,9 +1420,10 @@ latency with identical tokens, so latency is only compared between back-to-back 
 
 ## 15. Not built yet, and known gaps
 
-**Phase 8, run your own CodeLens** (`planning.md` §9): step 1, `codelens doctor`, is
-built, and `codelens setup` (step 2) does what doctor asks for; next, a fresh-clone
-rehearsal with a guide for a friend (step 3).
+**Phase 8, run your own CodeLens** (`planning.md` §9) is done: `codelens doctor`
+diagnoses a machine, `codelens setup` brings it up with the user's own App, and a
+fresh-clone rehearsal took a new checkout to a posted review (`docs/run-your-own.md` is
+the guide). Not built: a desktop app, and Windows/macOS installers for the prerequisites.
 
 **Later, as a separate upgrade:** CodeLens as a hosted service other people install on
 their own repos, with their reviews on the website (`docs/hosted-service.md`): hosted

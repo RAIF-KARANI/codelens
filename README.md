@@ -138,6 +138,9 @@ Every run, with its setup and caveats: [`evals/RESULTS.md`](evals/RESULTS.md).
 
 ## Run it on your own repos
 
+**For a friend, step by step: [`docs/run-your-own.md`](docs/run-your-own.md)** (what to
+install, the two commands, what you'll see, privacy, removing it). In short:
+
 You need **Docker**, **[Ollama](https://ollama.com)** and **[uv](https://docs.astral.sh/uv/)**.
 A GPU with 8 GB (or Apple silicon) reviews a pull request in under a minute; on a CPU it
 takes a few minutes.
@@ -195,9 +198,10 @@ docs/              runbooks
 
 | Document | What's in it |
 |---|---|
+| [`docs/run-your-own.md`](docs/run-your-own.md) | Running CodeLens on your own machine with your own App: the friend's guide |
 | [`docs/development.md`](docs/development.md) | Running the stack, the CLIs, tests, migrations, the API |
 | [`architecture.md`](architecture.md) | How every component works, as built |
-| [`planning.md`](planning.md) | The plan, every decision with its alternatives and reasons (D1–D123) |
+| [`planning.md`](planning.md) | The plan, every decision with its alternatives and reasons (D1–D126) |
 | [`evals/RESULTS.md`](evals/RESULTS.md) | Every measured configuration |
 | [`docs/github-app.md`](docs/github-app.md), [`docs/e2e.md`](docs/e2e.md), [`docs/demo.md`](docs/demo.md) | The App, running end to end, the public demo |
 

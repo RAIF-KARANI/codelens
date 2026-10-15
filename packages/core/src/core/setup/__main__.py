@@ -111,11 +111,17 @@ def report(checks: Iterable[Check]) -> int:
     width = max(len(c.name) for c in checks)
     for c in checks:
         print(f"  [{MARK[c.status]}] {c.name.ljust(width)}  {c.detail}")
-    fixes = [c for c in checks if c.fix and c.status is not Status.OK]
-    if fixes:
+    open_ = [c for c in checks if c.fix and c.status is not Status.OK]
+    by_setup = [c for c in open_ if c.by_setup]
+    todo = [f"{c.name}: {c.fix}" for c in open_ if not c.by_setup]
+    if by_setup:
+        names = ", ".join(c.name for c in by_setup)
+        # Last: setup needs the tools above (Docker, Ollama) to do its part.
+        todo.append(f"uv run codelens setup  (it takes care of: {names})")
+    if todo:
         print("\nTo do, in order:")
-        for i, c in enumerate(fixes, 1):
-            print(f"  {i}. {c.name}: {c.fix}")
+        for i, line in enumerate(todo, 1):
+            print(f"  {i}. {line}")
     failed = sum(c.status is Status.FAIL for c in checks)
     warned = sum(c.status is Status.WARN for c in checks)
     if failed:

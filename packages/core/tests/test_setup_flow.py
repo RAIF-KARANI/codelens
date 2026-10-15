@@ -217,3 +217,36 @@ def test_set_env_keeps_lines_and_appends_new_keys(tmp_path: Path) -> None:
     set_env(env, {"B": "2", "D": "4"})
     assert env.read_text() == "# comment\nA=1\nB=2\n\nC=\nD=4\n"
     assert read_env(env) == {"A": "1", "B": "2", "C": "", "D": "4"}
+
+
+def test_the_app_key_path_is_made_relative_for_the_containers(clone: Path) -> None:
+    # The manifest flow writes the path it's given; setup passes an absolute one.
+    # Seen in the fresh-clone rehearsal: every index job failed on it.
+    machine = Machine(clone, pulled=["qwen3:8b", "qwen3-embedding:0.6b"])
+    real_create = machine.create_app
+
+    def create_with_absolute_path(name: str, url: str):
+        creds, key, env = real_create(name, url)
+        set_env(env, {"GITHUB_APP_PRIVATE_KEY_PATH": key.resolve().as_posix()})
+        return creds, key, env
+
+    machine.create_app = create_with_absolute_path  # type: ignore[method-assign]
+    setup(clone, machine.tools())
+    assert read_env(clone / ".env")["GITHUB_APP_PRIVATE_KEY_PATH"] == "secrets/github-app.pem"
+
+
+def test_rerunning_setup_repairs_an_absolute_key_path(clone: Path) -> None:
+    (clone / ".env").write_text(EXAMPLE)
+    (clone / "secrets").mkdir()
+    key = clone / "secrets" / "github-app.pem"
+    key.write_text("k")
+    set_env(
+        clone / ".env",
+        {"GITHUB_APP_ID": "7", "GITHUB_APP_PRIVATE_KEY_PATH": key.resolve().as_posix()},
+    )
+    machine = Machine(clone, pulled=["qwen3:8b", "qwen3-embedding:0.6b"])
+    existing = AppInfo("app", "https://github.com/apps/app", "Owner", "https://smee.io/x")
+
+    setup(clone, machine.tools(existing))
+
+    assert read_env(clone / ".env")["GITHUB_APP_PRIVATE_KEY_PATH"] == "secrets/github-app.pem"
