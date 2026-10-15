@@ -160,7 +160,7 @@ codelens/
 ├── configs/pipeline/*.yaml      pipeline configs: the default and every measured ablation
 ├── docs/github-app.md           creating, installing and checking the GitHub App
 ├── docs/e2e.md, docs/demo.md     running it end to end; the public demo and its hosting
-├── deploy/api/                  the demo API's Vercel root: entrypoint, pinned requirements, cron
+├── deploy/api/                  the demo API's Vercel root: entrypoint, pinned uv project, cron
 ├── docs/hosted-service.md       the future upgrade: CodeLens hosted for other people
 ├── scripts/                     GPU benchmarks; the demo's requirements export and publish_demo.py
 ├── apps/web/                    Next.js dashboard (Phase 6; §10.3)
