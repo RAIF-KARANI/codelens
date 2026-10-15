@@ -1,5 +1,8 @@
 # The demo video: a script
 
+> A short **launch film** (24 s, no narration) is already in the README:
+> `docs/media/codelens-launch.mp4`. This script is for the longer, narrated walkthrough.
+
 A 2½–3 minute screen recording for the README and for applications: a real pull request
 reviewed live, the dashboard explaining the review, and the evaluation story. The
 narration below is a guide, not a text to read word for word; say it in your own words.

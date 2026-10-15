@@ -11,6 +11,11 @@ sign-in). It shows real reviews of three pull requests on
 [`RAIF-KARANI/codelens-demo`](https://github.com/RAIF-KARANI/codelens-demo/pulls), a copy
 of [sqlite-utils](https://github.com/simonw/sqlite-utils) with planted bugs.
 
+**Watch it (24 s):** one changed line, reviewed by a local model, caught, and traced back
+to the code it cites. Click to play.
+
+[![CodeLens launch video: one changed line, the review running on a local model, the SQL injection finding and its evidence](docs/media/codelens-launch.jpg)](docs/media/codelens-launch.mp4)
+
 ![CodeLens reviewing a pull request on GitHub: one critical finding, an SQL injection](docs/images/github-pr.png)
 
 ## What it does
