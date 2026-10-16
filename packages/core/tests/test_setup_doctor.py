@@ -245,7 +245,9 @@ def test_relay_states() -> None:
     from core.setup.checks import check_relay
 
     assert check_relay(None, set()).fix.startswith("codelens setup")
-    assert check_relay("https://smee.io/abc", {"smee"}).status is Status.OK
+    relaying = check_relay("https://smee.io/AbC123xyz", {"smee"})
+    assert relaying.status is Status.OK
+    assert relaying.detail == "relaying https://smee.io/AbC******"  # masked (D137)
     stopped = check_relay("https://smee.io/abc", {"api"})
     assert (stopped.status, stopped.fix) == (Status.WARN, "docker compose --profile relay up -d")
 

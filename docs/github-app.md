@@ -15,7 +15,13 @@ isn't public. [smee.io](https://smee.io) relays them: GitHub posts to a smee cha
 and a small client on your machine forwards each delivery to the API.
 
 1. Open <https://smee.io/new>. The page's address is your channel URL, e.g.
-   `https://smee.io/AbC123xyz`. Keep it.
+   `https://smee.io/AbC123xyz`. Keep it, and keep it **private, like a password**:
+   anyone who opens that page sees the deliveries arrive, headers and bodies, private
+   repos included (repo names, PR titles and descriptions, commit messages, authors).
+   smee.io itself, a third party, sees all of it too. CodeLens doesn't trust it for
+   anything else: every delivery's signature is still checked, and a replayed one is
+   refused. For private code you don't want to pass through a third party, point the
+   App's webhook at a tunnel you run instead (D137).
 2. Leave this running in its own terminal (the API listens on port 8000):
 
 ```bash

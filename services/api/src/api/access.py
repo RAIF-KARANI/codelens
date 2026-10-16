@@ -23,7 +23,13 @@ from core.db import models
 
 
 def visible(user: User) -> ColumnElement[bool]:
-    """A filter on repos (`models.Repo`) for this user."""
+    """A filter on repos (`models.Repo`) for this user.
+
+    Per installation, not per repo (accepted for now, D137): GitHub lists an
+    installation for a user who can see any one of its repos, so an outside
+    collaborator on one repo of an organisation would see all of them. Fine
+    while the owner is the dashboard's only user; per-repo access comes
+    before anyone else signs in (docs/hosted-service.md)."""
     if user.is_admin or user.demo:
         return true()
     return models.Repo.installation_id.in_(

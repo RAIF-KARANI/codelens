@@ -129,6 +129,19 @@ def check_docker(run: Runner) -> list[Check]:
     return checks
 
 
+SMEE_PREFIX = "https://smee.io/"
+
+
+def masked(url: str) -> str:
+    """A smee channel URL with most of its secret part hidden: whoever has the
+    whole URL can read the channel's deliveries, and this output can end up in
+    a screenshot, a log or an issue (D137)."""
+    if not url.startswith(SMEE_PREFIX):
+        return url
+    channel = url.removeprefix(SMEE_PREFIX)
+    return f"{SMEE_PREFIX}{channel[:3]}{'*' * max(len(channel) - 3, 4)}"
+
+
 def check_relay(smee_url: str | None, ours: set[str]) -> Check:
     """GitHub's webhooks reach this machine through a smee.io channel, relayed by
     the `smee` Compose service (`--profile relay`)."""
@@ -141,11 +154,11 @@ def check_relay(smee_url: str | None, ours: set[str]) -> Check:
             by_setup=True,
         )
     if "smee" in ours:
-        return Check("webhook relay", Status.OK, f"relaying {smee_url}")
+        return Check("webhook relay", Status.OK, f"relaying {masked(smee_url)}")
     return Check(
         "webhook relay",
         Status.WARN,
-        f"{smee_url} set, but the relay isn't running",
+        f"{masked(smee_url)} set, but the relay isn't running",
         "docker compose --profile relay up -d",
     )
 

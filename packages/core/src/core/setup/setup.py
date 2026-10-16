@@ -5,8 +5,9 @@ still missing, and a step that needs the user (the browser, a download)
 says so first:
 
 1. `.env` from `.env.example`, with a generated `API_JWT_SECRET`.
-2. The webhook relay: a smee.io channel in `SMEE_URL`. An existing App's
-   channel is reused (read from GitHub), never replaced.
+2. The webhook relay: a smee.io channel in `SMEE_URL`, after asking (a third
+   party sees every delivery, D137). An existing App's channel is reused
+   (read from GitHub), never replaced.
 3. The GitHub App, by the manifest flow in the browser; its settings are
    merged into `.env`, and its owner is added to `GITHUB_ALLOWED_ACCOUNTS`.
 4. The models, pulled with Ollama after asking (they are ~6 GB).
@@ -29,10 +30,9 @@ import httpx
 from core.config import Settings
 from core.github.manifest import AppCredentials, pinned
 from core.privatefile import write_private
-from core.setup.checks import Fetcher, Runner
+from core.setup.checks import SMEE_PREFIX, Fetcher, Runner, masked
 from core.setup.envfile import read_env, set_env
 
-SMEE_PREFIX = "https://smee.io/"
 HEALTH_TIMEOUT_S = 240
 # What the App's env file (secrets/github-app.env) carries into .env.
 APP_KEYS = (
@@ -120,7 +120,7 @@ def _github_app(root: Path, env: Path, tools: Tools) -> tuple[AppInfo | None, st
         if not values.get("SMEE_URL"):
             if info.webhook_url and info.webhook_url.startswith(SMEE_PREFIX):
                 set_env(env, {"SMEE_URL": info.webhook_url})
-                tools.say(f"webhook relay: using the App's channel {info.webhook_url}")
+                tools.say(f"webhook relay: using the App's channel {masked(info.webhook_url)}")
             else:
                 tools.say(
                     f"webhook relay: the App sends webhooks to {info.webhook_url or 'nowhere'}, "
@@ -167,9 +167,21 @@ def _key_path_for_containers(root: Path, env: Path, tools: Tools) -> None:
 
 
 def _new_channel(env: Path, tools: Tools) -> str:
+    """A smee.io channel is a third party in the middle: every delivery, private
+    repos' included (names, PR titles, commit messages, the signature), passes
+    through it, and its URL is the only key to reading them there. So setup
+    asks first, and shows the URL masked; .env keeps it (D137)."""
+    if not tools.confirm(
+        "GitHub's webhooks will pass through smee.io, a public relay: anyone with the "
+        "channel's URL can read them, private repos included. Create a channel?"
+    ):
+        raise SetupStopped(
+            "set SMEE_URL to a relay you trust, or point the App's webhook at your own "
+            "tunnel to http://localhost:8000/webhooks/github, and run setup again"
+        )
     url = tools.new_smee_channel()
     set_env(env, {"SMEE_URL": url})
-    tools.say(f"webhook relay: created {url}")
+    tools.say(f"webhook relay: created {masked(url)} (the full URL is in .env; keep it private)")
     return url
 
 
