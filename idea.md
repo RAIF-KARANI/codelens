@@ -9,10 +9,12 @@
 **Status (2026-10-10):** Phase 1 in progress. Scaffold ✅, database schema ✅,
 parser ⏳, indexing CLI ⏳, parser tests ⏳.
 
-> **Execution plan → [`planning.md`](planning.md).** This file is the design narrative.
-> `planning.md` is the plan of record (the naive+ architecture, local Ollama models,
-> build phases, evals, config). Where they disagree, `planning.md` wins. In particular
-> it **supersedes §14 (Roadmap)** below.
+> **Execution plan → [`planning.md`](planning.md) (v1) and
+> [`planning-v2.md`](planning-v2.md) (v2, the plan now).** This file is the design
+> narrative. The plans are the record of what is built and how (the naive+ architecture,
+> local Ollama models, build phases, evals, config). Where they disagree, the plans win,
+> and `planning-v2.md` wins over `planning.md`. In particular they **supersede §14
+> (Roadmap)** below, and the status line above is from the start of v1: v1 is done.
 
 ---
 

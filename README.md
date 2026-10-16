@@ -174,6 +174,21 @@ and prints an ordered to-do list; it changes nothing. The dashboard is optional:
 Step by step, with troubleshooting: [`docs/github-app.md`](docs/github-app.md) (the App,
 and letting a friend use it) and [`docs/e2e.md`](docs/e2e.md) (running and watching it).
 
+## What's next: v2
+
+v1 is done. v2 ([`planning-v2.md`](planning-v2.md)) keeps both ways of using CodeLens and
+improves each:
+
+- **On the web:** a new dashboard UI on a design system with its own brand, a home page,
+  reviews across repos, and a review page that puts the findings first. It ships to the
+  live demo and to everyone running CodeLens.
+- **As software:** **CodeLens Desktop**, a Windows installer. A first-run wizard sets up
+  Docker Desktop, Ollama, the models and your own GitHub App, with no terminal. It depends
+  on nothing of this project's owner: your App, your machine, your data. It learns about
+  pull requests by polling GitHub, so no webhook relay is needed.
+
+Until the desktop app ships, the clone-and-run setup above is the way to run your own.
+
 ## Tech stack
 
 | | |
@@ -203,7 +218,8 @@ docs/              runbooks
 | [`docs/flow.md`](docs/flow.md) | The flows, in diagrams: a push becoming a review, the owner's side (laptop, demo, deploys), and running your own |
 | [`docs/development.md`](docs/development.md) | Running the stack, the CLIs, tests, migrations, the API |
 | [`architecture.md`](architecture.md) | How every component works, as built |
-| [`planning.md`](planning.md) | The plan, every decision with its alternatives and reasons (D1–D126) |
+| [`planning-v2.md`](planning-v2.md) | **The plan now:** v2, a new UI and a downloadable desktop app (D138 and up) |
+| [`planning.md`](planning.md) | How v1 was built: the plan, every decision with its alternatives and reasons (D1–D137) |
 | [`evals/RESULTS.md`](evals/RESULTS.md) | Every measured configuration |
 | [`docs/github-app.md`](docs/github-app.md), [`docs/e2e.md`](docs/e2e.md), [`docs/demo.md`](docs/demo.md) | The App, running end to end, the public demo |
 

@@ -1,8 +1,10 @@
 # Future upgrade: CodeLens as a hosted service
 
-**Status: not planned for Phase 7.** This is the design note for a later upgrade, written
+**Status: not planned, in v1 or v2.** This is the design note for a later upgrade, written
 down so the work is known when someone (say, a friend with his own repo) wants to use
-CodeLens without running it themselves.
+CodeLens without running it themselves. v2 ([`planning-v2.md`](../planning-v2.md)) takes the
+other road first: CodeLens Desktop makes running your own a download, so nobody's code has
+to reach a server of ours.
 
 **The goal:** anyone installs the CodeLens GitHub App on their repos; their pull requests
 get reviewed by an always-on server, with comments on GitHub; and they sign in on the
