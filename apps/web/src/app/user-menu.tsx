@@ -1,33 +1,33 @@
+import { LogOutIcon } from "lucide-react";
 import Image from "next/image";
 
+import { Button } from "@/components/ui/button";
 import { optionalUser } from "@/lib/dal";
 
-/** The signed-in user and a sign-out button; nothing when signed out. */
+/** The signed-in user and a sign-out button, at the foot of the sidebar;
+ * nothing when signed out (or on the demo, where nobody signs in). Collapsed,
+ * the avatar alone says who is signed in. */
 export async function UserMenu() {
   const user = await optionalUser();
   if (!user) {
     return null;
   }
   return (
-    <div className="flex items-center gap-3 text-sm">
+    <div className="flex min-w-0 items-center gap-2 px-1 text-sm collapsed:flex-col collapsed:px-0">
       {user.avatarUrl && (
         <Image
           src={user.avatarUrl}
           alt={user.login}
-          width={28}
-          height={28}
-          className="rounded-full"
+          width={24}
+          height={24}
+          className="shrink-0 rounded-full"
         />
       )}
-      {/* On narrow screens the avatar alone says who is signed in. */}
-      <span className="hidden text-foreground/85 sm:inline">{user.login}</span>
+      <span className="min-w-0 flex-1 truncate text-foreground/85 collapsed:sr-only">{user.login}</span>
       <form action="/api/auth/logout" method="post">
-        <button
-          type="submit"
-          className="whitespace-nowrap rounded-md px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          Sign out
-        </button>
+        <Button type="submit" variant="ghost" size="icon-sm" aria-label="Sign out" title="Sign out">
+          <LogOutIcon />
+        </Button>
       </form>
     </div>
   );

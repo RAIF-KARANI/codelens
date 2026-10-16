@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
+import { Crumbs } from "@/components/crumbs";
 import { Tabs } from "@/components/tabs";
 import { getRepo, getReview } from "@/lib/api";
 import { parseId } from "@/lib/params";
@@ -30,12 +30,13 @@ async function Header({ params }: Pick<LayoutProps<"/reviews/[id]">, "params">) 
   const repo = await getRepo(review.repo_id);
   return (
     <>
-      <Link
-        href={`/repos/${repo.id}`}
-        className="text-sm text-muted-foreground hover:text-foreground"
-      >
-        ← {repo.full_name}
-      </Link>
+      <Crumbs
+        items={[
+          { label: "Repositories", href: "/repos" },
+          { label: repo.full_name, href: `/repos/${repo.id}` },
+          { label: `Review #${review.id}` },
+        ]}
+      />
       <ReviewHeader review={review} repo={repo} />
       <Tabs
         tabs={[
