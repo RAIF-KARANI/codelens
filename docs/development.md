@@ -3,8 +3,9 @@
 The reference for working on the code: running the stack, the CLIs, tests, migrations,
 the API and the dashboard. The project overview and the evaluation are in the
 [README](../README.md); how each component works is in
-[`architecture.md`](../architecture.md); the plan and every decision are in
-[`planning.md`](../planning.md).
+[`architecture.md`](../architecture.md); the plans and every decision are in
+[`planning.md`](../planning.md) (v1, D1–D137) and [`planning-v2.md`](../planning-v2.md)
+(v2, the plan now: the UI upgrade and the desktop app, D138 and up).
 
 ## Repository layout
 

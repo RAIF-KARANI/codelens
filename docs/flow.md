@@ -8,7 +8,9 @@ CodeLens is used in two ways:
   **their own** GitHub App, on their own machine. Nothing they do touches the owner's laptop,
   App or demo.
 
-Both sides run the same review engine, described first.
+Both sides run the same review engine, described first. v2 adds a third way, planned and
+not built yet: **CodeLens Desktop**, a downloadable app for the second side (see
+[the end of this page](#coming-in-v2-codelens-desktop)).
 
 ## The engine: from a push to a review
 
@@ -219,3 +221,30 @@ Details and troubleshooting: [`run-your-own.md`](run-your-own.md).
 | Public demo | Publishes it (`publish_demo.py`) | Not involved; they can open it like any visitor |
 | Hosting (Vercel, Supabase, Cloudflare) | The demo's | None needed |
 | Commands | `codelens setup` / `doctor`, `publish_demo.py`, the PR workflow | `codelens doctor`, `codelens setup` |
+
+---
+
+## Coming in v2: CodeLens Desktop
+
+Planned in [`planning-v2.md`](../planning-v2.md) (Phase 11), not built yet. Side 2 becomes a
+download instead of a clone, and stays just as independent of the owner: the user's own App,
+machine, data and models, and nothing of the owner's in between.
+
+```mermaid
+flowchart TD
+    A["Download the installer<br/>(GitHub Releases)"] --> B["First-run wizard:<br/>check the machine"]
+    B --> C["Install Docker Desktop and Ollama<br/>if missing (their official installers)"]
+    C --> D["Pull the models (~6 GB)"]
+    D --> E["Start the stack in Docker"]
+    E --> F["Create your own GitHub App<br/>(the browser opens; one click)"]
+    F --> G["Install it on your repos"]
+    G --> H["The app polls GitHub:<br/>a review on every PR push, no relay"]
+```
+
+| | Today (side 2) | CodeLens Desktop |
+|---|---|---|
+| Get it | `git clone`, `uv sync` | Download and run the installer |
+| Set it up | `codelens doctor`, `codelens setup` in a terminal | The wizard, with buttons and progress bars |
+| The dashboard | `pnpm dev`, after its own setup, with GitHub sign-in | The app's window, no sign-in |
+| GitHub events | A smee.io relay; events are lost while the machine is off | Polling GitHub; it catches up after sleep |
+| Day to day | `docker compose` commands | The tray icon: open, pause, quit |

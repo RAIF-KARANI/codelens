@@ -2,17 +2,19 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-15: Phases 1–8 (the public demo, hardening, and running your own CodeLens).
+> follows. It describes `main` as of 2026-10-16: all of v1, Phases 1–9 (through the public demo, hardening, running your own CodeLens, and the security fixes). v2 is planned, not built.
 >
 > | File | Answers |
 > |---|---|
 > | [`idea.md`](idea.md) | *What* CodeLens is and *why* (the design narrative) |
-> | [`planning.md`](planning.md) | *How and in what order* we build it: the plan of record, decisions D1–D117, open questions |
+> | [`planning.md`](planning.md) | *How and in what order* v1 was built: its plan, decisions D1–D137, questions Q1–Q20 (frozen) |
+> | [`planning-v2.md`](planning-v2.md) | *What comes next*: v2's plan of record (the UI upgrade, the desktop app), decisions D138+, questions Q21+ |
 > | **`architecture.md`** | *How it works now*, as built |
 > | [`evals/RESULTS.md`](evals/RESULTS.md) | *How well it works*: every measured config |
 >
-> Where this file and `planning.md` disagree, `planning.md` wins and this file is out of
-> date. Decision numbers (D*n*) and open questions (Q*n*) point into `planning.md` §16 and §18.
+> Where this file and the plans disagree, the plans win and this file is out of date.
+> Decision numbers (D*n*) and open questions (Q*n*) point into `planning.md` §16 and §18
+> up to D137 and Q20, and into `planning-v2.md` §7 and §9 from D138 and Q21.
 
 ---
 
@@ -1431,6 +1433,14 @@ latency with identical tokens, so latency is only compared between back-to-back 
 diagnoses a machine, `codelens setup` brings it up with the user's own App, and a
 fresh-clone rehearsal took a new checkout to a posted review (`docs/run-your-own.md` is
 the guide). Not built: a desktop app, and Windows/macOS installers for the prerequisites.
+
+**Planned in v2** (`planning-v2.md`): Phase 10 rebuilds the dashboard on a design system
+(shadcn/ui) with its own brand, and adds an overview and a cross-repo reviews list. Phase
+11 builds **CodeLens Desktop** for Windows: an Electron app (`apps/desktop`) that drives
+its own Docker Compose project (with the dashboard as a `web` container), learns about
+PRs by polling GitHub (`core/github/poll.py`), runs the dashboard in a no-sign-in local
+mode, and sets everything up from a first-run wizard. Some of the gaps below close on the
+way (the dashboard in Compose, a failed review saying so on the PR).
 
 **Later, as a separate upgrade:** CodeLens as a hosted service other people install on
 their own repos, with their reviews on the website (`docs/hosted-service.md`): hosted
