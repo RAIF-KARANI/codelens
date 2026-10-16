@@ -946,7 +946,7 @@ FastAPI (`services/api`). `/health` is public; everything under `/api/v1` needs 
 | GET | `/api/v1/repos/{id}/reviews` | Reviews, newest first, `?status=`, with posted counts by severity |
 | POST | `/api/v1/reviews` | Queue a manual review `{repo_id, base, head}`; `202 {review_id, status, head_sha}` |
 | GET | `/api/v1/reviews` | Reviews across every repo the caller may see, newest first, keyset pages, `?status=`; eval runs left out unless `?include_eval=true` (D155); each with its repo's name |
-| GET | `/api/v1/stats` | The overview's numbers over the visible repos, `?days=` (1–90, default 7): reviews by outcome, posted findings by severity, the median from queued to finished, one row per UTC day, what is queued or running, repos by index status; eval runs left out unless asked for (D155) |
+| GET | `/api/v1/stats` | The overview's numbers over the visible repos, `?days=` (1–90, default 7), ending today or, with `?anchor=latest`, on the newest review's day (the demo, D157): reviews by outcome, posted findings by severity, the median from queued to finished, one row per UTC day, what is queued or running, repos by index status; eval runs left out unless asked for (D155) |
 | GET | `/api/v1/reviews/{id}` | A review: summary, counts, token usage, exact pipeline config, findings (`?include_dropped=true`) |
 | GET | `/api/v1/reviews/{id}/events` | The review's timeline as **Server-Sent Events**: replay after `Last-Event-ID` (or `?after=`), then live, until `end` (§10.2) |
 | GET | `/api/v1/reviews/{id}/diff` | The unified diff and the changed nodes, as stored with the review (D110) |

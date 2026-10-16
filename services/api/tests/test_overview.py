@@ -172,3 +172,39 @@ def test_stats_include_evals_and_other_repos_only_when_they_should(
     assert stranger["median_seconds"] is None
     assert stranger["repos"]["total"] == 0
     assert too_long.status_code == 422
+
+
+def test_stats_anchored_at_the_latest_review(settings: Settings, sql: Sql) -> None:
+    """A demo's reviews are made once and copied (D157): its window ends on
+    the newest review's day, not today, so the overview isn't empty a week on."""
+    [inst] = sql(
+        "INSERT INTO installations (github_installation_id, account_id, account_login,"
+        " account_type) VALUES (999, 3, 'demo', 'User') RETURNING id"
+    )
+    [repo] = sql(
+        "INSERT INTO repos (github_id, full_name, source, installation_id, status)"
+        " VALUES (7, 'demo/repo', 'github', :inst, 'ready') RETURNING id",
+        inst=inst.id,
+    )
+    created = datetime.now(UTC) - timedelta(days=20)
+    sql(
+        "INSERT INTO reviews (repo_id, source, pr_number, head_sha, status, created_at,"
+        " finished_at) VALUES (:repo, 'github', 1, 'abc', 'completed', :created, :finished)",
+        repo=repo.id,
+        created=created,
+        finished=created + timedelta(seconds=15),
+    )
+    headers = bearer(settings, "demo", (999,))
+    with api(settings) as c:
+        today = c.get("/api/v1/stats", headers=headers).json()
+        latest = c.get("/api/v1/stats?anchor=latest", headers=headers).json()
+        bad = c.get("/api/v1/stats?anchor=yesterday", headers=headers)
+
+    assert today["reviews"]["total"] == 0
+    assert today["ends_today"] is True
+    assert latest["reviews"]["total"] == 1
+    assert latest["median_seconds"] == pytest.approx(15.0)
+    assert latest["ends_on"] == created.date().isoformat()
+    assert latest["ends_today"] is False
+    assert latest["daily"][-1] == {"day": created.date().isoformat(), "reviews": 1, "findings": 0}
+    assert bad.status_code == 422

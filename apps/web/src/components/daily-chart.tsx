@@ -9,7 +9,7 @@ type Day = Stats["daily"][number];
  * and a square base, a hairline baseline, one gridline at the peak with its
  * value, and each bar's numbers on hover and keyboard focus. A table with the
  * same numbers is there for screen readers, so no value depends on hovering. */
-export function DailyChart({ daily }: { daily: Day[] }) {
+export function DailyChart({ daily, endsToday }: { daily: Day[]; endsToday: boolean }) {
   const peak = Math.max(0, ...daily.map((d) => d.reviews));
   const total = daily.reduce((sum, d) => sum + d.reviews, 0);
   const busiest = peak > 0 ? daily.findLast((d) => d.reviews === peak) : undefined;
@@ -68,7 +68,7 @@ export function DailyChart({ daily }: { daily: Day[] }) {
       <div className="flex justify-around pl-6 pt-1.5 text-[11px] text-muted-foreground" aria-hidden="true">
         {daily.map((d) => (
           <span key={d.day} className="w-10 text-center">
-            {d.day === last ? "Today" : weekday(d.day)}
+            {endsToday && d.day === last ? "Today" : weekday(d.day)}
           </span>
         ))}
       </div>
