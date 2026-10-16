@@ -5,8 +5,10 @@
 
 What the caller may see (D111): the token's `installations` claim lists the
 GitHub App installation ids its user can access (the dashboard asks GitHub,
-GET /user/installations, at login), and logins in API_ADMIN_LOGINS see every
-repo. The checks themselves are in api/access.py.
+GET /user/installations, at login), and the accounts in API_ADMIN_LOGINS see
+every repo: by login, or pinned to the user id (`login:id`) that the token's
+`sub` must then carry, since a login can change hands (D136). The checks
+themselves are in api/access.py.
 """
 
 from collections.abc import Sequence
@@ -88,13 +90,13 @@ def current_user(
         isinstance(i, int) and not isinstance(i, bool) for i in installations
     ):
         raise ApiError(401, "invalid_token", "installations must be a list of ids")
-    login = str(claims.get("login", ""))
+    login, sub = str(claims.get("login", "")), str(claims["sub"])
     return User(
-        github_id=str(claims["sub"]),
+        github_id=sub,
         login=login,
         installations=frozenset(installations),
         # Admin is the server's decision (API_ADMIN_LOGINS), never a claim.
-        is_admin=login.lower() in settings.admin_logins,
+        is_admin=settings.admins.allows(login, int(sub) if sub.isdigit() else None),
         demo=settings.demo_mode,
     )
 

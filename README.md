@@ -156,7 +156,8 @@ uv run codelens setup         # set it all up; safe to run again
 
 1. creates `.env` from `.env.example`, with a generated `API_JWT_SECRET`;
 2. creates a [smee.io](https://smee.io) channel, which relays GitHub's webhooks to your
-   machine (`SMEE_URL`);
+   machine (`SMEE_URL`), after asking: smee.io, and anyone with the channel's URL, can
+   read the deliveries, so the URL stays in `.env` and is only ever printed masked;
 3. creates **your own GitHub App** from this repo's manifest: your browser opens, you
    confirm on GitHub, and its id, key and secrets land in `secrets/` and `.env`, with you
    as the allowed account;

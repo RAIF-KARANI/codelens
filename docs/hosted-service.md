@@ -23,8 +23,14 @@ diff, evidence, graph and trace.
 ## What already exists and carries over
 
 - **Isolation between users (D111).** Every API route checks that the caller's token
-  lists the repo's App installation. A user sees only their own repos; anything else is
-  a 404. This is the core of multi-user safety, and it's tested.
+  lists the repo's App installation. A user sees only the repos of installations
+  GitHub lists for them; anything else is a 404. This is the core of multi-user
+  safety, and it's tested. **But it is per installation, not per repo** (D137): GitHub
+  lists an organisation's installation for a user who can see at least one of its
+  repos, so an outside collaborator on one repo would see all of them. That is fine
+  while the dashboard has one user, the owner; before anyone else signs in, the
+  session must also carry the repos each user can see
+  (`GET /user/installations/{id}/repositories`), and access must check them.
 - **GitHub login (D113)** puts the user's installations in the session at sign-in.
 - **Installation events (D97, D101):** repos attach and detach as people install and
   change the App; pushes re-index; PR events queue reviews; newer pushes supersede older
@@ -85,8 +91,8 @@ diff, evidence, graph and trace.
    per review.
 3. **Hosted workers:** workers and Redis on a container host; the API's webhooks move
    off smee; the laptop is no longer needed.
-4. **Website for users:** sign-in shows each user their own repos (already true in
-   non-demo mode), plus onboarding and limits.
+4. **Website for users:** sign-in shows each user their own repos (per installation
+   today; per repo first, D137), plus onboarding and limits.
 5. **Open up:** a waitlist, the privacy notice, deletion on uninstall, cost alerts.
 
 Prices for model APIs, GPUs and hosting change often, so estimate costs when this starts,

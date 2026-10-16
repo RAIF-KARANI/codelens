@@ -6,13 +6,16 @@ for (core.github.webhooks.apply_event); the worker does the real work, so
 GitHub always gets its answer well within its 10-second timeout.
 """
 
+import hashlib
 import json
+import logging
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel
 from sqlalchemy import func, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_queue, get_session, get_settings
@@ -29,7 +32,14 @@ from core.github.webhooks import (
     verify_signature,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(tags=["webhooks"])
+
+# GitHub caps a delivery's payload at 25 MB. Anyone can POST here, and the
+# body is read before the signature can be checked, so it is read only up to
+# that (D134).
+MAX_BODY = 25 * 1024 * 1024
 
 deliveries_t = WebhookDelivery.__table__
 
@@ -58,7 +68,7 @@ async def github_webhook(
 
     # The signature covers the exact bytes GitHub sent, so verify those
     # before parsing anything.
-    body = await request.body()
+    body = await _read_body(request)
     if not verify_signature(secret, body, request.headers.get(SIGNATURE_HEADER)):
         raise ApiError(401, "invalid_signature", "the delivery's signature does not match")
     delivery_id = request.headers.get(DELIVERY_HEADER)
@@ -79,19 +89,31 @@ async def github_webhook(
     # Claim the delivery. A redelivery of one already handled finds a row with
     # processed_at set and does nothing; one that failed halfway (no
     # processed_at) is handled again (D95).
+    # The same body under another id is a replay, not a new event: GitHub's
+    # own redeliveries keep the id, and two real events never share a body
+    # (D134). The unique digest refuses it, concurrent replays included.
     conn = await session.connection()
-    claimed = await conn.scalar(
-        insert(deliveries_t)
-        .values(
-            delivery_id=delivery_id, event=event, action=action, installation_id=installation_id
+    try:
+        claimed = await conn.scalar(
+            insert(deliveries_t)
+            .values(
+                delivery_id=delivery_id,
+                event=event,
+                action=action,
+                installation_id=installation_id,
+                body_sha256=hashlib.sha256(body).hexdigest(),
+            )
+            .on_conflict_do_update(
+                index_elements=[deliveries_t.c.delivery_id],
+                set_={"received_at": func.now()},
+                where=deliveries_t.c.processed_at.is_(None),
+            )
+            .returning(deliveries_t.c.delivery_id)
         )
-        .on_conflict_do_update(
-            index_elements=[deliveries_t.c.delivery_id],
-            set_={"received_at": func.now()},
-            where=deliveries_t.c.processed_at.is_(None),
-        )
-        .returning(deliveries_t.c.delivery_id)
-    )
+    except IntegrityError:
+        await session.rollback()
+        logger.warning("delivery %s repeats an earlier delivery's body: ignored", delivery_id)
+        return WebhookAck(delivery_id=delivery_id, event=event, status="duplicate")
     if claimed is None:
         await session.rollback()
         return WebhookAck(delivery_id=delivery_id, event=event, status="duplicate")
@@ -116,3 +138,17 @@ async def github_webhook(
     )
     await session.commit()
     return WebhookAck(delivery_id=delivery_id, event=event, status=outcome.status)
+
+
+async def _read_body(request: Request) -> bytes:
+    """The body, refused with 413 past MAX_BODY: by its declared length before
+    reading, and while reading, for a sender that declares none or lies."""
+    length = request.headers.get("content-length", "")
+    if length.isdigit() and int(length) > MAX_BODY:
+        raise ApiError(413, "payload_too_large", "a delivery is at most 25 MB")
+    body = bytearray()
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > MAX_BODY:
+            raise ApiError(413, "payload_too_large", "a delivery is at most 25 MB")
+    return bytes(body)

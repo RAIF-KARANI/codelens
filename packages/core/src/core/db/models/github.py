@@ -21,8 +21,8 @@ class Installation(IdMixin, TimestampMixin, Base):
 
 
 class WebhookDelivery(Base):
-    """One webhook delivery, keyed by GitHub's delivery id, so a delivery that
-    arrives twice is handled once."""
+    """One webhook delivery, keyed by GitHub's delivery id and by its body, so
+    a delivery that arrives twice is handled once."""
 
     __tablename__ = "webhook_deliveries"
 
@@ -32,6 +32,9 @@ class WebhookDelivery(Base):
     # GitHub's installation id, not a foreign key: the delivery log outlives
     # an uninstall.
     installation_id: Mapped[int | None] = mapped_column(BigInteger)
+    # SHA-256 of the signed body. The signature doesn't cover the delivery id,
+    # so the same body re-sent under a new id is the same delivery (D134).
+    body_sha256: Mapped[str | None] = mapped_column(unique=True)
     received_at: Mapped[datetime] = mapped_column(server_default=func.now())
     # NULL until handled. Only a handled delivery counts as seen, so one that
     # failed halfway can be redelivered from GitHub's UI (D95).

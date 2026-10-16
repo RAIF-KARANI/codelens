@@ -1,18 +1,22 @@
 """POST /webhooks/github: signature checks first (no database needed), then
 delivery dedupe and installation mirroring against a real database."""
 
+import asyncio
 import json
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 from httpx import Response
 
 from api.dependencies import get_queue
+from api.errors import ApiError
 from api.main import create_app
 from api.queue import QueueUnavailable
+from api.routes.webhooks import _read_body
 from core.config import Settings
 from core.github.webhooks import sign
 
@@ -536,7 +540,9 @@ def test_a_suspended_installation_gets_no_work_until_unsuspended(
         )
         push_while_suspended = deliver(c, installed, "push", push, delivery="push1")
         deliver(c, installed, "installation", installation("unsuspend"), delivery="unsuspend")
-        pr_after = deliver(c, installed, "pull_request", pr_event("opened"), delivery="pr2")
+        # The next push after unsuspending. (Not the same body again: that is
+        # a replay, refused whatever its delivery id, D134.)
+        pr_after = deliver(c, installed, "pull_request", pr_event("synchronize"), delivery="pr2")
 
     assert pr_while_suspended.json()["status"] == "ignored"
     assert push_while_suspended.json()["status"] == "ignored"
@@ -610,3 +616,127 @@ def test_no_cap_when_the_limit_is_zero(settings: Settings, sql: Sql, installed: 
         for n in range(1, 13):
             deliver(c, installed, "pull_request", pr_event("opened", number=n), delivery=f"{n}")
     assert len(queue.jobs) == 12
+
+
+# --- Phase 9 step 8 (D134): what an unauthenticated sender or a replay can do
+
+
+def test_a_body_past_the_cap_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The body was read whole, of any size, before the signature check.
+    monkeypatch.setattr("api.routes.webhooks.MAX_BODY", 1024)
+    with client(offline()) as c:
+        declared = c.post(URL, content=b"x" * 4096, headers={"X-GitHub-Event": "ping"})
+        small = c.post(URL, content=b"{}", headers={"X-GitHub-Event": "ping"})
+
+    assert declared.status_code == 413
+    assert declared.json()["error"]["code"] == "payload_too_large"
+    assert small.status_code == 401  # under the cap: on to the signature check
+
+
+def test_a_body_without_a_length_is_cut_off_while_reading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A chunked upload declares no length; reading stops once past the cap.
+    monkeypatch.setattr("api.routes.webhooks.MAX_BODY", 1024)
+    received: list[int] = []
+
+    async def receive() -> dict[str, Any]:
+        received.append(1)
+        return {"type": "http.request", "body": b"x" * 512, "more_body": len(received) < 64}
+
+    request = Request({"type": "http", "method": "POST", "headers": []}, receive)
+    with pytest.raises(ApiError) as refused:
+        asyncio.run(_read_body(request))
+
+    assert refused.value.status_code == 413
+    assert len(received) == 3  # 1536 bytes, then it stopped asking
+
+
+@pytest.mark.integration
+def test_a_replayed_body_under_a_new_delivery_id_is_a_duplicate(
+    settings: Settings, sql: Sql, installed: str
+) -> None:
+    # The audit's replay: PR opened at head a, then pushed to c; c is
+    # reviewed. Re-sending the old "opened" body under a fresh id queued a
+    # new review of the stale head a.
+    queue = RecordingQueue()
+    with client(settings, queue) as c:
+        deliver(c, installed, "pull_request", pr_event("opened"), delivery="d-1")
+        deliver(
+            c, installed, "pull_request", pr_event("synchronize", head="c" * 40), delivery="d-2"
+        )
+        sql("UPDATE reviews SET status = 'completed' WHERE head_sha = :c", c="c" * 40)
+        replay = deliver(c, installed, "pull_request", pr_event("opened"), delivery="d-replay")
+        # And an uninstall undone by replaying the "created" body.
+        uninstall = installation("deleted")
+        deliver(c, installed, "installation", uninstall, delivery="d-uninstall")
+        payload = {**installation("created"), "repositories": [repo_payload(1, "octo/api")]}
+        reinstall = deliver(c, installed, "installation", payload, delivery="d-reinstall")
+
+    assert replay.json()["status"] == "duplicate"
+    assert reinstall.json()["status"] == "duplicate"
+    rows = sql("SELECT head_sha, status FROM reviews ORDER BY id")
+    assert [(r.head_sha[0], r.status) for r in rows] == [("a", "superseded"), ("c", "completed")]
+    assert [job[0] for job in queue.jobs] == ["review", "review"]  # nothing queued for them
+    assert sql("SELECT id FROM installations") == []  # still uninstalled
+    # The same id (GitHub's own redelivery) still finds its row, as before.
+    with client(settings, queue) as c:
+        again = deliver(c, installed, "pull_request", pr_event("opened"), delivery="d-1")
+    assert again.json()["status"] == "duplicate"
+
+
+@pytest.mark.integration
+def test_a_rename_on_github_reaches_the_repo_with_the_next_event(
+    settings: Settings, sql: Sql, installed: str
+) -> None:
+    # Phase 9 step 9 (D135): only installation events wrote full_name, so a
+    # renamed repo kept its old name, which another repository could take.
+    # A stale row of another repo holding the new name is marked, not clashed with.
+    sql("INSERT INTO repos (github_id, full_name, source) VALUES (2, 'octo/api-v2', 'github')")
+    renamed = pr_event("opened")
+    renamed["repository"] = repo_payload(1, "octo/api-v2")
+    push = {
+        "ref": "refs/heads/main",
+        "installation": {"id": 99},
+        "repository": {**repo_payload(1, "octo/api-v3"), "default_branch": "main"},
+    }
+    with client(settings) as c:
+        pr = deliver(c, installed, "pull_request", renamed, delivery="pr")
+        assert sql("SELECT full_name FROM repos WHERE github_id = 1")[0][0] == "octo/api-v2"
+        pushed = deliver(c, installed, "push", push, delivery="push")
+
+    assert (pr.json()["status"], pushed.json()["status"]) == ("processed", "processed")
+    names = {r.github_id: r.full_name for r in sql("SELECT github_id, full_name FROM repos")}
+    assert names == {1: "octo/api-v3", 2: "octo/api-v2~stale-2"}
+
+
+@pytest.mark.integration
+def test_a_pinned_account_is_matched_by_id_and_the_cap_by_account(
+    settings: Settings, sql: Sql
+) -> None:
+    # Phase 9 step 10 (D136), the audit's reproduction: octo (id 7) is listed;
+    # another account (id 8) takes the login "Octo" and installs the App.
+    secret = settings.github_webhook_secret.get_secret_value()
+    taken = installation("created", id_=100)
+    taken["installation"]["account"] = {"id": 8, "login": "Octo", "type": "User"}
+    taken["repositories"] = [repo_payload(2, "Octo/other")]
+    mine = {**installation("created"), "repositories": [repo_payload(1, "octo/api")]}
+    with client(allowing(settings, "octo:7")) as c:
+        refused = deliver(c, secret, "installation", taken, delivery="i-8")
+        allowed = deliver(c, secret, "installation", mine, delivery="i-7")
+    assert (refused.json()["status"], allowed.json()["status"]) == ("ignored", "processed")
+    assert [r.account_id for r in sql("SELECT account_id FROM installations")] == [7]
+
+    # Unpinned, both installations get in, but the hourly cap is per account
+    # id now, so one doesn't use up the other's budget.
+    with client(allowing(settings, "octo", github_reviews_per_hour=1)) as c:
+        # Installed again (a new event, so a new body: the same one would be a
+        # replay, step 8).
+        taken["installation"]["repository_selection"] = "all"
+        deliver(c, secret, "installation", taken, delivery="i-8b")
+        theirs = pr_event("opened", repo_github_id=2)
+        theirs["installation"] = {"id": 100}
+        deliver(c, secret, "pull_request", theirs, delivery="pr-8")
+        deliver(c, secret, "pull_request", pr_event("opened"), delivery="pr-7")
+    rows = sql("SELECT r.github_id, v.status FROM reviews v JOIN repos r ON r.id = v.repo_id")
+    assert sorted((r.github_id, r.status) for r in rows) == [(1, "queued"), (2, "queued")]

@@ -8,11 +8,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
+import core.demo
 from core.config import Settings
 from core.db import create_engine
-from core.demo import DemoError, Summary, export, import_
+from core.demo import DemoError, Summary, export, github_public_check, import_
 
 pytestmark = pytest.mark.integration
 
@@ -21,11 +23,14 @@ NAME = "demo/shop"
 COUNTED = ("code_nodes", "code_edges", "files", "index_runs", "reviews", "findings")
 
 
-async def public(_: str) -> bool:
-    return True
+GITHUB_ID = 4242
 
 
-async def private(_: str) -> bool:
+async def public(github_id: int) -> bool:
+    return github_id == GITHUB_ID
+
+
+async def private(_: int) -> bool:
     return False
 
 
@@ -53,8 +58,9 @@ def reviewed(shop: Any, sql: Sql, worker_on_fakes: Any) -> int:
     )[0].id
     review.apply(args=(review_id, shop.base_sha)).get()
     sql(
-        "UPDATE repos SET source = 'github', full_name = :name, local_path = NULL",
+        "UPDATE repos SET source = 'github', full_name = :name, github_id = :id, local_path = NULL",
         name=NAME,
+        id=GITHUB_ID,
     )
     sql(
         "INSERT INTO finding_feedback (finding_id, github_user_id, vote)"
@@ -125,3 +131,32 @@ def test_an_export_from_another_schema_is_refused(
         json.dump(data, f)
     with pytest.raises(DemoError, match="schema mismatch"):
         run(settings, import_, out)
+
+
+def test_the_public_check_asks_github_by_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Phase 9 step 9 (D135): the check asked for GET /repos/{name}, so a
+    # stale name answered by another, public repository passed it.
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(request.url.path)
+        answers = {
+            "/repositories/4242": {"id": 4242, "private": False},
+            "/repositories/7": {"id": 8, "private": False},  # not the repo asked about
+        }
+        if request.url.path in answers:
+            return httpx.Response(200, json=answers[request.url.path])
+        return httpx.Response(404, json={"message": "Not Found"})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(
+        core.demo.httpx,
+        "AsyncClient",
+        lambda **kwargs: real(transport=httpx.MockTransport(handler), **kwargs),
+    )
+    is_public = github_public_check("https://api.github.test")
+
+    assert asyncio.run(is_public(4242)) is True
+    assert asyncio.run(is_public(7)) is False
+    assert asyncio.run(is_public(99)) is False  # private, or gone: 404
+    assert asked == ["/repositories/4242", "/repositories/7", "/repositories/99"]

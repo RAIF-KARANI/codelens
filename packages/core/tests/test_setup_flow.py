@@ -33,6 +33,7 @@ CREDS = AppCredentials(
     client_id="Iv1.x",
     client_secret="cs",
     owner="Friend",
+    owner_id=4242,
 )
 
 
@@ -52,6 +53,8 @@ class Machine:
         self.said: list[str] = []
         self.answers = {"username": "friend"}
         self.confirmed = True
+        self.declined: tuple[str, ...] = ()  # questions answered "no", by a word in them
+        self.asked: list[str] = []
 
     def run(self, cmd: Sequence[str]) -> Ran:
         if cmd[:2] == ["docker", "info"]:
@@ -77,6 +80,10 @@ class Machine:
                 raise httpx.ConnectError("not yet", request=request)
             return httpx.Response(200, json={"status": "ok"}, request=request)
         raise AssertionError(url)
+
+    def confirm(self, question: str) -> bool:
+        self.asked.append(question)
+        return self.confirmed and not any(word in question for word in self.declined)
 
     def ask(self, question: str, default: str | None) -> str:
         return self.answers["username"] if "username" in question else (default or "")
@@ -105,7 +112,7 @@ class Machine:
             stream=self.stream,
             get=self.get,
             ask=self.ask,
-            confirm=lambda question: self.confirmed,
+            confirm=self.confirm,
             new_smee_channel=self.new_channel,
             create_app=self.create_app,
             app_info=lambda settings: app,  # type: ignore[arg-type,return-value]
@@ -136,7 +143,8 @@ def test_a_fresh_clone_ends_with_an_install_link(clone: Path) -> None:
     # The App was made for the relay's channel, named after the user.
     assert machine.apps == [("CodeLens (friend)", "https://smee.io/channel1")]
     assert (env["GITHUB_APP_ID"], env["GITHUB_WEBHOOK_SECRET"]) == ("42", "whsec")
-    assert env["GITHUB_ALLOWED_ACCOUNTS"] == "Friend"  # the owner, so their PRs count
+    # The owner, so their PRs count, pinned to its id (D136).
+    assert env["GITHUB_ALLOWED_ACCOUNTS"] == "Friend:4242"
     # The comments of .env.example are kept: .env is also the documentation.
     assert "# The accounts whose installations are reviewed" in (clone / ".env").read_text()
     assert machine.commands == [
@@ -195,11 +203,12 @@ def test_an_existing_app_on_another_tunnel_runs_without_the_relay(clone: Path) -
     ("change", "message"),
     [
         (lambda m: setattr(m, "ollama_up", False), "Ollama isn't reachable"),
-        (lambda m: setattr(m, "confirmed", False), "ollama pull qwen3:8b && ollama pull"),
+        (lambda m: setattr(m, "declined", ("Pull",)), "ollama pull qwen3:8b && ollama pull"),
+        (lambda m: setattr(m, "declined", ("smee.io",)), "set SMEE_URL to a relay you trust"),
         (lambda m: setattr(m, "docker_up", False), "Docker isn't running"),
         (lambda m: setattr(m, "healthy_after", 10_000), "the API didn't come up"),
     ],
-    ids=["no-ollama", "declined-download", "no-docker", "never-healthy"],
+    ids=["no-ollama", "declined-download", "declined-relay", "no-docker", "never-healthy"],
 )
 def test_it_stops_with_what_to_do(clone: Path, change, message: str) -> None:
     machine = Machine(clone, pulled=[])
@@ -274,3 +283,29 @@ def test_rerunning_setup_repairs_an_absolute_key_path(clone: Path) -> None:
     setup(clone, machine.tools(existing))
 
     assert read_env(clone / ".env")["GITHUB_APP_PRIVATE_KEY_PATH"] == "secrets/github-app.pem"
+
+
+def test_an_owner_listed_by_login_alone_gets_pinned(clone: Path) -> None:
+    # Phase 9 step 10 (D136): a bare login matches whoever holds it now.
+    (clone / ".env").write_text(EXAMPLE)
+    set_env(clone / ".env", {"GITHUB_APP_ID": "7", "GITHUB_ALLOWED_ACCOUNTS": "friend,other"})
+    existing = AppInfo("codelens-friend", CREDS.html_url, "Friend", "https://smee.io/x", 4242)
+    machine = Machine(clone, pulled=["qwen3:8b", "qwen3-embedding:0.6b"])
+    setup(clone, machine.tools(existing))
+
+    assert read_env(clone / ".env")["GITHUB_ALLOWED_ACCOUNTS"] == "other,Friend:4242"
+    assert "allowed accounts: pinned Friend:4242" in machine.said
+
+
+def test_the_relay_is_asked_about_and_its_url_never_printed_in_full(clone: Path) -> None:
+    # Phase 9 step 11 (D137): setup created a smee.io channel without saying a
+    # third party sees every delivery, and printed the URL that reads them.
+    machine = Machine(clone, pulled=[])
+    setup(clone, machine.tools())
+
+    assert any("smee.io, a public relay" in q for q in machine.asked)
+    assert read_env(clone / ".env")["SMEE_URL"] == "https://smee.io/channel1"  # kept in .env
+    assert not any("channel1" in line for line in machine.said)
+    assert "webhook relay: created https://smee.io/cha***** (the full URL is in .env;" in "\n".join(
+        machine.said
+    )

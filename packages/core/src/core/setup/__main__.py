@@ -168,7 +168,10 @@ def app_info(settings: Settings) -> AppInfo:
             token = app_jwt(settings.github_app_id, key)  # type: ignore[arg-type]
             app = await gh.get_app(token)
             hook = await gh.get_app_hook_config(token)
-        return AppInfo(app["slug"], app["html_url"], app["owner"]["login"], hook.get("url"))
+        owner = app["owner"]
+        return AppInfo(
+            app["slug"], app["html_url"], owner["login"], hook.get("url"), owner.get("id")
+        )
 
     try:
         return asyncio.run(go())

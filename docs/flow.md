@@ -133,7 +133,8 @@ Details: [`development.md`](development.md).
 ### Letting a friend use the owner's App (optional)
 
 Instead of running their own, a friend can install the owner's App and have the laptop
-review their repos: add their login to `GITHUB_ALLOWED_ACCOUNTS` in `.env`,
+review their repos: add their login, pinned to their account id (`login:id`), to
+`GITHUB_ALLOWED_ACCOUNTS` in `.env`,
 `docker compose restart api`, and make the App public in its settings. Their code is then
 cloned to the owner's laptop, and reviews only happen while the laptop is running. Running
 their own (side 2) avoids both. See [`github-app.md`](github-app.md) §6.

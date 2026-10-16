@@ -15,7 +15,13 @@ isn't public. [smee.io](https://smee.io) relays them: GitHub posts to a smee cha
 and a small client on your machine forwards each delivery to the API.
 
 1. Open <https://smee.io/new>. The page's address is your channel URL, e.g.
-   `https://smee.io/AbC123xyz`. Keep it.
+   `https://smee.io/AbC123xyz`. Keep it, and keep it **private, like a password**:
+   anyone who opens that page sees the deliveries arrive, headers and bodies, private
+   repos included (repo names, PR titles and descriptions, commit messages, authors).
+   smee.io itself, a third party, sees all of it too. CodeLens doesn't trust it for
+   anything else: every delivery's signature is still checked, and a replayed one is
+   refused. For private code you don't want to pass through a third party, point the
+   App's webhook at a tunnel you run instead (D137).
 2. Leave this running in its own terminal (the API listens on port 8000):
 
 ```bash
@@ -127,10 +133,13 @@ to someone (Phase 7 step 4a) is safe because CodeLens only acts on installations
 accounts in **`GITHUB_ALLOWED_ACCOUNTS`**:
 
 1. **List the accounts** in `.env`, comma-separated GitHub logins (users or
-   organisations, any case), yourself included:
-   `GITHUB_ALLOWED_ACCOUNTS=your-login,friends-login`. Unset means **nobody**: it fails
-   closed like the secrets, so a missing line can never open your GPU to strangers.
-   Restart the API.
+   organisations, any case), yourself included, each pinned to its account id:
+   `GITHUB_ALLOWED_ACCOUNTS=your-login:123,friends-login:456`
+   (`gh api users/friends-login --jq .id` prints the id). A login can be renamed and
+   then registered by someone else; a pinned entry still means the same account, while
+   a bare login matches whoever holds it now, and `codelens doctor` warns about it
+   (D136). Unset means **nobody**: it fails closed like the secrets, so a missing line
+   can never open your GPU to strangers. Restart the API.
 2. **Open the App:** its settings page (`https://github.com/settings/apps/<slug>`) →
    **Advanced** → **Make this GitHub App public** → confirm. ("Public" only means others
    may install it; it gets no access to anything they don't grant.)
