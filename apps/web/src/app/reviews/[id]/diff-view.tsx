@@ -1,21 +1,28 @@
 import { Tag } from "@/components/badges";
+import { CodeLine } from "@/components/code-line";
 import type { Finding } from "@/lib/api";
+import type { Token } from "@/lib/code";
 import { type DiffFile, filePath, placeFinding } from "@/lib/diff";
 
 import { FindingCard, SEVERITY_STYLES } from "./finding-card";
+import { FindingSlot } from "./review-nav";
 
 type Placed = { finding: Finding; anchor: number; lines: [number, number] };
 
-/** The reviewed diff, file by file, with each finding shown under the line
- * it ends on (clipped to its hunk, as on GitHub; D109). Findings that touch no
- * changed line are listed above their file; findings on files outside the
- * diff come last. */
+/** The reviewed diff, file by file, highlighted (`tokens`, [file][hunk][line],
+ * from lib/highlight.ts), with each finding shown under the line it ends on
+ * (clipped to its hunk, as on GitHub; D109). Findings that touch no changed
+ * line are listed above their file; findings on files outside the diff come
+ * last. Every card sits in a FindingSlot, so the panel's filters and keys
+ * reach it. */
 export function DiffView({
   files,
+  tokens,
   findings,
   names,
 }: {
   files: DiffFile[];
+  tokens: Token[][][][];
   findings: Finding[];
   names: Map<number, string>;
 }) {
@@ -23,10 +30,11 @@ export function DiffView({
   const elsewhere = findings.filter((f) => !paths.has(f.file_path));
   return (
     <div className="space-y-4">
-      {files.map((file) => (
+      {files.map((file, i) => (
         <FileDiff
           key={filePath(file)}
           file={file}
+          tokens={tokens[i]}
           findings={findings.filter((f) => f.file_path === filePath(file))}
           names={names}
           open={files.length <= 8}
@@ -36,7 +44,9 @@ export function DiffView({
         <section className="space-y-2">
           <h3 className="text-sm font-semibold">On files outside the diff</h3>
           {elsewhere.map((f) => (
-            <FindingCard key={f.id} finding={f} names={names} />
+            <FindingSlot key={f.id} id={f.id}>
+              <FindingCard finding={f} names={names} />
+            </FindingSlot>
           ))}
         </section>
       )}
@@ -46,11 +56,13 @@ export function DiffView({
 
 function FileDiff({
   file,
+  tokens,
   findings,
   names,
   open,
 }: {
   file: DiffFile;
+  tokens: Token[][][];
   findings: Finding[];
   names: Map<number, string>;
   open: boolean;
@@ -73,8 +85,9 @@ function FileDiff({
 
   return (
     <details
+      id={`file:${path}`}
       open={open || findings.length > 0}
-      className="overflow-hidden rounded-lg border border-border"
+      className="scroll-mt-6 overflow-hidden rounded-lg border border-border bg-card"
     >
       <summary className="flex cursor-pointer flex-wrap items-center gap-2 bg-muted px-3 py-2 text-sm">
         <span className="break-all font-mono font-medium">{path}</span>
@@ -89,7 +102,9 @@ function FileDiff({
         <div className="space-y-2 border-t border-border p-3">
           <p className="text-xs text-muted-foreground">Not on a changed line:</p>
           {unplaced.map((f) => (
-            <FindingCard key={f.id} finding={f} names={names} />
+            <FindingSlot key={f.id} id={f.id}>
+              <FindingCard finding={f} names={names} />
+            </FindingSlot>
           ))}
         </div>
       )}
@@ -122,7 +137,7 @@ function FileDiff({
                     <LineRows
                       key={i}
                       kind={line.kind}
-                      text={line.text}
+                      tokens={tokens[h]?.[i] ?? [{ text: line.text }]}
                       oldNo={line.oldNo}
                       newNo={line.newNo}
                       covered={covered}
@@ -150,7 +165,7 @@ const MARKERS = { add: "+", del: "−", context: " " } as const;
 
 function LineRows({
   kind,
-  text,
+  tokens,
   oldNo,
   newNo,
   covered,
@@ -158,7 +173,7 @@ function LineRows({
   names,
 }: {
   kind: keyof typeof KIND_STYLES;
-  text: string;
+  tokens: Token[];
   oldNo: number | null;
   newNo: number | null;
   covered: string | undefined;
@@ -174,13 +189,17 @@ function LineRows({
         </td>
         <td className="select-none px-2 text-right align-top text-muted-foreground">{newNo ?? ""}</td>
         <td className="select-none align-top text-muted-foreground">{MARKERS[kind]}</td>
-        <td className="whitespace-pre-wrap pr-3 [overflow-wrap:anywhere]">{text}</td>
+        <td className="whitespace-pre-wrap pr-3 [overflow-wrap:anywhere]">
+          <CodeLine tokens={tokens} />
+        </td>
       </tr>
       {findings.length > 0 && (
         <tr>
           <td colSpan={4} className="space-y-2 bg-muted/60 px-3 py-2">
             {findings.map((f) => (
-              <FindingCard key={f.id} finding={f} names={names} />
+              <FindingSlot key={f.id} id={f.id}>
+                <FindingCard finding={f} names={names} />
+              </FindingSlot>
             ))}
           </td>
         </tr>

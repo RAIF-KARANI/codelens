@@ -179,6 +179,15 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Highlighted code (components/code-line.tsx): each token carries both
+   themes' colours, from Shiki's GitHub themes. */
+.tok {
+  color: var(--l, inherit);
+}
+[data-theme="dark"] .tok {
+  color: var(--d, inherit);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

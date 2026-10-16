@@ -38,7 +38,9 @@ export function FindingCard({
   return (
     <article
       id={`finding-${finding.id}`}
-      className={`scroll-mt-20 rounded-md border-l-4 bg-card p-3 font-sans shadow-sm ring-1 ring-border ${style.border} ${dropped ? "opacity-70" : ""}`}
+      // Focusable by script (the panel and j/k move here), not by Tab.
+      tabIndex={-1}
+      className={`scroll-mt-20 rounded-md outline-none border-l-4 bg-card p-3 font-sans shadow-sm ring-1 ring-border ${style.border} ${dropped ? "opacity-70" : ""}`}
     >
       <header className="flex flex-wrap items-center gap-2">
         <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${style.badge}`}>
