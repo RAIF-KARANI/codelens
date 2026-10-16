@@ -22,7 +22,7 @@ from core import jobs
 from core.config import Settings, get_settings
 from core.db import create_engine
 from core.db.models import Finding, Installation, Repo, Review
-from core.diff.git import GitError
+from core.diff.git import GitError, resolve
 from core.embedding import embed_repository
 from core.enums import FindingStatus, RepoSource, ReviewSource, ReviewStatus
 from core.github import (
@@ -242,6 +242,8 @@ async def _run_review(
             raise ReviewError(f"{row.full_name}: {NOT_COVERED}")
         if github:
             repo_path = await _fetch_pull_request(settings, row)
+            if await _superseded_on_github(engine, repo_path, row, review_id, notify):
+                return {"review_id": review_id, "status": "superseded", "skipped": True}
         elif row.local_path:
             repo_path = Path(row.local_path)
         else:
@@ -356,6 +358,32 @@ async def _supersede_if_stale(
             )
         )
         await append_event(conn, review_id, "superseded", by_review=newer, when=when)
+    await ring(notify, review_id)
+    return True
+
+
+async def _superseded_on_github(
+    engine: AsyncEngine, mirror: Path, row: Any, review_id: int, notify: Notify
+) -> bool:
+    """GitHub, not the order of our rows, says what the PR's head is: the
+    fetch just brought refs/pull/N/head. A review of any other commit is
+    stale, whether a replayed delivery or an event that came late queued it
+    (D134). Nothing newer may be queued here to say so, so this is the check
+    that holds when `_supersede_if_stale` finds nothing."""
+    head = await asyncio.to_thread(resolve, mirror, f"refs/pull/{row.pr_number}/head")
+    if head == row.head_sha:
+        return False
+    async with engine.begin() as conn:
+        await conn.execute(
+            update(Review)
+            .where(Review.id == review_id)
+            .values(
+                status=ReviewStatus.SUPERSEDED,
+                finished_at=func.now(),
+                error=f"superseded: the pull request's head is now {head[:7]}",
+            )
+        )
+        await append_event(conn, review_id, "superseded", head=head, when="before it ran")
     await ring(notify, review_id)
     return True
 

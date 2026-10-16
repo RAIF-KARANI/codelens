@@ -255,6 +255,7 @@ erDiagram
         text event
         text action
         bigint installation_id "GitHub's id, no FK"
+        text body_sha256 UK "of the signed body (D134)"
         timestamptz received_at
         timestamptz processed_at "NULL until handled"
     }
@@ -853,7 +854,7 @@ stateDiagram-v2
     running --> failed: every chunk failed, or an exception
     running --> running: redelivered after a crash<br/>(partial rows cleared, restart)
     [*] --> queued: pull_request webhook<br/>(GitHub PR, one per head)
-    queued --> superseded: a newer push of the same PR<br/>(webhook, or worker before running)
+    queued --> superseded: a newer push of the same PR<br/>(webhook, or worker before running),<br/>or the PR's head on GitHub is another commit
     completed --> superseded: a newer push arrived during the review<br/>(findings kept, not posted)
     completed --> [*]: (GitHub) review posted on the PR
     failed --> [*]
@@ -876,6 +877,7 @@ sequenceDiagram
     W->>PG: still the newest review of this PR? (else superseded)
     W->>GH: installation token
     W->>GH: git fetch refs/pull/N/head + branches into the mirror
+    W->>W: refs/pull/N/head still head_sha? (else superseded, D134)
     W->>O: embed seed queries, generate per chunk
     W->>PG: findings (with fingerprints and topics), trace, events
     W->>PG: still the newest? topics already posted on this PR?
@@ -1019,11 +1021,12 @@ Step by step: `docs/github-app.md`.
 ```mermaid
 flowchart TB
     IN["delivery: raw body + headers"] --> CFG{"secret set?<br/>not DEMO_MODE?"}
+    CFG -- "yes, body past 25 MB" --> R413["413 payload_too_large<br/>(read stops at the cap)"]
     CFG -- no --> R503["503 / 403"]
     CFG -- yes --> SIG{"HMAC-SHA256(body)<br/>== X-Hub-Signature-256?<br/>(constant time)"}
     SIG -- no --> R401["401 invalid_signature<br/>(body never parsed)"]
-    SIG -- yes --> CLAIM["upsert webhook_deliveries<br/>by X-GitHub-Delivery<br/>where processed_at IS NULL"]
-    CLAIM -- "already processed" --> DUP["202 duplicate"]
+    SIG -- yes --> CLAIM["upsert webhook_deliveries<br/>by X-GitHub-Delivery<br/>where processed_at IS NULL;<br/>body_sha256 unique"]
+    CLAIM -- "already processed,<br/>or the same body<br/>under another id" --> DUP["202 duplicate"]
     CLAIM -- claimed --> ALLOW{"account in<br/>GITHUB_ALLOWED_ACCOUNTS?<br/>(or an uninstall)"}
     ALLOW -- no --> IGN
     ALLOW -- yes --> EV{"event"}

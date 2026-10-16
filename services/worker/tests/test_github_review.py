@@ -188,3 +188,25 @@ def test_a_missing_pull_request_fails_the_review(
     [row] = sql("SELECT status FROM reviews WHERE id = :id", id=review_id)
     assert row.status == "failed"
     assert github.reviews == []
+
+
+def test_a_review_of_a_head_the_pr_has_moved_past_is_superseded(
+    pull_request: dict[str, Any], remote: Any, github: Any, worker_on_fakes: Any, sql: Sql
+) -> None:
+    # Phase 9 step 8 (D134): a replayed (or late) "opened" delivery queued a
+    # review of an old head with the highest id, so nothing newer was queued
+    # to mark it stale, and the worker reviewed and posted the old commit.
+    head = remote.commit("shop/notes.py", '"""Notes."""\n', "Add notes")
+    remote.push("HEAD:refs/pull/1/head")
+    run(queue_review(sql, pull_request["repo_id"], head), pull_request).get()  # reviewed
+    stale = queue_review(sql, pull_request["repo_id"], pull_request["head_sha"])
+    calls = len(worker_on_fakes.calls)
+
+    summary = run(stale, pull_request).get()
+
+    assert summary == {"review_id": stale, "status": "superseded", "skipped": True}
+    assert len(worker_on_fakes.calls) == calls  # the model never saw it
+    assert len(github.reviews) == 1  # only the current head's review was posted
+    [row] = sql("SELECT status, error FROM reviews WHERE id = :id", id=stale)
+    assert row.status == "superseded"
+    assert f"the pull request's head is now {head[:7]}" in row.error
