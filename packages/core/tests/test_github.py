@@ -4,6 +4,8 @@ registration server over real local HTTP."""
 
 import asyncio
 import json
+import stat
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -177,6 +179,20 @@ def test_credentials_are_saved_for_env(tmp_path: Path) -> None:
     assert env["GITHUB_ALLOWED_ACCOUNTS"] == "octo"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
+def test_credentials_are_owner_only(tmp_path: Path) -> None:
+    # Phase 9 step 6 (D132): the key and the env file were created with the
+    # umask's 0644, readable by every local user, and only chmod-ed after.
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir(mode=0o755)  # a directory from before D132
+    key_path, env_path = save_credentials(AppCredentials.from_conversion(CONVERSION), secrets_dir)
+
+    assert stat.S_IMODE(secrets_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(key_path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(env_path.stat().st_mode) == 0o600
+    assert sorted(p.name for p in secrets_dir.iterdir()) == ["github-app.env", "github-app.pem"]
+
+
 def test_registration_flow(tmp_path: Path) -> None:
     codes: list[str] = []
 
@@ -192,10 +208,13 @@ def test_registration_flow(tmp_path: Path) -> None:
     )
     registration.start()
     try:
-        page = httpx.get(f"{registration.url}/").text
-        forged = httpx.get(f"{registration.url}/callback?code=evil&state=wrong")
-        assert not registration.done.is_set()
-        ok = httpx.get(f"{registration.url}/callback?code=abc&state={registration.state}")
+        # The browser the CLI opens: the launch link, then it keeps the cookie.
+        with httpx.Client() as browser:
+            page = browser.get(registration.start_url).text
+            forged = browser.get(f"{registration.url}/callback?code=evil&state=wrong")
+            assert not registration.done.is_set()
+            ok = browser.get(f"{registration.url}/callback?code=abc&state={registration.state}")
+            again = browser.get(f"{registration.url}/callback?code=xyz&state={registration.state}")
     finally:
         registration.stop()
 
@@ -206,10 +225,51 @@ def test_registration_flow(tmp_path: Path) -> None:
     assert json.dumps(PERMISSIONS).replace('"', "&quot;") in page
     assert forged.status_code == 400
     assert ok.status_code == 200
-    assert codes == ["abc"]  # the forged callback never reached GitHub
+    assert codes == ["abc"]  # neither the forged nor a second callback reached GitHub
+    assert again.status_code == 400  # the first good callback is the only one
     assert registration.saved is not None
     assert (tmp_path / "github-app.pem").exists()
     assert "codelens-test/installations/new" in ok.text
+
+
+def test_another_local_client_cant_take_over_registration(tmp_path: Path) -> None:
+    # Phase 9 step 6 (D132): the start page, which carries the state, was
+    # served to anyone on 127.0.0.1, with any Host, so another local user
+    # could read the state and finish the flow with their own App's code.
+    codes: list[str] = []
+
+    def convert(code: str) -> AppCredentials:
+        codes.append(code)
+        return AppCredentials.from_conversion(CONVERSION)
+
+    registration = Registration(
+        name="CodeLens (t)", webhook_url="https://smee.io/x", convert=convert, secrets_dir=tmp_path
+    )
+    registration.start()
+    url = registration.url
+    try:
+        no_token = httpx.get(f"{url}/")
+        rebound = httpx.get(registration.start_url, headers={"Host": "rebind.attacker.example"})
+        # Even knowing the state, a client without the browser's cookie is refused.
+        stolen_state = httpx.get(f"{url}/callback?code=ATTACKER&state={registration.state}")
+        with httpx.Client() as browser:
+            page = browser.get(registration.start_url)
+        # The launch link used a second time, by anyone else: the run stops.
+        second = httpx.get(registration.start_url)
+        late = httpx.get(f"{url}/callback?code=ATTACKER&state={registration.state}")
+    finally:
+        registration.stop()
+
+    assert (no_token.status_code, rebound.status_code) == (403, 403)
+    assert registration.state not in no_token.text + rebound.text
+    assert stolen_state.status_code == 400
+    assert page.status_code == 200 and registration.state in page.text
+    assert second.status_code == 409 and registration.state not in second.text
+    assert late.status_code == 400
+    assert codes == []  # no code from anyone reached GitHub
+    assert registration.done.is_set() and registration.saved is None
+    assert registration.error is not None and "another client" in registration.error
+    assert not (tmp_path / "github-app.pem").exists()
 
 
 def test_mirror_sync_keeps_the_token_off_argv_and_disk(

@@ -51,8 +51,10 @@ def create_app(
         port=port,
     )
     registration.start()
-    print(f"Open {registration.url}/ to create the App (opening your browser) ...", flush=True)
-    webbrowser.open(f"{registration.url}/")
+    # The link carries the launch token: only a browser opened with it gets
+    # the page (D132). Printed too, for when no browser opens by itself.
+    print(f"Open {registration.start_url} to create the App (opening your browser) ...", flush=True)
+    webbrowser.open(registration.start_url)
     finished = registration.done.wait(REGISTER_TIMEOUT_S)
     registration.stop()
     if not finished:

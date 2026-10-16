@@ -17,8 +17,8 @@ Everything with side effects goes through `Tools`, so the tests replay a
 fresh machine, a re-run and the failures without touching this one.
 """
 
+import os
 import secrets
-import shutil
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -28,6 +28,7 @@ import httpx
 
 from core.config import Settings
 from core.github.manifest import AppCredentials
+from core.privatefile import write_private
 from core.setup.checks import Fetcher, Runner
 from core.setup.envfile import read_env, set_env
 
@@ -95,8 +96,12 @@ def _env_file(root: Path, env: Path, tools: Tools) -> None:
         example = root / ".env.example"
         if not example.exists():
             raise SetupStopped("no .env.example here: run setup from the repo root")
-        shutil.copyfile(example, env)
+        # Owner-only from the start: it is about to hold secrets (D132).
+        write_private(env, example.read_text(encoding="utf-8"))
         tools.say("created .env from .env.example")
+    else:
+        # A .env from before D132 may be readable by everyone: narrow it.
+        os.chmod(env, 0o600)
     if not read_env(env).get("API_JWT_SECRET"):
         # Signs the dashboard's API tokens; the API wants at least 32 bytes.
         set_env(env, {"API_JWT_SECRET": secrets.token_urlsafe(48)})
