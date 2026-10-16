@@ -87,6 +87,11 @@
   --suggestion: #0369a1;
   --suggestion-soft: #f0f9ff;
 
+  /* A chart's single series: the brand violet, stepped per mode so a filled
+     mark sits in the lightness band the dataviz validator checks (light: as
+     --primary; dark: one step darker than --primary, which is too light to fill). */
+  --chart-1: #6e56cf;
+
   /* Code changes, in diffs and the graph. */
   --added: #059669;
   --added-soft: rgb(16 185 129 / 0.13);
@@ -121,6 +126,8 @@
   --suggestion: #38bdf8;
   --suggestion-soft: #0b2030;
 
+  --chart-1: #8b78ee;
+
   --added: #34d399;
   --added-soft: rgb(16 185 129 / 0.16);
   --deleted: #f87171;
@@ -153,6 +160,7 @@
   --color-warning-soft: var(--warning-soft);
   --color-suggestion: var(--suggestion);
   --color-suggestion-soft: var(--suggestion-soft);
+  --color-chart-1: var(--chart-1);
   --color-added: var(--added);
   --color-added-soft: var(--added-soft);
   --color-deleted: var(--deleted);

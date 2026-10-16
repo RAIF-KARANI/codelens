@@ -43,12 +43,19 @@ function review(id: number, created_at: string, extra: Partial<ReviewSummary> = 
 }
 
 describe("isActive", () => {
-  const repos = { match: ["/repos", "/reviews"] };
+  const repos = { match: ["/repos"] };
+  const overview = { match: ["/"] };
 
   it("owns its prefixes and everything under them", () => {
     expect(isActive("/repos", repos)).toBe(true);
     expect(isActive("/repos/3/indexing", repos)).toBe(true);
-    expect(isActive("/reviews/1386/graph", repos)).toBe(true);
+    expect(isActive("/reviews/1386/graph", { match: ["/reviews"] })).toBe(true);
+  });
+
+  it("lets the overview own only the home page", () => {
+    expect(isActive("/", overview)).toBe(true);
+    expect(isActive("/repos", overview)).toBe(false);
+    expect(isActive("/reviews/3", overview)).toBe(false);
   });
 
   it("matches whole segments only", () => {
@@ -81,25 +88,34 @@ describe("the palette's data", () => {
     expect(reviewLabel({ id: 7, title: null, pr_number: null })).toBe("Review #7");
   });
 
-  it("keeps the newest reviews across repos, each with its repo's name", () => {
+  it("keeps only what the palette shows, in the API's order", () => {
     const a = repo(1, "o/a", "2026-10-15T00:00:00Z");
-    const b = repo(2, "o/b", "2026-10-14T00:00:00Z");
     const data = paletteData(
-      [a, b],
+      [a],
       [
-        { repo: a, reviews: [review(10, "2026-10-15T10:00:00Z"), review(9, "2026-10-12T00:00:00Z")] },
-        { repo: b, reviews: [review(11, "2026-10-14T00:00:00Z")] },
+        { ...review(10, "2026-10-15T10:00:00Z"), repo_full_name: "o/a" },
+        { ...review(9, "2026-10-12T00:00:00Z", { title: null }), repo_full_name: "o/b" },
       ],
-      2,
     );
-    expect(data.reviews.map((r) => [r.id, r.repo])).toEqual([
-      [10, "o/a"],
-      [11, "o/b"],
+    expect(data.reviews).toEqual([
+      {
+        id: 10,
+        label: "Change 10",
+        repo: "o/a",
+        pr_number: 10,
+        status: "completed",
+        created_at: "2026-10-15T10:00:00Z",
+      },
+      {
+        id: 9,
+        label: "PR #9",
+        repo: "o/b",
+        pr_number: 9,
+        status: "completed",
+        created_at: "2026-10-12T00:00:00Z",
+      },
     ]);
-    expect(data.repos).toEqual([
-      { id: 1, full_name: "o/a", status: "ready" },
-      { id: 2, full_name: "o/b", status: "ready" },
-    ]);
+    expect(data.repos).toEqual([{ id: 1, full_name: "o/a", status: "ready" }]);
   });
 });
 

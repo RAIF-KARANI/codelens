@@ -1,4 +1,4 @@
-import { FolderGit2Icon } from "lucide-react";
+import { FolderGit2Icon, GitPullRequestIcon, LayoutDashboardIcon } from "lucide-react";
 import Link from "next/link";
 import { connection } from "next/server";
 import { cache, Suspense } from "react";
@@ -16,6 +16,8 @@ import { requestUser } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
 const NAV_ICONS: Record<string, React.ReactNode> = {
+  "/": <LayoutDashboardIcon />,
+  "/reviews": <GitPullRequestIcon />,
   "/repos": <FolderGit2Icon />,
 };
 
@@ -41,7 +43,7 @@ export function SidebarContent() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-3">
       <div className="flex h-8 items-center px-1 collapsed:justify-center collapsed:px-0">
-        <Link href="/repos" aria-label="CodeLens, home" className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
+        <Link href="/" aria-label="CodeLens, home" className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
           <Logo />
         </Link>
       </div>

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { formatCount, formatDuration, formatPercent, shortSha } from "@/lib/format";
+import {
+  dayTitle,
+  formatCount,
+  formatDuration,
+  formatMs,
+  formatPercent,
+  shortSha,
+  weekday,
+} from "@/lib/format";
 import { parseChoice, parseCursor, parseId, withQuery } from "@/lib/params";
 
 describe("formatDuration", () => {
@@ -20,6 +28,23 @@ describe("formatDuration", () => {
     expect(formatDuration(at(0), null)).toBeNull();
     expect(formatDuration(null, at(1))).toBeNull();
     expect(formatDuration(at(5), at(1))).toBeNull();
+  });
+});
+
+describe("formatMs", () => {
+  it("is formatDuration's rule for a length of time", () => {
+    expect(formatMs(26_180)).toBe("26 s");
+    expect(formatMs(195_000)).toBe("3 min 15 s");
+    expect(formatMs(-1)).toBeNull();
+    expect(formatMs(Number.NaN)).toBeNull();
+  });
+});
+
+describe("UTC days", () => {
+  it("names the API's days in UTC, whatever the reader's zone", () => {
+    expect(weekday("2026-10-12")).toBe("Mon");
+    expect(dayTitle("2026-10-12")).toBe("Mon, Oct 12");
+    expect(weekday("2026-10-16")).toBe("Fri");
   });
 });
 

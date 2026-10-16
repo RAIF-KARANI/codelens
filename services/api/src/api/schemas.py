@@ -2,7 +2,7 @@
 contract, kept separate from the ORM models so the schema can change without
 changing what clients see."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -94,6 +94,57 @@ class ReviewSummary(_FromRow):
     # The review posted on the pull request (github source only), once posted.
     github_review_id: int | None = None
     counts: SeverityCounts = Field(default_factory=SeverityCounts)
+
+
+class ReviewListItem(ReviewSummary):
+    """A review in the list across repos (GET /reviews): its repo's name too."""
+
+    repo_full_name: str
+
+
+# --- the overview (GET /stats)
+
+
+class ReviewCounts(BaseModel):
+    """Reviews created in the window, by how they ended."""
+
+    total: int = 0
+    completed: int = 0
+    failed: int = 0
+    superseded: int = 0
+
+
+class RepoCounts(BaseModel):
+    """Visible repos by index status."""
+
+    total: int = 0
+    ready: int = 0
+    indexing: int = 0
+    pending: int = 0
+    failed: int = 0
+
+
+class DayCount(BaseModel):
+    """One UTC day of the window: reviews created, posted findings."""
+
+    day: date
+    reviews: int = 0
+    findings: int = 0
+
+
+class Stats(BaseModel):
+    """The overview's numbers, over the caller's visible repos. Eval runs are
+    left out unless asked for (D155)."""
+
+    days: int
+    reviews: ReviewCounts
+    findings: SeverityCounts
+    # Queued to finished, for reviews completed in the window; null with none.
+    median_seconds: float | None
+    # Queued or running right now (any age).
+    in_progress: int
+    repos: RepoCounts
+    daily: list[DayCount]
 
 
 class Finding(_FromRow):

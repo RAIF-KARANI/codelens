@@ -154,6 +154,21 @@ export type ReviewSummary = {
   counts: SeverityCounts;
 };
 
+/** A review in the list across repos (GET /reviews): its repo's name too. */
+export type ReviewListItem = ReviewSummary & { repo_full_name: string };
+
+/** The overview's numbers (GET /stats), over the caller's visible repos, eval
+ * runs left out (D155). `daily` has one row per UTC day of the window. */
+export type Stats = {
+  days: number;
+  reviews: { total: number; completed: number; failed: number; superseded: number };
+  findings: SeverityCounts;
+  median_seconds: number | null;
+  in_progress: number;
+  repos: { total: number; ready: number; indexing: number; pending: number; failed: number };
+  daily: { day: string; reviews: number; findings: number }[];
+};
+
 export type Severity = "critical" | "warning" | "suggestion";
 export type Vote = 1 | -1;
 export type Votes = { up: number; down: number };
@@ -243,6 +258,21 @@ export const listIndexRuns = (id: number, cursor?: number) =>
 
 export const listReviews = (id: number, opts: { status?: ReviewStatus; cursor?: number }) =>
   api<Page<ReviewSummary>>(withQuery(`/repos/${id}/reviews`, opts));
+
+/** Reviews across every repo the caller can see, newest first. */
+export const listAllReviews = (
+  opts: { status?: ReviewStatus; cursor?: number; limit?: number; includeEval?: boolean } = {},
+) =>
+  api<Page<ReviewListItem>>(
+    withQuery("/reviews", {
+      status: opts.status,
+      cursor: opts.cursor,
+      limit: opts.limit,
+      include_eval: opts.includeEval ? "true" : undefined,
+    }),
+  );
+
+export const getStats = (days = 7) => api<Stats>(withQuery("/stats", { days }));
 
 export const getReview = (id: number, opts: { dropped?: boolean } = {}) =>
   api<ReviewDetail>(withQuery(`/reviews/${id}`, { include_dropped: opts.dropped ? "true" : undefined }));
