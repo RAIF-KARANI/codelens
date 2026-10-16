@@ -12,7 +12,9 @@ a bot shouldn't block merges):
 
 The model's text is untrusted (the code under review can steer it). GitHub
 renders it as sanitised Markdown, so it can't run anything, but an @mention
-in it would notify a real person. Mentions are defused before posting.
+in it would notify a real person, under the App's name. Mentions are defused
+before posting, and a file path (which a fork PR's author picks) goes in a
+code span its own backticks can't close.
 """
 
 import re
@@ -27,8 +29,12 @@ from core.review.validate import CheckedFinding
 
 _BADGE = {Severity.CRITICAL: "🔴", Severity.WARNING: "🟠", Severity.SUGGESTION: "🔵"}
 _ORDER = {Severity.CRITICAL: 0, Severity.WARNING: 1, Severity.SUGGESTION: 2}
-# "@user" or "@org/team" at a word start: what GitHub turns into a notification.
-_MENTION = re.compile(r"(?<![\w`])@(?=[A-Za-z0-9])")
+# "@user" or "@org/team": what GitHub turns into a notification. Every such
+# @ is defused, wherever it is, except right after an ASCII letter or digit
+# (an e-mail address). Exempting code spans by the character before the @
+# (D133) let "`x`@user", "é@user" and "_@user" through: a backtick can close
+# a span as well as open one, and Python's \w is wider than GitHub's.
+_MENTION = re.compile(r"(?<![A-Za-z0-9])@(?=[A-Za-z0-9])")
 # GitHub caps a comment or review body at 65,536 characters.
 _MAX_BODY = 60_000
 
@@ -136,7 +142,7 @@ def _summary(
     if unplaced:
         lines += ["", "Findings that don't sit on a line of this diff:"]
         lines += [
-            f"- {_BADGE[f.finding.severity]} `{f.finding.file_path}:{f.line_start}` "
+            f"- {_BADGE[f.finding.severity]} {_code(f'{f.finding.file_path}:{f.line_start}')} "
             f"{defuse(f.finding.title)}"
             for f in unplaced
         ]
@@ -154,6 +160,16 @@ def defuse(text: str) -> str:
     """Stop "@name" in model output from notifying anyone: a zero-width space
     after the @ keeps it readable but breaks the mention."""
     return _MENTION.sub("@​", text)
+
+
+def _code(text: str) -> str:
+    """`text` as one inline code span, whatever backticks it holds: fenced by
+    a longer run of backticks than any inside it (CommonMark), on one line,
+    and defused too (a zero-width space in code is harmless)."""
+    text = " ".join(text.splitlines())
+    fence = "`" * (max(map(len, re.findall(r"`+", text)), default=0) + 1)
+    pad = " " if text.startswith("`") or text.endswith("`") else ""
+    return f"{fence}{pad}{defuse(text)}{pad}{fence}"
 
 
 def _cap(text: str) -> str:
