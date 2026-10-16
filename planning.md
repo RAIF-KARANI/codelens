@@ -15,7 +15,9 @@ D118). Step 4 is split in three (user's choice): 4a, the installation allowlist 
 the repo is public, and a 24 s launch video is in the README (#45): **Phase 7 is done**, apart from the optional
 3-minute walkthrough. **Phase 8 (run your own CodeLens, D124)** is built: `codelens doctor` (#46), `codelens setup` (#47), and a fresh-clone rehearsal that took a new
 checkout to a review posted 37 s after a push (step 3, #48). **Phase 8 is done**; its exit criterion is met.
-No phase is planned after it: next ideas are under §9 Stretch and Q2 (a stronger model).
+**Phase 9 (security fixes from the first audit, D127)** started 2026-10-16: a full source-and-local audit found
+8 confirmed issues (4 medium, 4 low) and 11 leads that need a GitHub-side or deployment check; step 1 (ports on loopback,
+handoff notes ignored) is in review. Other next ideas are under §9 Stretch and Q2 (a stronger model).
 
 ---
 
@@ -872,6 +874,24 @@ App reviewing its first pull request.
 | 2 ✅ #47 | **`codelens setup`** (D126): idempotent steps, each skipped when done: `.env` from `.env.example` with a generated `API_JWT_SECRET` (never rotated on a re-run); the relay's smee channel in `SMEE_URL` (created on `GET smee.io/new`, or, for an existing App, read from GitHub's `/app/hook/config` and kept); the App by the existing manifest flow (`core.github.create_app`), its settings merged into `.env` (comments kept) and its owner allowlisted; missing models pulled after a yes (`--yes`); `docker compose --profile relay up --build -d` with the new `smee` service (`node:22-alpine`, `smee-client@5.0.0`), so no Node on the host; `/health` polled up to 4 min; the install link, then doctor's report. Doctor's Node check became a relay check. Live on the dev machine: the existing App's channel adopted, nothing created, the stack and the relay up, doctor all ok; a GitHub redelivery went smee → the relay container → the API (202) | create the App in the browser (one click), on a machine without one |
 | 3 ✅ #48 | **Fresh-clone rehearsal** (2026-10-15, user's choice: a throwaway App): a new clone from GitHub, `uv sync` (10 s), `codelens doctor`, `codelens setup` in a terminal (the user typed the username and clicked Create): `.env`, a new smee channel, App `codelens-rehearsal` created and installed, a separate Compose project with its own database. **It found two problems, both fixed here:** (1) doctor listed seven manual fixes where one `codelens setup` does five: checks setup handles are marked `by_setup` and the to-do list ends with one setup line, after the installs it needs; (2) every index job failed: setup had written the App key's **absolute** host path into `.env`, which the workers can't read in their containers (only `secrets/` is mounted); setup now writes `secrets/github-app.pem`, a re-run repairs an absolute path (it did, in the rehearsal), and doctor fails one. Then the playground indexed (1,337 nodes) and embedded, and a push to PR #4 was reviewed and posted by `codelens-rehearsal[bot]` **37 s** after the push. (A first attempt timed out at 5 min: a game was sharing the GPU.) **`docs/run-your-own.md`**: the friend's guide (prerequisites, the two commands, installing, day to day, privacy, removal, troubleshooting), linked from the README. The rehearsal stack, volume and images were removed | delete the throwaway App `codelens-rehearsal` (Settings → Developer settings → GitHub Apps → Advanced → Delete) |
 
+### Phase 9: Security fixes from the first audit
+A full audit on 2026-10-16 (the security-audit skill, `standard` profile, commit f824cd1)
+ran every check in an offline Docker sandbox and touched no live system. It found **8 confirmed issues**: 4 medium,
+all about tying up the shared workers or the API, and 4 low. It also found **11 leads** that depend on a fact
+outside the code (GitHub's behaviour, or how a machine is exposed). The report and its machine-readable
+findings stay outside the repo, with the owner. Each step fixes one root cause, with a regression test that
+mirrors the audit's reproduction (D127).
+**Exit:** every confirmed issue fixed and tested, and the leads either fixed cheaply or written down as accepted.
+
+| Step | Deliverable | User action |
+|---|---|---|
+| 1 | **Hygiene:** Postgres, Redis and the API published on loopback only (127.0.0.1 and ::1), not on every interface (they were on `0.0.0.0` and `[::]`). Both loopbacks are needed: Windows resolves `localhost` to ::1 first, and with only 127.0.0.1 every connection waited 2 s for ::1 to be refused (the test suite took 52 min and the health checks timed out); `HANDOFF.md` gitignored (it can hold the smee channel URL, and the repo is public) | recreate the stack: `docker compose up -d` |
+| 2 | **Open redirect after login:** `safeNext` accepts `/<TAB>/host`, which the URL parser turns into `//host` (reproduced with the real Next handlers) | — |
+| 3 | **SSE streams pin DB connections:** each open review stream holds a pooled connection idle in a transaction, so ~15 streams exhaust the API's pool | — |
+| 4 | **Re-index:** no dedupe or rate limit, the lock is taken after the full parse (up to 61 re-parses per job), and neither the route nor the worker re-checks the allowlist or suspension | — |
+| 5 | **Parser bounds:** quadratic work on deeply nested definitions (fork PRs reach it) and exponential edge resolution on diamond inheritance or repeated `export *`, plus Celery time limits | — |
+| 6 | **Local secrets:** secret files written world-readable before a `chmod` (and `.env` never restricted), and the registration callback giving its state to any local client | — |
+
 ### Stretch
 CodeLens as a hosted service other people install (`docs/hosted-service.md`) · U7 sub-chunking · a feedback loop (suppress patterns users vote down) · mining
 anti-patterns from past human review comments · Go/Java support · TS path aliases ·
@@ -1254,6 +1274,7 @@ PR overlay, migrate service, host port 5433). New decisions:
 | D124 | Phase 8 is "run your own CodeLens" (Q20): a guided command-line setup on the user's own machine with their own GitHub App, in three steps (doctor, setup, a fresh-clone rehearsal with a guide) | A desktop app; trying a stronger model; polishing; the hosted service | User's choice (2026-10-15). It makes the project usable by someone else (the friend) without the owner's laptop, and reproducible by anyone who reads the README; a desktop app is mostly packaging, and the hosted service needs paid GPUs |
 | D125 | `codelens doctor` only looks: each requirement is a `Check` (ok / warn / fail + a one-line fix), printed with an ordered to-do list, exit 1 on any failure. Commands and HTTP go through injected callables, so tests play any machine. It is a console script of `codelens-core` (`uv run codelens`), so `setup` (step 2) joins it as a subcommand | One script that also fixes things; checks inside `docs/` only; a Makefile | Diagnosing first keeps step 2 small (it acts on what doctor reports) and gives the friend a safe command to run and paste back. A real command beats a checklist people skip |
 | D126 | `codelens setup` is a fixed sequence of idempotent steps that only act on what is missing, with side effects behind injected tools; it never replaces what exists (a secret, a channel, an App), asks before the 6 GB download, and stops with the exact next action when it can't go on (Ollama or Docker down, a declined download, an unhealthy API). The relay is a Compose service behind a `relay` profile, with the channel in `SMEE_URL` | A shell script; always creating fresh resources; the relay as a host `npx` process | Re-running must be safe, because people stop halfway (a download, the browser step). Reading an existing App's channel from GitHub keeps pre-Phase-8 setups working. A container relay removes Node as a requirement and restarts with the stack; the profile keeps it out of the way for anyone on their own tunnel |
+| D127 | Phase 9 fixes the first security audit's findings, one root cause per step, each with a regression test mirroring the audit's reproduction. Compose publishes Postgres, Redis and the API on loopback only (127.0.0.1 and ::1) | Leaving the ports on every interface and documenting a host firewall; dropping the Redis publish (host tools such as a native Celery worker use it); one large fix PR | A default-password superuser database and a password-less job queue must not depend on the machine's firewall: on a shared network they are reachable as soon as Compose starts. Loopback breaks nothing, because containers use the Compose network and the relay reaches `api:8000`. Small steps keep each fix reviewable and explainable |
 
 ---
 

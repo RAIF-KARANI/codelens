@@ -57,6 +57,12 @@ locally installed Postgres (inside the compose network it's still 5432). If 5433
 is taken on your machine, change `POSTGRES_PORT` / `REDIS_PORT` / `API_PORT` in `.env`
 (and the port in `DATABASE_URL` to match).
 
+All three are published on **loopback only** (127.0.0.1 and ::1, since Windows resolves
+`localhost` to ::1 first), never on the network your machine is on (D127): Postgres keeps its default password and Redis has none, so on a café or office
+network anyone could otherwise read the database or queue reviews. Containers talk to each
+other on the Compose network, and the relay reaches the API as `api:8000`, so nothing
+needs the LAN.
+
 ## Local Python development
 
 ```bash
