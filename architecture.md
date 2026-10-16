@@ -822,7 +822,7 @@ engine (D7): each task runs its own event loop, and a pooled connection can't cr
 
 | Task | Queue | Does | Returns |
 |---|---|---|---|
-| `worker.index_repo(repo_id)` | `index` | local repo: `index_repository` on its checkout. GitHub repo: installation token → `GET /repos/{name}` (default branch) → mirror fetch → `index_revision` (§5.5) | run id, commit, whether it wrote |
+| `worker.index_repo(repo_id)` | `index` | local repo: `index_repository` on its checkout. GitHub repo: installation token → `GET /repositories/{github_id}` (the current name and default branch, never the stored name; a rename is stored, D135) → mirror fetch → `index_revision` (§5.5) | run id, commit, whether it wrote |
 | `worker.embed_repo(repo_id)` | `gpu` | `embed_repository`, one slice of ≤ 512 nodes; re-queues itself if more remain (D107) | embedded / up-to-date / remaining counts |
 | `worker.review(review_id, base)` | `gpu` | `run_review`, claiming the queued row | status, posted count |
 | `worker.ping()` | `index` (default) | smoke test | `"pong"` |
@@ -876,6 +876,7 @@ sequenceDiagram
     A-->>GH: 202
     W->>PG: still the newest review of this PR? (else superseded)
     W->>GH: installation token
+    W->>GH: GET /repositories/{github_id} (the repo's current name, D135)
     W->>GH: git fetch refs/pull/N/head + branches into the mirror
     W->>W: refs/pull/N/head still head_sha? (else superseded, D134)
     W->>O: embed seed queries, generate per chunk

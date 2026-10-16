@@ -34,7 +34,7 @@ from core.github import (
 )
 from core.github.mirror import BRANCHES, clone_url, mirror_path, sync_mirror
 from core.github.publish import build_review
-from core.github.webhooks import Policy
+from core.github.webhooks import Policy, rename_repository
 from core.indexing import IndexingError, IndexLocked, IndexReport, index_repository, index_revision
 from core.providers import open_providers
 from core.review.config import PipelineConfig
@@ -138,9 +138,10 @@ async def _index_github(
     try:
         async with github_client(settings) as gh:
             token = await _installation_token(settings, gh, repo.github_installation_id)
-            default_branch = (await gh.get_repo(repo.full_name, token))["default_branch"]
+            current = await _current_repo(engine, gh, token, repo_id, repo.github_id)
+        default_branch, full_name = current["default_branch"], current["full_name"]
         mirror = mirror_path(settings.data_dir, repo_id)
-        url = clone_url(settings.github_web_url, repo.full_name)
+        url = clone_url(settings.github_web_url, full_name)
         await asyncio.to_thread(sync_mirror, mirror, url, token)
     except (GitHubError, GitError) as exc:
         raise IndexingError(f"{repo.full_name}: {exc}") from exc
@@ -148,7 +149,22 @@ async def _index_github(
         await conn.execute(
             update(Repo).where(Repo.id == repo_id).values(default_branch=default_branch)
         )
-    return await index_revision(engine, mirror, f"refs/heads/{default_branch}", name=repo.full_name)
+    return await index_revision(engine, mirror, f"refs/heads/{default_branch}", name=full_name)
+
+
+async def _current_repo(
+    engine: AsyncEngine, gh: GitHubClient, token: str, repo_id: int, github_id: int | None
+) -> dict[str, Any]:
+    """The repository as GitHub has it now, looked up by its id, never by
+    the stored name: a renamed repo's old name can come to belong to another
+    repository, whose code would then be fetched into this one's mirror
+    (D135). A changed name is stored."""
+    if github_id is None:
+        raise GitHubError(404, "the repo has no GitHub id", method="GET", path="/repositories")
+    current = await gh.get_repository(github_id, token)
+    async with engine.begin() as conn:
+        await rename_repository(conn, current)
+    return current
 
 
 NOT_COVERED = "its account is no longer allowed, or the App's installation is suspended"
@@ -241,11 +257,11 @@ async def _run_review(
         if github and not _covered(settings, row):
             raise ReviewError(f"{row.full_name}: {NOT_COVERED}")
         if github:
-            repo_path = await _fetch_pull_request(settings, row)
+            repo_path, repo_name = await _fetch_pull_request(settings, engine, row)
             if await _superseded_on_github(engine, repo_path, row, review_id, notify):
                 return {"review_id": review_id, "status": "superseded", "skipped": True}
         elif row.local_path:
-            repo_path = Path(row.local_path)
+            repo_path, repo_name = Path(row.local_path), row.full_name
         else:
             raise ReviewError(f"{row.full_name} has no local checkout to review")
         config = PipelineConfig.from_yaml(settings.pipeline_config)
@@ -256,7 +272,7 @@ async def _run_review(
                 repo_path=repo_path,
                 base=base,
                 head=row.head_sha,
-                repo_name=row.full_name,
+                repo_name=repo_name,
                 config=config,
                 context_window=settings.llm_num_ctx,
                 source=row.source,
@@ -317,6 +333,7 @@ async def _load_review(engine: AsyncEngine, review_id: int) -> Any:
                     Review.pr_number,
                     Review.repo_id,
                     Repo.full_name,
+                    Repo.github_id,
                     Repo.local_path,
                     Installation.github_installation_id,
                     Installation.account_login,
@@ -388,9 +405,12 @@ async def _superseded_on_github(
     return True
 
 
-async def _fetch_pull_request(settings: Settings, row: Any) -> Path:
+async def _fetch_pull_request(
+    settings: Settings, engine: AsyncEngine, row: Any
+) -> tuple[Path, str]:
     """Bring the PR's head (refs/pull/N/head, which also covers PRs from
-    forks) and the branches into the repo's mirror; returns the mirror."""
+    forks) and the branches into the repo's mirror; returns the mirror, and
+    the repo's name as GitHub has it now."""
     if row.github_installation_id is None:
         raise ReviewError(f"{row.full_name} is not covered by any installation of the App")
     mirror = mirror_path(settings.data_dir, row.repo_id)
@@ -398,11 +418,12 @@ async def _fetch_pull_request(settings: Settings, row: Any) -> Path:
     try:
         async with github_client(settings) as gh:
             token = await _installation_token(settings, gh, row.github_installation_id)
-        url = clone_url(settings.github_web_url, row.full_name)
+            current = await _current_repo(engine, gh, token, row.repo_id, row.github_id)
+        url = clone_url(settings.github_web_url, current["full_name"])
         await asyncio.to_thread(sync_mirror, mirror, url, token, (BRANCHES, pull))
     except (GitHubError, GitError) as exc:
         raise ReviewError(f"{row.full_name}#{row.pr_number}: {exc}") from exc
-    return mirror
+    return mirror, current["full_name"]
 
 
 async def _publish(
@@ -420,6 +441,8 @@ async def _publish(
     if await _supersede_if_stale(engine, row, review_id, "while it ran (not posted)", notify):
         return {"status": "superseded", "published": False}
     async with engine.connect() as conn:
+        # As GitHub calls the repo now (the fetch looked it up by id, D135).
+        full_name = await conn.scalar(select(Repo.full_name).where(Repo.id == row.repo_id))
         already = set(
             await conn.scalars(
                 select(Finding.topic)
@@ -436,9 +459,7 @@ async def _publish(
     async with github_client(settings) as gh:
         token = await _installation_token(settings, gh, row.github_installation_id)
         try:
-            posted = await gh.create_review(
-                row.full_name, row.pr_number, publication.payload, token
-            )
+            posted = await gh.create_review(full_name, row.pr_number, publication.payload, token)
         except GitHubError as exc:
             if exc.status != 422 or not publication.payload["comments"]:
                 raise
@@ -448,9 +469,7 @@ async def _publish(
             publication = build_review(
                 result, head_sha=row.head_sha, model=model, already_posted=already, inline=False
             )
-            posted = await gh.create_review(
-                row.full_name, row.pr_number, publication.payload, token
-            )
+            posted = await gh.create_review(full_name, row.pr_number, publication.payload, token)
     async with engine.connect() as conn:
         await conn.execute(
             update(Review).where(Review.id == review_id).values(github_review_id=posted["id"])
@@ -475,6 +494,7 @@ async def _load_repo(engine: AsyncEngine, repo_id: int) -> Any:
             await conn.execute(
                 select(
                     Repo.full_name,
+                    Repo.github_id,
                     Repo.source,
                     Repo.local_path,
                     Installation.github_installation_id,

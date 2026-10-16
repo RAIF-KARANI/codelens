@@ -61,23 +61,26 @@ class DemoError(Exception):
     pass
 
 
-IsPublic = Callable[[str], Awaitable[bool]]
+IsPublic = Callable[[int], Awaitable[bool]]  # GitHub's repo id
 
 
 def github_public_check(api_url: str = "https://api.github.com") -> IsPublic:
-    """Whether GitHub shows `owner/name` to anyone: no credentials are sent,
-    so a private repo answers 404, like a missing one."""
+    """Whether GitHub shows the repository to anyone: no credentials are sent,
+    so a private repo answers 404, like a missing one. Asked by id, not by
+    name: a stored name can be stale, and the public repo now answering to it
+    may be another one, while the rows exported are this one's (D135)."""
 
-    async def is_public(full_name: str) -> bool:
+    async def is_public(github_id: int) -> bool:
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.get(
-                f"{api_url}/repos/{full_name}",
+                f"{api_url}/repositories/{github_id}",
                 headers={"Accept": "application/vnd.github+json", "User-Agent": "CodeLens"},
             )
         if response.status_code == 404:
             return False
         response.raise_for_status()
-        return response.json().get("private") is False
+        data = response.json()
+        return data.get("id") == github_id and data.get("private") is False
 
     return is_public
 
@@ -94,9 +97,9 @@ async def export(
     async with engine.connect() as conn:
         repos = (
             await conn.execute(
-                select(models.Repo.id, models.Repo.full_name, models.Repo.source).where(
-                    models.Repo.full_name.in_(full_names)
-                )
+                select(
+                    models.Repo.id, models.Repo.full_name, models.Repo.source, models.Repo.github_id
+                ).where(models.Repo.full_name.in_(full_names))
             )
         ).all()
         missing = set(full_names) - {r.full_name for r in repos}
@@ -105,7 +108,7 @@ async def export(
         for repo in repos:
             if repo.source is not RepoSource.GITHUB:
                 raise DemoError(f"{repo.full_name} is a local repo: only public GitHub repos go")
-            if not await is_public(repo.full_name):
+            if repo.github_id is None or not await is_public(repo.github_id):
                 raise DemoError(f"{repo.full_name} is not public on GitHub: refusing to export it")
         revision = await conn.scalar(text("SELECT version_num FROM alembic_version"))
         repo_ids = [r.id for r in repos]

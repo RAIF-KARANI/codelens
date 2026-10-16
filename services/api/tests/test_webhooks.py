@@ -683,3 +683,28 @@ def test_a_replayed_body_under_a_new_delivery_id_is_a_duplicate(
     with client(settings, queue) as c:
         again = deliver(c, installed, "pull_request", pr_event("opened"), delivery="d-1")
     assert again.json()["status"] == "duplicate"
+
+
+@pytest.mark.integration
+def test_a_rename_on_github_reaches_the_repo_with_the_next_event(
+    settings: Settings, sql: Sql, installed: str
+) -> None:
+    # Phase 9 step 9 (D135): only installation events wrote full_name, so a
+    # renamed repo kept its old name, which another repository could take.
+    # A stale row of another repo holding the new name is marked, not clashed with.
+    sql("INSERT INTO repos (github_id, full_name, source) VALUES (2, 'octo/api-v2', 'github')")
+    renamed = pr_event("opened")
+    renamed["repository"] = repo_payload(1, "octo/api-v2")
+    push = {
+        "ref": "refs/heads/main",
+        "installation": {"id": 99},
+        "repository": {**repo_payload(1, "octo/api-v3"), "default_branch": "main"},
+    }
+    with client(settings) as c:
+        pr = deliver(c, installed, "pull_request", renamed, delivery="pr")
+        assert sql("SELECT full_name FROM repos WHERE github_id = 1")[0][0] == "octo/api-v2"
+        pushed = deliver(c, installed, "push", push, delivery="push")
+
+    assert (pr.json()["status"], pushed.json()["status"]) == ("processed", "processed")
+    names = {r.github_id: r.full_name for r in sql("SELECT github_id, full_name FROM repos")}
+    assert names == {1: "octo/api-v3", 2: "octo/api-v2~stale-2"}

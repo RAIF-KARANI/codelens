@@ -202,6 +202,7 @@ async def attach_repositories(
     name) under an installation; returns their row ids."""
     ids = []
     for repository in repositories:
+        await _free_name(conn, repository["id"], repository["full_name"])
         ids.append(
             await conn.scalar(
                 insert(repos_t)
@@ -225,6 +226,32 @@ async def attach_repositories(
     return ids
 
 
+async def rename_repository(conn: AsyncConnection, repository: dict[str, Any]) -> None:
+    """Keep a repo's name what GitHub calls it now. Every push and pull
+    request payload carries it, so a rename or a transfer is picked up by the
+    next event, not only by installation events (D135)."""
+    github_id, full_name = repository.get("id"), repository.get("full_name")
+    if not isinstance(github_id, int) or not isinstance(full_name, str):
+        return
+    await _free_name(conn, github_id, full_name)
+    await conn.execute(
+        update(repos_t)
+        .where(repos_t.c.github_id == github_id, repos_t.c.full_name != full_name)
+        .values(full_name=full_name, updated_at=func.now())
+    )
+
+
+async def _free_name(conn: AsyncConnection, github_id: int, full_name: str) -> None:
+    """Names are unique, and GitHub just gave this one to `github_id`: a row
+    of another repo still holding it is stale. It keeps its data under a
+    marked name until an event of its own says what it is called now."""
+    await conn.execute(
+        update(repos_t)
+        .where(repos_t.c.full_name == full_name, repos_t.c.github_id != github_id)
+        .values(full_name=func.concat(full_name, "~stale-", repos_t.c.github_id))
+    )
+
+
 async def detach_repositories(conn: AsyncConnection, github_ids: Sequence[int]) -> None:
     """Repos the App lost access to keep their graph and reviews, but no
     longer belong to an installation, so nothing indexes or reviews them."""
@@ -243,6 +270,7 @@ async def _push(conn: AsyncConnection, payload: dict[str, Any], policy: Policy) 
     # git when they're reviewed. A deleted branch has nothing to index.
     if payload.get("deleted") or payload.get("ref") != f"refs/heads/{default_branch}":
         return EventOutcome("ignored")
+    await rename_repository(conn, repository)
     repo_id = await conn.scalar(
         update(repos_t)
         .where(*_covered_for(policy, repository.get("id")))
@@ -269,6 +297,7 @@ async def _pull_request(
     ).first()
     if covered is None:
         return EventOutcome("ignored")
+    await rename_repository(conn, payload.get("repository") or {})
     repo_id, account = covered
     number, head_sha = pr["number"], pr["head"]["sha"]
 

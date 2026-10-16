@@ -1,6 +1,7 @@
 """Indexing a GitHub repo: installation token -> repo info -> bare mirror ->
 index the default branch from git objects (fake GitHub: tests/conftest.py)."""
 
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -55,3 +56,32 @@ def test_a_missing_app_configuration_fails_clearly(
 
     assert "GITHUB_APP_ID is not set" in str(result.result)
     assert github.minted == []
+
+
+def test_a_renamed_repo_is_fetched_by_its_id_not_its_old_name(
+    remote: Any, github: Any, attached_repo: int, sql: Sql, tmp_path: Path
+) -> None:
+    # Phase 9 step 9 (D135): the worker addressed GitHub by the stored name.
+    # octo/shop (id 42) was renamed to octo/shop2, and another repository
+    # took the name octo/shop: its code was fetched into repo 42's mirror and
+    # indexed as repo 42's graph.
+    remotes = tmp_path / "remotes" / "octo"
+    (remotes / "shop.git").rename(remotes / "shop2.git")
+    stranger = tmp_path / "stranger"
+    stranger.mkdir()
+    (stranger / "payload.py").write_text("def stranger_injected():\n    return 1\n")
+    for args in (
+        ["init", "-q", "-b", "main"],
+        ["add", "-A"],
+        ["-c", "user.name=S", "-c", "user.email=s@example.com", "commit", "-q", "-m", "theirs"],
+        ["clone", "-q", "--bare", ".", str(remotes / "shop.git")],
+    ):
+        subprocess.run(["git", "-C", str(stranger), *args], check=True, capture_output=True)
+    github.names[42] = "octo/shop2"  # GitHub's answer for id 42 now
+
+    index_repo.apply(args=(attached_repo,)).get()
+
+    files = {r.path for r in sql("SELECT path FROM files WHERE repo_id = :id", id=attached_repo)}
+    assert "shop/pricing.py" in files and "payload.py" not in files
+    [repo] = sql("SELECT full_name FROM repos WHERE id = :id", id=attached_repo)
+    assert repo.full_name == "octo/shop2"  # the new name, stored

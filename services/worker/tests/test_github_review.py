@@ -4,6 +4,7 @@ heads superseded. Fake GitHub and fake models (tests/conftest.py)."""
 
 import threading
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -210,3 +211,18 @@ def test_a_review_of_a_head_the_pr_has_moved_past_is_superseded(
     [row] = sql("SELECT status, error FROM reviews WHERE id = :id", id=stale)
     assert row.status == "superseded"
     assert f"the pull request's head is now {head[:7]}" in row.error
+
+
+def test_a_review_is_posted_to_the_repo_by_its_current_name(
+    pull_request: dict[str, Any], github: Any, sql: Sql, tmp_path: Path
+) -> None:
+    # Renamed on GitHub after it was indexed; no event told us (D135).
+    remotes = tmp_path / "remotes" / "octo"
+    (remotes / "shop.git").rename(remotes / "shop-renamed.git")
+    github.names[42] = "octo/shop-renamed"
+    run(queue_review(sql, pull_request["repo_id"], pull_request["head_sha"]), pull_request).get()
+
+    [posted] = github.reviews
+    assert posted["repo"] == "octo/shop-renamed"
+    [repo] = sql("SELECT full_name FROM repos WHERE id = :id", id=pull_request["repo_id"])
+    assert repo.full_name == "octo/shop-renamed"

@@ -86,9 +86,10 @@ class GitHubClient:
 
     # --- as an installation (an installation token, auth.InstallationTokens)
 
-    async def get_repo(self, full_name: str, token: str) -> dict[str, Any]:
-        """A repository: default branch, visibility, ..."""
-        return await self._request("GET", f"/repos/{full_name}", token=token)
+    async def get_repository(self, github_id: int, token: str) -> dict[str, Any]:
+        """A repository by its id, which a rename or transfer never changes:
+        its current `full_name`, default branch, ..."""
+        return await self._request("GET", f"/repositories/{github_id}", token=token)
 
     async def create_review(
         self, full_name: str, number: int, review: dict[str, Any], token: str

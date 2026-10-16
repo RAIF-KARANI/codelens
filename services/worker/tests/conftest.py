@@ -73,6 +73,8 @@ class FakeGitHub:
     minted: list[str] = field(default_factory=list)  # installation tokens handed out
     reviews: list[dict[str, Any]] = field(default_factory=list)  # posted PR reviews
     refuse_inline: int = 0  # answer 422 to this many reviews that have comments
+    # What GitHub calls each repo id now; a rename changes it (D135).
+    names: dict[int, str] = field(default_factory=lambda: {42: "octo/shop"})
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -81,14 +83,19 @@ class FakeGitHub:
             expires = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
             return httpx.Response(201, json={"token": self.minted[-1], "expires_at": expires})
         assert request.headers["Authorization"] == f"Bearer {self.minted[-1]}"
-        if path == "/repos/octo/shop":
-            return httpx.Response(200, json={"full_name": "octo/shop", "default_branch": "main"})
-        if path.startswith("/repos/octo/shop/pulls/") and path.endswith("/reviews"):
+        if path.startswith("/repositories/") and int(path.split("/")[2]) in self.names:
+            github_id = int(path.split("/")[2])
+            repo = {"id": github_id, "full_name": self.names[github_id], "default_branch": "main"}
+            return httpx.Response(200, json=repo)
+        if path.startswith("/repos/") and "/pulls/" in path and path.endswith("/reviews"):
             review = json.loads(request.content)
             if self.refuse_inline and review["comments"]:
                 self.refuse_inline -= 1
                 return httpx.Response(422, json={"message": "Line could not be resolved"})
-            self.reviews.append({"number": int(path.split("/")[5]), **review})
+            parts = path.split("/")  # /repos/{owner}/{name}/pulls/{n}/reviews
+            self.reviews.append(
+                {"repo": f"{parts[2]}/{parts[3]}", "number": int(parts[5]), **review}
+            )
             return httpx.Response(200, json={"id": 9000 + len(self.reviews)})
         return httpx.Response(404, json={"message": "Not Found"})
 
