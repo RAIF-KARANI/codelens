@@ -36,11 +36,11 @@ async function Indexing({ params, searchParams }: PageProps<"/repos/[id]/indexin
       {latest && cursor === undefined && <LatestRun run={latest} />}
       <h2 className="mt-8 text-sm font-semibold">History</h2>
       {page.items.length === 0 ? (
-        <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">Never indexed.</p>
+        <p className="mt-3 text-sm text-muted-foreground">Never indexed.</p>
       ) : (
-        <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className="mt-3 overflow-x-auto rounded-lg border border-border">
           <table className="w-full whitespace-nowrap text-left text-sm">
-            <thead className="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+            <thead className="bg-muted text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-4 py-2 font-medium">Run</th>
                 <th className="px-4 py-2 font-medium">Commit</th>
@@ -51,7 +51,7 @@ async function Indexing({ params, searchParams }: PageProps<"/repos/[id]/indexin
                 <th className="px-4 py-2 font-medium">Started</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            <tbody className="divide-y divide-border">
               {page.items.map((run) => (
                 <RunRow key={run.id} run={run} />
               ))}
@@ -84,9 +84,9 @@ function LatestRun({ run }: { run: IndexRun }) {
         {items.map(({ label, value }) => (
           <div
             key={label}
-            className="rounded-lg border border-zinc-200 px-4 py-3 dark:border-zinc-800"
+            className="rounded-lg border border-border px-4 py-3"
           >
-            <dt className="text-xs text-zinc-500">{label}</dt>
+            <dt className="text-xs text-muted-foreground">{label}</dt>
             <dd className="mt-1 text-lg font-semibold tabular-nums">{value}</dd>
           </div>
         ))}
@@ -101,18 +101,18 @@ function RunRow({ run }: { run: IndexRun }) {
   return (
     <tr className="align-top">
       <td className="px-4 py-3 font-medium">#{run.id}</td>
-      <td className="px-4 py-3 font-mono text-xs text-zinc-600 dark:text-zinc-400">
+      <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
         {shortSha(run.commit_sha)}
       </td>
       <td className="px-4 py-3">
         <StatusBadge status={run.status} />
         {run.error && (
-          <p className="mt-1 max-w-xs truncate text-xs text-red-700 dark:text-red-400" title={run.error}>
+          <p className="mt-1 max-w-xs truncate text-xs text-critical" title={run.error}>
             {run.error}
           </p>
         )}
       </td>
-      <td className="px-4 py-3 text-xs tabular-nums text-zinc-600 dark:text-zinc-400">
+      <td className="px-4 py-3 text-xs tabular-nums text-muted-foreground">
         {files ? (
           <>
             {formatCount(files.parsed)} parsed
@@ -122,13 +122,13 @@ function RunRow({ run }: { run: IndexRun }) {
           "—"
         )}
       </td>
-      <td className="px-4 py-3 text-xs tabular-nums text-zinc-600 dark:text-zinc-400">
+      <td className="px-4 py-3 text-xs tabular-nums text-muted-foreground">
         {nodes ? `+${nodes.inserted ?? 0} ~${nodes.updated ?? 0} −${nodes.deleted ?? 0}` : "—"}
       </td>
-      <td className="px-4 py-3 tabular-nums text-zinc-600 dark:text-zinc-400">
+      <td className="px-4 py-3 tabular-nums text-muted-foreground">
         {formatDuration(run.started_at, run.finished_at) ?? "—"}
       </td>
-      <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
+      <td className="px-4 py-3 text-muted-foreground">
         <DateTime iso={run.started_at} />
       </td>
     </tr>

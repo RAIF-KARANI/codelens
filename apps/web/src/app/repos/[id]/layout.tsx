@@ -20,12 +20,12 @@ export default function RepoLayout({ params, children }: LayoutProps<"/repos/[id
     <>
       <Link
         href="/repos"
-        className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+        className="text-sm text-muted-foreground hover:text-foreground"
       >
         ← Repositories
       </Link>
       {/* The id is only known per request, so the header streams in. */}
-      <Suspense fallback={<div className="mt-3 h-24 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-900" />}>
+      <Suspense fallback={<div className="mt-3 h-24 animate-pulse rounded-lg bg-muted" />}>
         <RepoHeader params={params} />
       </Suspense>
       <div className="mt-6">{children}</div>
@@ -55,7 +55,7 @@ async function RepoHeader({ params }: Pick<LayoutProps<"/repos/[id]">, "params">
             <StatusBadge status={repo.status} />
             {repo.source === "local" && <Tag>local</Tag>}
           </h1>
-          <p className="mt-1 font-mono text-xs text-zinc-600 dark:text-zinc-400">
+          <p className="mt-1 font-mono text-xs text-muted-foreground">
             {repo.default_branch} @ {shortSha(repo.last_indexed_sha)}
           </p>
         </div>

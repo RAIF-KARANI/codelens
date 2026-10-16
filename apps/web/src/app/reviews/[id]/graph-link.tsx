@@ -10,7 +10,7 @@ export function GraphLink({ findingId }: { findingId: number }) {
   return (
     <Link
       href={`/reviews/${id}/graph?finding=${findingId}`}
-      className="text-xs text-zinc-500 underline underline-offset-4 hover:text-zinc-900 dark:hover:text-zinc-100"
+      className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
     >
       Show in graph
     </Link>

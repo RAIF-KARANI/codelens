@@ -20,7 +20,7 @@ export default function LoginPage({ searchParams }: PageProps<"/login">) {
   return (
     <div className="mx-auto mt-16 max-w-sm text-center">
       <h1 className="text-2xl font-semibold tracking-tight">Sign in to CodeLens</h1>
-      <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="mt-3 text-sm text-muted-foreground">
         You&apos;ll see the repositories where the CodeLens GitHub App is installed and you have
         access. Signing in again picks up new installations.
       </p>
@@ -42,7 +42,7 @@ async function SignIn({ searchParams }: Pick<PageProps<"/login">, "searchParams"
       {message && (
         <p
           role="alert"
-          className="mt-6 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+          className="mt-6 rounded-md border border-critical/30 bg-critical-soft px-3 py-2 text-sm text-critical"
         >
           {message}
         </p>
@@ -57,7 +57,7 @@ function SignInButton({ href }: { href: string }) {
   return (
     <a
       href={href}
-      className="mt-8 inline-flex h-10 items-center gap-2 rounded-md bg-zinc-900 px-4 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+      className="mt-8 inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/85"
     >
       <GitHubMark />
       Sign in with GitHub

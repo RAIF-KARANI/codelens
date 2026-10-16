@@ -40,8 +40,8 @@ export function VoteButtons({
   const style = (on: boolean) =>
     `inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs tabular-nums ${
       on
-        ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-        : "border-zinc-300 text-zinc-600 hover:border-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
+        ? "border-primary bg-primary text-primary-foreground"
+        : "border-input text-muted-foreground hover:border-primary/60 hover:text-foreground"
     }`;
   return (
     <div className="flex items-center gap-1.5" aria-busy={pending}>
@@ -63,7 +63,7 @@ export function VoteButtons({
       >
         👎 {state.votes.down}
       </button>
-      {message && <span className="text-xs text-red-700 dark:text-red-400">{message}</span>}
+      {message && <span className="text-xs text-critical">{message}</span>}
     </div>
   );
 }

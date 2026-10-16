@@ -13,10 +13,11 @@ import {
   Position,
   ReactFlow,
 } from "@xyflow/react";
-import { useMemo, useSyncExternalStore } from "react";
+import { useMemo } from "react";
 
 import type { GraphEdge, GraphNode } from "@/lib/api";
 import { COLUMNS, layout } from "@/lib/graph-layout";
+import { useTheme } from "@/lib/use-theme";
 
 import { useEvidence } from "../evidence";
 
@@ -26,9 +27,9 @@ type CodeNodeData = GraphNode & { cited: boolean; focus: boolean; dimmed: boolea
 type CodeFlowNode = Node<CodeNodeData, "code">;
 
 const CHANGE_STYLES = {
-  added: "border-emerald-500 bg-emerald-50 dark:bg-emerald-950",
-  modified: "border-amber-500 bg-amber-50 dark:bg-amber-950",
-  deleted: "border-red-500 bg-red-50 dark:bg-red-950",
+  added: "border-added bg-added-soft",
+  modified: "border-warning bg-warning-soft",
+  deleted: "border-deleted bg-deleted-soft",
 } as const;
 
 /** One code node: changed code is coloured by its change, nodes the model was
@@ -37,47 +38,32 @@ function CodeNodeView({ data }: NodeProps<CodeFlowNode>) {
   const style = data.is_seed
     ? CHANGE_STYLES[data.change ?? "modified"]
     : data.in_context
-      ? "border-zinc-500 bg-white dark:bg-zinc-900"
-      : "border-dashed border-zinc-300 bg-white text-zinc-500 dark:border-zinc-700 dark:bg-zinc-950";
+      ? "border-muted-foreground/70 bg-card"
+      : "border-dashed border-input bg-card text-muted-foreground";
   return (
     <div
       className={`w-60 rounded-md border-2 px-2.5 py-1.5 text-left text-xs shadow-sm transition-opacity ${style} ${
         data.node_id !== null ? "cursor-pointer" : ""
-      } ${data.focus ? "ring-4 ring-sky-400/70" : ""} ${data.dimmed ? "opacity-30" : ""}`}
+      } ${data.focus ? "ring-4 ring-primary/60" : ""} ${data.dimmed ? "opacity-30" : ""}`}
       title={`${data.qualified_name}${data.path ? `\n${data.path}` : ""}`}
     >
-      <Handle type="target" position={Position.Left} className="!bg-zinc-400" />
+      <Handle type="target" position={Position.Left} className="!bg-muted-foreground" />
       <div className="flex items-center gap-1">
         {data.cited && (
-          <span className="text-amber-500" aria-label="cited as evidence">
+          <span className="text-warning" aria-label="cited as evidence">
             ★
           </span>
         )}
         <span className="truncate font-mono font-semibold">{data.label}</span>
-        <span className="ml-auto shrink-0 text-[10px] uppercase text-zinc-500">{data.kind}</span>
+        <span className="ml-auto shrink-0 text-[10px] uppercase text-muted-foreground">{data.kind}</span>
       </div>
-      <div className="truncate text-[10px] text-zinc-500">{data.path ?? "not indexed yet"}</div>
-      <Handle type="source" position={Position.Right} className="!bg-zinc-400" />
+      <div className="truncate text-[10px] text-muted-foreground">{data.path ?? "not indexed yet"}</div>
+      <Handle type="source" position={Position.Right} className="!bg-muted-foreground" />
     </div>
   );
 }
 
 const NODE_TYPES = { code: CodeNodeView };
-
-/** Whether the browser asks for dark mode, kept in sync if it changes. The
- * server can't know, so it renders light and the browser corrects it after
- * hydration (colorMode="system" would make the two disagree). */
-function usePrefersDark(): boolean {
-  return useSyncExternalStore(
-    (onChange) => {
-      const query = window.matchMedia("(prefers-color-scheme: dark)");
-      query.addEventListener("change", onChange);
-      return () => query.removeEventListener("change", onChange);
-    },
-    () => window.matchMedia("(prefers-color-scheme: dark)").matches,
-    () => false,
-  );
-}
 
 /** The call graph around the review's changed code (api/graph.py), in four
  * columns (lib/graph-layout.ts). Click a node to read its code. */
@@ -95,7 +81,8 @@ export function GraphView({
   focus?: string[];
 }) {
   const open = useEvidence();
-  const dark = usePrefersDark();
+  // The theme on screen (lib/use-theme.ts): the toggle's choice, not just the system's.
+  const theme = useTheme();
   const { flowNodes, flowEdges } = useMemo(() => {
     const citedSet = new Set(cited);
     const focusSet = new Set(focus);
@@ -136,7 +123,7 @@ export function GraphView({
   return (
     <div>
       <Legend />
-      <div className="mt-2 h-[70vh] min-h-96 rounded-lg border border-zinc-200 dark:border-zinc-800">
+      <div className="mt-2 h-[70vh] min-h-96 rounded-lg border border-border">
         <ReactFlow<CodeFlowNode>
           nodes={flowNodes}
           edges={flowEdges}
@@ -151,7 +138,7 @@ export function GraphView({
           fitViewOptions={focus.length ? { nodes: focus.map((id) => ({ id })), maxZoom: 1.2 } : undefined}
           minZoom={0.2}
           nodesConnectable={false}
-          colorMode={dark ? "dark" : "light"}
+          colorMode={theme}
         >
           <Background gap={24} />
           <Controls showInteractive={false} />
@@ -163,24 +150,24 @@ export function GraphView({
 
 function Legend() {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-600 dark:text-zinc-400">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
       <span>
         Left to right: {COLUMNS.map((c) => c.title.toLowerCase()).join(" → ")}
       </span>
       <span className="flex items-center gap-1">
-        <span className="size-3 rounded-sm border-2 border-amber-500 bg-amber-50" /> modified
+        <span className="size-3 rounded-sm border-2 border-warning bg-warning-soft" /> modified
       </span>
       <span className="flex items-center gap-1">
-        <span className="size-3 rounded-sm border-2 border-emerald-500 bg-emerald-50" /> added
+        <span className="size-3 rounded-sm border-2 border-added bg-added-soft" /> added
       </span>
       <span className="flex items-center gap-1">
-        <span className="size-3 rounded-sm border-2 border-zinc-500" /> shown to the model
+        <span className="size-3 rounded-sm border-2 border-muted-foreground/70" /> shown to the model
       </span>
       <span className="flex items-center gap-1">
-        <span className="size-3 rounded-sm border-2 border-dashed border-zinc-300" /> not shown
+        <span className="size-3 rounded-sm border-2 border-dashed border-input" /> not shown
       </span>
       <span>
-        <span className="text-amber-500">★</span> cited as evidence
+        <span className="text-warning">★</span> cited as evidence
       </span>
       <span>dashed arrow: inherits</span>
     </div>

@@ -16,7 +16,7 @@ export function ReviewHeader({ review, repo }: { review: ReviewDetail; repo: Rep
         <StatusBadge status={review.status} />
         {review.source !== "github" && <Tag>{review.source === "eval" ? "eval case" : "branch"}</Tag>}
       </h1>
-      <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
         <span>Review #{review.id}</span>
         {review.pr_number !== null && onGitHub && (
           <a

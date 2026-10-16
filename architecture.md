@@ -1165,6 +1165,8 @@ sequenceDiagram
 Two secrets, on purpose: a session cookie can never pass as an API token, or the reverse.
 Installations are read once per sign-in, so a new installation shows after the next one.
 
+**Design system (Phase 10, planning-v2.md D140, D141, D152, D153).** The brand is **Aperture**: violet accent, violet-tinted neutrals, Geist, and the lens-with-graph mark (`components/logo.tsx`, `app/icon.svg`). Every colour is a token defined once in `app/globals.css`, for light and dark: the shadcn/ui names (`background`, `card`, `primary`, `muted`, `border`, …) plus our own for findings (`critical`, `warning`, `suggestion`, each with a `-soft` background) and for code changes (`added`, `deleted`). Pages use the names (`bg-card`, `text-muted-foreground`), never raw palette classes. The primitives (button, badge, card, tabs, tooltip, sheet, dialog, dropdown menu, toast, skeleton, kbd, empty state) are shadcn/ui's, copied into `components/ui/` on Radix. The theme (system, light or dark, from the header's toggle) lives in `localStorage` and is applied by an inline script in `<head>` before the first paint (`lib/theme.ts`), so the shells stay prerendered; `lib/use-theme.ts` keeps it applied, and React Flow and the toasts read it from there.
+
 **Pages so far:**
 
 | Route | Shows |

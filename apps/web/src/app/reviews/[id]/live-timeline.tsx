@@ -6,9 +6,9 @@ import { useEffect, useState } from "react";
 import { describe, EVENT_TYPES, type ReviewEvent, type Tone } from "@/lib/events";
 
 const TONES: Record<Tone, string> = {
-  info: "bg-zinc-400 dark:bg-zinc-500",
-  good: "bg-emerald-500",
-  bad: "bg-red-500",
+  info: "bg-muted-foreground/60",
+  good: "bg-added",
+  bad: "bg-critical",
 };
 
 /** The review's timeline, from the API's event stream (through
@@ -59,17 +59,17 @@ export function LiveTimeline({ reviewId, live }: { reviewId: number; live: boole
   }, [reviewId, wasLive, router]);
 
   return (
-    <section aria-label="Timeline" className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+    <section aria-label="Timeline" className="rounded-lg border border-border p-4">
       <h2 className="flex items-center gap-2 text-sm font-semibold">
         Timeline
         {state !== "ended" && (
-          <span className="text-xs font-normal text-zinc-500">
+          <span className="text-xs font-normal text-muted-foreground">
             {state === "lost" ? "connection lost; reload to retry" : wasLive ? "live" : "loading…"}
           </span>
         )}
       </h2>
       {events.length === 0 && state === "ended" && (
-        <p className="mt-2 text-sm text-zinc-500">No events were recorded for this review.</p>
+        <p className="mt-2 text-sm text-muted-foreground">No events were recorded for this review.</p>
       )}
       <ol className="mt-3 space-y-2" aria-live="polite">
         {events.map((event, i) => {
@@ -77,13 +77,13 @@ export function LiveTimeline({ reviewId, live }: { reviewId: number; live: boole
           return (
             <li key={event.id ?? `${event.type}-${i}`} className="flex items-start gap-2 text-sm">
               <span className={`mt-1.5 size-2 shrink-0 rounded-full ${TONES[tone]}`} aria-hidden="true" />
-              <span className="text-zinc-700 dark:text-zinc-300">{text}</span>
+              <span className="text-foreground/85">{text}</span>
             </li>
           );
         })}
         {wasLive && state !== "ended" && (
-          <li className="flex items-center gap-2 text-sm text-zinc-500">
-            <span className="size-2 animate-pulse rounded-full bg-blue-500" aria-hidden="true" />
+          <li className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="size-2 animate-pulse rounded-full bg-primary" aria-hidden="true" />
             waiting for the next step…
           </li>
         )}
