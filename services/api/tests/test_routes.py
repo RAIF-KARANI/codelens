@@ -49,6 +49,9 @@ class InlineQueue(RecordingQueue):
 
 
 class DownQueue(RecordingQueue):
+    async def index_repo(self, repo_id: int) -> None:
+        raise QueueUnavailable("Error 10061 connecting to redis:6379")
+
     async def review(self, review_id: int, base: str) -> None:
         raise QueueUnavailable("Error 10061 connecting to redis:6379")
 
@@ -98,6 +101,86 @@ def test_index_queues_a_job(
     assert refused.status_code == 409
     assert refused.json()["error"]["code"] == "not_indexable"
     assert queue.jobs == [("index_repo", shop.repo_id)]
+
+
+def test_one_index_per_repo_at_a_time(
+    settings: Settings, shop: Any, sql: Sql, auth_headers: dict[str, str]
+) -> None:
+    # The audit's finding (Phase 9 step 4, D130): every click queued another
+    # full index and embed, even while one ran, on workers all tenants share.
+    queue = RecordingQueue()
+    url = f"/api/v1/repos/{shop.repo_id}/index"
+    with api(settings, queue) as c:
+        first = c.post(url, headers=auth_headers)
+        again = c.post(url, headers=auth_headers)
+        sql("UPDATE repos SET status = 'indexing' WHERE id = :id", id=shop.repo_id)
+        while_running = c.post(url, headers=auth_headers)
+        # A claim older than an hour is a lost job: the button works again.
+        sql(
+            "UPDATE repos SET updated_at = now() - interval '2 hours' WHERE id = :id",
+            id=shop.repo_id,
+        )
+        after_a_lost_job = c.post(url, headers=auth_headers)
+
+    assert first.status_code == 202
+    assert again.status_code == while_running.status_code == 409
+    assert again.json()["error"]["code"] == "already_indexing"
+    assert after_a_lost_job.status_code == 202
+    assert queue.jobs == [("index_repo", shop.repo_id)] * 2
+
+
+def test_a_failed_enqueue_leaves_the_repo_indexable(
+    settings: Settings, shop: Any, sql: Sql, auth_headers: dict[str, str]
+) -> None:
+    [before] = sql("SELECT status FROM repos WHERE id = :id", id=shop.repo_id)
+    url = f"/api/v1/repos/{shop.repo_id}/index"
+    with api(settings, DownQueue()) as c:
+        down = c.post(url, headers=auth_headers)
+    with api(settings, RecordingQueue()) as c:
+        retried = c.post(url, headers=auth_headers)
+
+    assert down.status_code == 503
+    assert retried.status_code == 202
+    assert before.status != "pending"
+
+
+def test_index_follows_the_account_policy(
+    settings: Settings, sql: Sql, auth_headers: dict[str, str]
+) -> None:
+    # Webhooks stop working for an account removed from GITHUB_ALLOWED_ACCOUNTS
+    # or an installation that's suspended; re-index must stop too (D130).
+    def github_repo(github_id: int, login: str, *, suspended: bool = False) -> int:
+        [installation] = sql(
+            "INSERT INTO installations"
+            " (github_installation_id, account_id, account_login, account_type, suspended_at)"
+            " VALUES (:id, :id, :login, 'User', CASE WHEN :suspended THEN now() END)"
+            " RETURNING id",
+            id=github_id,
+            login=login,
+            suspended=suspended,
+        )
+        # 'ready': indexed before. A new row is 'pending', its first index
+        # already queued by the webhook, so the claim would (rightly) refuse it.
+        return sql(
+            "INSERT INTO repos (full_name, source, github_id, installation_id, status)"
+            " VALUES (:name, 'github', :id, :installation, 'ready') RETURNING id",
+            name=f"{login}/app{github_id}",
+            id=github_id,
+            installation=installation.id,
+        )[0].id
+
+    allowed = github_repo(901, "Octo")  # matched case-insensitively
+    removed = github_repo(902, "mallory")
+    suspended = github_repo(903, "octo", suspended=True)
+    queue = RecordingQueue()
+    with api(settings, queue) as c:
+        codes = {
+            repo: c.post(f"/api/v1/repos/{repo}/index", headers=auth_headers).status_code
+            for repo in (allowed, removed, suspended)
+        }
+
+    assert codes == {allowed: 202, removed: 409, suspended: 409}
+    assert queue.jobs == [("index_repo", allowed)]
 
 
 def test_review_requests_are_validated_before_queueing(

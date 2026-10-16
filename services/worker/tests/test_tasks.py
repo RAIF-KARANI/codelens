@@ -164,6 +164,56 @@ def test_index_refuses_a_repo_it_cannot_reach(sql: Sql, worker_on_fakes: Any) ->
 
 
 @pytest.mark.integration
+def test_jobs_for_an_account_no_longer_covered_mint_no_token(
+    sql: Sql, worker_on_fakes: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Phase 9 step 4 (D130): jobs queued before an account left the allowlist,
+    # or for a suspended installation, or put on the queue some other way, used
+    # to mint a token and fetch anyway. The worker checks the policy first.
+    async def no_token(*args: Any) -> str:
+        raise AssertionError("minted a token for an installation that isn't covered")
+
+    monkeypatch.setattr(worker.tasks, "_installation_token", no_token)
+
+    def github_repo(github_id: int, login: str, *, suspended: bool = False) -> int:
+        [installation] = sql(
+            "INSERT INTO installations"
+            " (github_installation_id, account_id, account_login, account_type, suspended_at)"
+            " VALUES (:id, :id, :login, 'User', CASE WHEN :suspended THEN now() END)"
+            " RETURNING id",
+            id=github_id,
+            login=login,
+            suspended=suspended,
+        )
+        return sql(
+            "INSERT INTO repos (full_name, source, github_id, installation_id)"
+            " VALUES (:name, 'github', :id, :installation) RETURNING id",
+            name=f"{login}/app{github_id}",
+            id=github_id,
+            installation=installation.id,
+        )[0].id
+
+    removed = github_repo(902, "mallory")  # not in GITHUB_ALLOWED_ACCOUNTS=octo
+    suspended = github_repo(903, "octo", suspended=True)
+    [queued] = sql(
+        "INSERT INTO reviews (repo_id, source, pr_number, head_sha, status)"
+        " VALUES (:repo, 'github', 7, 'abc', 'queued') RETURNING id",
+        repo=removed,
+    )
+
+    for repo in (removed, suspended):
+        indexed = index_repo.apply(args=(repo,))
+        assert isinstance(indexed.result, IndexingError)
+        assert "no longer allowed, or the App's installation is suspended" in str(indexed.result)
+    reviewed = review.apply(args=(queued.id, "main"))
+
+    assert isinstance(reviewed.result, ReviewError)
+    [row] = sql("SELECT status, error FROM reviews WHERE id = :id", id=queued.id)
+    assert row.status == "failed"
+    assert "no longer allowed" in row.error
+
+
+@pytest.mark.integration
 def test_index_retries_while_another_run_holds_the_lock(
     shop: Any, settings: Settings, monkeypatch: pytest.MonkeyPatch, worker_on_fakes: Any
 ) -> None:

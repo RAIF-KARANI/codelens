@@ -64,6 +64,13 @@ class Policy:
     def allows(self, login: str) -> bool:
         return login.lower() in self.allowed_accounts
 
+    def covers(self, login: str | None, suspended_at: datetime | None) -> bool:
+        """Whether CodeLens may act on an installation: an allowed account,
+        and not suspended. Every path that ends in an installation token checks
+        this, not only webhooks: re-index, and the worker's index and review
+        tasks, so removing an account takes effect everywhere at once (D130)."""
+        return login is not None and suspended_at is None and self.allows(login)
+
 
 @dataclass(frozen=True, slots=True)
 class QueuedReview:
@@ -140,11 +147,13 @@ def _covered_for(policy: Policy, github_repo_id: object) -> list[ColumnElement[b
     """WHERE clauses for a repo the App covers for an allowed account. Push
     and pull request payloads name only the installation's id, so the account
     comes from the mirrored installation. Checking it on every event means
-    removing an account from the list takes effect at once."""
+    removing an account from the list takes effect at once. The same rule as
+    `Policy.covers`, in SQL: a suspended installation is skipped too (D130)."""
     return [
         repos_t.c.github_id == github_repo_id,
         repos_t.c.installation_id == installations_t.c.id,
         func.lower(installations_t.c.account_login).in_(policy.allowed_accounts),
+        installations_t.c.suspended_at.is_(None),
     ]
 
 
