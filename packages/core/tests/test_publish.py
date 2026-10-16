@@ -1,9 +1,14 @@
 """Turning a review into a GitHub review: placement, repeats, the summary,
 and defused @mentions. Pure functions; no database or GitHub."""
 
+import re
+from dataclasses import replace
+
+import pytest
+
 from core.diff import parse_unified_diff
 from core.enums import FindingStatus, Severity
-from core.github.publish import Publication, build_review, defuse
+from core.github.publish import Publication, _code, build_review, defuse
 from core.providers import Usage
 from core.review.changes import ChangeSet, FileChange
 from core.review.pipeline import ReviewResult
@@ -147,6 +152,46 @@ def test_mentions_in_model_output_are_defused() -> None:
 
     assert "@octocat" not in comment and "@​octocat" in comment
     assert "@admin" not in comment
-    # Not a mention: e-mail addresses and code stay as they are.
-    assert defuse("mail a@b.com, `@decorator`") == "mail a@b.com, `@decorator`"
+    # Not a mention: an e-mail address stays as it is.
+    assert defuse("mail a@b.com") == "mail a@b.com"
     assert defuse("@org/team and (@user)") == "@​org/team and (@​user)"
+    # In code too: the zero-width space can't be seen, and code-span edges
+    # are what the old exemption got wrong.
+    assert defuse("`@decorator`") == "`@\u200bdecorator`"
+
+
+# Phase 9 step 7 (D133): the old pattern skipped any @ after a backtick or a
+# Python word character, and the body listed a finding's file path raw.
+BYPASSES = ["`x`@u", "a`@u", "\u00e9@u", "\u0394@u", "_@u", "path `a` @u `b`"]
+
+
+def _live_mentions(pub: Publication) -> list[str]:
+    texts = [pub.payload["body"], *(c["body"] for c in pub.payload["comments"])]
+    return [m for text in texts for m in re.findall(r"(?<![A-Za-z0-9])@[A-Za-z0-9]+", text)]
+
+
+@pytest.mark.parametrize("inline", [True, False])
+@pytest.mark.parametrize("payload", BYPASSES)
+def test_no_mention_survives_in_any_text(payload: str, inline: bool) -> None:
+    item = finding(2, 2, title=f"t {payload}")
+    item = replace(item, finding=item.finding.model_copy(update={"explanation": payload}))
+    pub = build_review(
+        result(item, summaries=(f"summary {payload}",)),
+        head_sha="h" * 40,
+        model="qwen3:8b",
+        already_posted=set(),
+        inline=inline,
+    )
+    assert _live_mentions(pub) == []
+
+
+def test_a_file_path_cant_close_its_code_span() -> None:
+    # A fork PR names the file; a finding on it is listed in the body when
+    # GitHub refuses inline comments (the 422 fallback).
+    path = "src/a` @victim `b.py"
+    pub = build(finding(2, 2, path=path), inline=False)
+
+    body = pub.payload["body"]
+    assert "- \U0001f7e0 ``src/a` @\u200bvictim `b.py:2`` x is shadowed" in body
+    assert _live_mentions(pub) == []
+    assert _code("``x``") == "``` ``x`` ```"  # padded when it starts or ends with one
