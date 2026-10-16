@@ -1,9 +1,9 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { AutoRefresh } from "@/components/auto-refresh";
 import { StatusBadge, Tag } from "@/components/badges";
+import { Crumbs } from "@/components/crumbs";
 import { getRepo } from "@/lib/api";
 import { isDemo } from "@/lib/config";
 import { shortSha } from "@/lib/format";
@@ -18,14 +18,9 @@ import { RepoTabs } from "./tabs";
 export default function RepoLayout({ params, children }: LayoutProps<"/repos/[id]">) {
   return (
     <>
-      <Link
-        href="/repos"
-        className="text-sm text-muted-foreground hover:text-foreground"
-      >
-        ← Repositories
-      </Link>
-      {/* The id is only known per request, so the header streams in. */}
-      <Suspense fallback={<div className="mt-3 h-24 animate-pulse rounded-lg bg-muted" />}>
+      {/* The id is only known per request, so the header (with its
+          breadcrumbs) streams in. */}
+      <Suspense fallback={<div className="h-28 animate-pulse rounded-lg bg-muted" />}>
         <RepoHeader params={params} />
       </Suspense>
       <div className="mt-6">{children}</div>
@@ -41,8 +36,9 @@ async function RepoHeader({ params }: Pick<LayoutProps<"/repos/[id]">, "params">
   const link = repo.source === "github" ? githubUrl(repo.full_name) : null;
 
   return (
-    <header className="mt-3">
-      <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
+    <header>
+      <Crumbs items={[{ label: "Repositories", href: "/repos" }, { label: repo.full_name }]} />
+      <div className="mt-3 flex flex-wrap items-start gap-x-4 gap-y-3">
         <div className="min-w-0 flex-1">
           <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight">
             {link ? (

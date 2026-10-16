@@ -19,12 +19,12 @@ export function LogoMark({ className = "size-6" }: { className?: string }) {
   );
 }
 
-/** The mark and the wordmark, as the header shows them. */
+/** The mark and the wordmark; in a collapsed sidebar, the mark alone. */
 export function Logo() {
   return (
     <span className="flex items-center gap-2">
       <LogoMark />
-      <span className="text-[15px] font-semibold tracking-tight">CodeLens</span>
+      <span className="text-[15px] font-semibold tracking-tight collapsed:hidden">CodeLens</span>
     </span>
   );
 }

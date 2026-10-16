@@ -1,15 +1,14 @@
+import { InfoIcon } from "lucide-react";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Link from "next/link";
-import { Suspense } from "react";
 
-import { UserMenu } from "@/app/user-menu";
-import { Logo } from "@/components/logo";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { PaletteProvider } from "@/components/shell/command-palette";
+import { MobileBar } from "@/components/shell/mobile-bar";
+import { SidebarContent } from "@/components/shell/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { isDemo } from "@/lib/config";
-import { THEME_SCRIPT } from "@/lib/theme";
+import { HEAD_SCRIPT } from "@/lib/head-script";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -27,9 +26,11 @@ export const metadata: Metadata = {
   description: "Graph-aware code reviews: every finding with its evidence.",
 };
 
-/** The shell every page shares. It reads no request data itself, so it's
- * prerendered; the signed-in user streams in behind its own boundary. The
- * theme is applied by an inline script before the first paint (lib/theme.ts),
+/** The shell every page shares: a sidebar on a desktop, a top bar with a sheet
+ * on a phone, and the ⌘K palette around both. It reads no request data itself,
+ * so it's prerendered; the repo list and the signed-in user stream in behind
+ * their own boundaries. The theme and the sidebar's collapsed state are applied
+ * by an inline script before the first paint (lib/head-script.ts),
  * which is why <html> may differ from the server's HTML. */
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
@@ -40,30 +41,26 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: HEAD_SCRIPT }} />
       </head>
-      <body className="flex min-h-full flex-col">
+      <body className="min-h-full">
         <TooltipProvider>
-          <header className="border-b border-border bg-card/80 backdrop-blur">
-            <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-6 px-4">
-              <Link href="/repos" aria-label="CodeLens, home">
-                <Logo />
-              </Link>
-              <nav className="flex gap-4 text-sm text-muted-foreground">
-                <Link href="/repos" className="hover:text-foreground">
-                  Repositories
-                </Link>
-              </nav>
-              <div className="ml-auto flex items-center gap-2">
-                <ThemeToggle />
-                <Suspense fallback={<div className="h-7 w-24" />}>
-                  <UserMenu />
-                </Suspense>
+          <PaletteProvider>
+            <div className="flex min-h-svh">
+              <aside className="sticky top-0 hidden h-svh w-60 shrink-0 border-r border-border bg-card transition-[width] duration-200 md:block collapsed:w-14">
+                <SidebarContent />
+              </aside>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <MobileBar>
+                  <SidebarContent />
+                </MobileBar>
+                <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-8 md:py-8">
+                  {isDemo() && <DemoNotice />}
+                  {children}
+                </main>
               </div>
             </div>
-          </header>
-          {isDemo() && <DemoBanner />}
-          <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{children}</main>
+          </PaletteProvider>
           <Toaster />
         </TooltipProvider>
       </body>
@@ -72,10 +69,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
 }
 
 /** What a demo visitor is looking at. */
-function DemoBanner() {
+function DemoNotice() {
   return (
-    <div className="border-b border-border bg-accent text-sm text-accent-foreground">
-      <p className="mx-auto max-w-6xl px-4 py-2">
+    <div className="mb-6 flex gap-2.5 rounded-lg border border-primary/20 bg-accent px-3.5 py-2.5 text-sm text-accent-foreground">
+      <InfoIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+      <p>
         <span className="font-medium">Read-only demo.</span> These reviews were made by a local
         model (qwen3:8b) on a laptop GPU, then copied here; nothing runs on this server but the
         pages. Source and evaluation:{" "}
