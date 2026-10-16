@@ -1,6 +1,8 @@
 """codelens setup on imaginary machines: a fresh clone, a re-run, an existing
 App, and the stops. Nothing real is created, downloaded or started."""
 
+import stat
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -209,6 +211,28 @@ def test_it_stops_with_what_to_do(clone: Path, change, message: str) -> None:
 def test_it_must_run_from_the_repo_root(tmp_path: Path) -> None:
     with pytest.raises(SetupStopped, match="repo root"):
         setup(tmp_path, Machine(tmp_path, pulled=[]).tools())
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
+def test_env_is_owner_only(clone: Path) -> None:
+    # Phase 9 step 6 (D132): .env was copied from .env.example with its 0644
+    # and then given the JWT secret, readable by every local user.
+    setup(clone, Machine(clone, pulled=[]).tools())
+    assert stat.S_IMODE((clone / ".env").stat().st_mode) == 0o600
+
+    # A .env from before D132 is narrowed on the next run.
+    (clone / ".env").chmod(0o644)
+    existing = AppInfo("codelens-friend", CREDS.html_url, "Friend", "https://smee.io/channel1")
+    setup(clone, Machine(clone, pulled=["qwen3:8b", "qwen3-embedding:0.6b"]).tools(existing))
+    assert stat.S_IMODE((clone / ".env").stat().st_mode) == 0o600
+
+    # And set_env never widens it: the file it writes is a new, owner-only one.
+    other = clone / "other.env"
+    other.write_text("A=1\n")
+    other.chmod(0o644)
+    set_env(other, {"B": "2"})
+    assert stat.S_IMODE(other.stat().st_mode) == 0o600
+    assert not [p for p in clone.iterdir() if p.name.endswith(".tmp")]
 
 
 def test_set_env_keeps_lines_and_appends_new_keys(tmp_path: Path) -> None:

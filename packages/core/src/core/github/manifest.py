@@ -11,10 +11,11 @@ one click and hands back its credentials:
    (`GitHubClient.convert_manifest`) and write them to secrets/.
 """
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from core.privatefile import private_dir, write_private
 
 # Least privilege (idea.md §9.1): read code, write only pull request reviews.
 PERMISSIONS = {"contents": "read", "metadata": "read", "pull_requests": "write"}
@@ -77,13 +78,13 @@ def save_credentials(creds: AppCredentials, secrets_dir: Path) -> tuple[Path, Pa
 
     Returns (key path, env path). Nothing secret is printed: it goes to files
     in a gitignored directory, readable only by the owner where the OS
-    supports it.
+    supports it, from the moment each file exists (D132).
     """
-    secrets_dir.mkdir(parents=True, exist_ok=True)
+    private_dir(secrets_dir)
     key_path = secrets_dir / "github-app.pem"
     env_path = secrets_dir / "github-app.env"
-    _write_private(key_path, creds.pem)
-    _write_private(
+    write_private(key_path, creds.pem)
+    write_private(
         env_path,
         "# Created by `python -m core.github register`. Copy these lines into .env.\n"
         f"GITHUB_APP_ID={creds.app_id}\n"
@@ -96,10 +97,3 @@ def save_credentials(creds: AppCredentials, secrets_dir: Path) -> tuple[Path, Pa
         f"GITHUB_CLIENT_SECRET={creds.client_secret}\n",
     )
     return key_path, env_path
-
-
-def _write_private(path: Path, text: str) -> None:
-    path.write_text(text, encoding="utf-8", newline="\n")
-    # 0600 on Linux/macOS. Windows ignores all but the read-only bit; there
-    # the file inherits the user profile's ACLs.
-    os.chmod(path, 0o600)

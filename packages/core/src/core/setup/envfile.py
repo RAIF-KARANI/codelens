@@ -8,6 +8,8 @@ New keys go at the end.
 
 from pathlib import Path
 
+from core.privatefile import write_private
+
 
 def read_env(path: Path) -> dict[str, str]:
     """`KEY=value` lines; comments, blanks and `export` prefixes ignored."""
@@ -30,7 +32,8 @@ def set_env(path: Path, updates: dict[str, str]) -> None:
         if key in pending:
             lines[i] = f"{key}={pending.pop(key)}"
     lines += [f"{key}={value}" for key, value in pending.items()]
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    # .env holds the JWT and webhook secrets: owner-only, always (D132).
+    write_private(path, "\n".join(lines) + "\n")
 
 
 def _parse(line: str) -> tuple[str | None, str]:

@@ -49,13 +49,17 @@ uv run python -m core.github register --name "CodeLens (your-login)" --webhook-u
 ```
 
 - **Your browser opens a local page;** press **Continue to GitHub**. GitHub shows the
-  App's name and permissions, and you create it.
+  App's name and permissions, and you create it. The link carries a one-time token and
+  works in that browser only: if no browser opens, open the printed link yourself, once.
 - **GitHub redirects back to the command,** which saves the credentials into the
   gitignored `secrets/` folder:
   - `secrets/github-app.pem`: the App's private key;
   - `secrets/github-app.env`: `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH`,
     `GITHUB_WEBHOOK_SECRET`, `GITHUB_ALLOWED_ACCOUNTS` (you, the App's owner; see §6),
     plus an OAuth client id and secret for the Phase 6 dashboard.
+
+  Both files are readable by you only (0600, in a 0700 folder) from the moment they
+  exist; so is the `.env` that `codelens setup` writes.
 - **App names are global on GitHub,** hence your login in the name. Add `--org my-org`
   to create the App under an organisation.
 
@@ -199,3 +203,5 @@ On Windows without a global `uv`, run the commands with the repo's interpreter i
 | `check`: **401 Bad credentials** / "A JSON web token could not be decoded" | Wrong `GITHUB_APP_ID` or private key, or your clock is off by minutes |
 | `check`: private key not found | `GITHUB_APP_PRIVATE_KEY_PATH` is relative to where you run the command: run it from the repo root |
 | `register` times out | The browser page wasn't completed within 15 minutes; run it again (nothing was created) |
+| The local page says **Refused** | It was opened without the printed link, or by another browser than the one that opened it first: use the printed link |
+| `register` stops: **opened by another client first** | The printed link was opened twice by different clients (another program, or another user on this machine); the run stops so nothing it started is saved. Run it again |
