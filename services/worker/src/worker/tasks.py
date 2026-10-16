@@ -34,6 +34,7 @@ from core.github import (
 )
 from core.github.mirror import BRANCHES, clone_url, mirror_path, sync_mirror
 from core.github.publish import build_review
+from core.github.webhooks import Policy
 from core.indexing import IndexingError, IndexLocked, IndexReport, index_repository, index_revision
 from core.providers import open_providers
 from core.review.config import PipelineConfig
@@ -132,6 +133,8 @@ async def _index_github(
     objects (no checkout; planning §5.1)."""
     if repo.github_installation_id is None:
         raise IndexingError(f"{repo.full_name} is not covered by any installation of the App")
+    if not _covered(settings, repo):
+        raise IndexingError(f"{repo.full_name}: {NOT_COVERED}")
     try:
         async with github_client(settings) as gh:
             token = await _installation_token(settings, gh, repo.github_installation_id)
@@ -146,6 +149,16 @@ async def _index_github(
             update(Repo).where(Repo.id == repo_id).values(default_branch=default_branch)
         )
     return await index_revision(engine, mirror, f"refs/heads/{default_branch}", name=repo.full_name)
+
+
+NOT_COVERED = "its account is no longer allowed, or the App's installation is suspended"
+
+
+def _covered(settings: Settings, row: Any) -> bool:
+    """The account policy webhooks apply, checked again before any token is
+    minted: a job queued before an account was removed, or one queued another
+    way (a re-index, or straight through Redis), does no work for it (D130)."""
+    return Policy(settings.allowed_accounts).covers(row.account_login, row.suspended_at)
 
 
 async def _installation_token(settings: Settings, gh: GitHubClient, installation_id: int) -> str:
@@ -225,6 +238,8 @@ async def _run_review(
     if github and await _supersede_if_stale(engine, row, review_id, "before it ran", notify):
         return {"review_id": review_id, "status": "superseded", "skipped": True}
     try:
+        if github and not _covered(settings, row):
+            raise ReviewError(f"{row.full_name}: {NOT_COVERED}")
         if github:
             repo_path = await _fetch_pull_request(settings, row)
         elif row.local_path:
@@ -302,6 +317,8 @@ async def _load_review(engine: AsyncEngine, review_id: int) -> Any:
                     Repo.full_name,
                     Repo.local_path,
                     Installation.github_installation_id,
+                    Installation.account_login,
+                    Installation.suspended_at,
                 )
                 .join(Repo, Repo.id == Review.repo_id)
                 .outerjoin(Installation, Installation.id == Repo.installation_id)
@@ -433,6 +450,8 @@ async def _load_repo(engine: AsyncEngine, repo_id: int) -> Any:
                     Repo.source,
                     Repo.local_path,
                     Installation.github_installation_id,
+                    Installation.account_login,
+                    Installation.suspended_at,
                 )
                 .outerjoin(Installation, Installation.id == Repo.installation_id)
                 .where(Repo.id == repo_id)

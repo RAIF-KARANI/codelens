@@ -289,10 +289,18 @@ def test_deleted_target_keeps_edge_and_relinks_when_it_returns(
 
 
 def test_concurrent_run_for_the_same_repo_is_rejected(
-    migrated_database_url: str, tmp_path: Path
+    migrated_database_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write(tmp_path, {"m.py": "x = 1\n"})
     name = "local/concurrent"
+
+    # The lock is taken before parsing, so a run that loses it parses nothing
+    # (D130). It used to parse the whole repo first, then throw it away, on
+    # every one of a job's 61 retries.
+    def no_parse(root: Path) -> Any:
+        raise AssertionError("parsed a repo while another run held its lock")
+
+    monkeypatch.setattr("core.indexing.indexer.parse_repository", no_parse)
 
     async def _go() -> None:
         engine = create_engine(migrated_database_url, pooled=False)

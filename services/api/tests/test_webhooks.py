@@ -512,6 +512,39 @@ def test_an_account_taken_off_the_list_stops_at_once(
 
 
 @pytest.mark.integration
+def test_a_suspended_installation_gets_no_work_until_unsuspended(
+    settings: Settings, sql: Sql, installed: str
+) -> None:
+    # suspended_at was stored but never read (Phase 9 step 4, D130): pushes and
+    # pull requests kept queueing work for a suspended installation.
+    push = {
+        "ref": "refs/heads/main",
+        "installation": {"id": 99},
+        "repository": {**repo_payload(1, "octo/api"), "default_branch": "main"},
+    }
+    queue = RecordingQueue()
+    with client(allowing(settings, "octo"), queue) as c:
+        deliver(
+            c,
+            installed,
+            "installation",
+            installation("suspend", suspended_at="2026-10-16T09:00:00Z"),
+            delivery="suspend",
+        )
+        pr_while_suspended = deliver(
+            c, installed, "pull_request", pr_event("opened"), delivery="pr1"
+        )
+        push_while_suspended = deliver(c, installed, "push", push, delivery="push1")
+        deliver(c, installed, "installation", installation("unsuspend"), delivery="unsuspend")
+        pr_after = deliver(c, installed, "pull_request", pr_event("opened"), delivery="pr2")
+
+    assert pr_while_suspended.json()["status"] == "ignored"
+    assert push_while_suspended.json()["status"] == "ignored"
+    assert pr_after.json()["status"] == "processed"
+    assert [job[0] for job in queue.jobs] == ["review"]
+
+
+@pytest.mark.integration
 def test_reviews_over_the_hourly_limit_are_recorded_not_queued(
     settings: Settings, sql: Sql, installed: str
 ) -> None:

@@ -10,7 +10,9 @@ export type ReindexState = { ok: boolean; message: string } | null;
 
 const MESSAGES: Record<string, string> = {
   demo_mode: "This is a read-only demo.",
-  not_indexable: "This repository has no checkout or GitHub installation to index from.",
+  not_indexable:
+    "This repository has no checkout, or its GitHub installation isn't allowed or is suspended.",
+  already_indexing: "An index of this repository is already queued or running.",
   queue_unavailable: "The job queue is down; try again in a moment.",
   not_found: "This repository doesn't exist, or you don't have access to it.",
 };

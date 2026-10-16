@@ -121,56 +121,56 @@ async def index_repository(
 ) -> IndexReport:
     """Index a working tree (the CLI's local repos). The repo row is created
     on the first run, as `local/<dir name>` unless `name` is given."""
-    # Parse first, outside any transaction: it's the slowest part, and we don't
-    # want to hold DB locks while it runs. It is blocking file I/O + CPU, so it
-    # runs in a worker thread rather than stalling the event loop.
-    started = time.perf_counter()
-    root, result = await asyncio.to_thread(_resolve_and_parse, root)
-    parse_seconds = time.perf_counter() - started
-    commit_sha = await asyncio.to_thread(_git_head, root)
-    return await _index(
-        engine, result, name or f"local/{root.name}", commit_sha, root, parse_seconds
-    )
+    full_name = name or f"local/{(await asyncio.to_thread(root.resolve)).name}"
+    async with _repo_lock(engine, full_name):
+        # Parse outside any transaction: it's the slowest part, and we don't
+        # want to hold row locks while it runs. It is blocking file I/O + CPU,
+        # so it runs in a worker thread rather than stalling the event loop.
+        started = time.perf_counter()
+        root, result = await asyncio.to_thread(_resolve_and_parse, root)
+        parse_seconds = time.perf_counter() - started
+        commit_sha = await asyncio.to_thread(_git_head, root)
+        report = await _index_locked(engine, full_name, result, commit_sha, root)
+    report.parse_seconds = parse_seconds
+    return report
 
 
 async def index_revision(engine: AsyncEngine, git_dir: Path, rev: str, *, name: str) -> IndexReport:
     """Index a commit straight from git objects, e.g. a GitHub repo's bare
     mirror at its default branch: no checkout. The repo row must already
     exist (GitHub repos are created from webhook events)."""
-    started = time.perf_counter()
-    try:
-        commit_sha = await asyncio.to_thread(git.resolve, git_dir, rev)
-        result = await asyncio.to_thread(parse_revision, git_dir, commit_sha)
-    except git.GitError as exc:
-        raise IndexingError(str(exc)) from exc
-    parse_seconds = time.perf_counter() - started
-    return await _index(engine, result, name, commit_sha, None, parse_seconds)
+    async with _repo_lock(engine, name):
+        started = time.perf_counter()
+        try:
+            commit_sha = await asyncio.to_thread(git.resolve, git_dir, rev)
+            result = await asyncio.to_thread(parse_revision, git_dir, commit_sha)
+        except git.GitError as exc:
+            raise IndexingError(str(exc)) from exc
+        parse_seconds = time.perf_counter() - started
+        report = await _index_locked(engine, name, result, commit_sha, None)
+    report.parse_seconds = parse_seconds
+    return report
 
 
-async def _index(
-    engine: AsyncEngine,
-    result: ParseResult,
-    full_name: str,
-    commit_sha: str | None,
-    local_path: Path | None,
-    parse_seconds: float,
-) -> IndexReport:
+@asynccontextmanager
+async def _repo_lock(engine: AsyncEngine, full_name: str) -> AsyncIterator[None]:
+    """A session-level advisory lock, held on its own connection for the whole
+    run, so two indexers never interleave writes for the same repo. It is taken
+    before parsing: a run that can't get it gives up at once, instead of parsing
+    the whole repo and then throwing the result away, which a retried job used
+    to do up to 61 times (D130)."""
     async with engine.connect() as lock_conn:
-        # A session-level advisory lock, held on this connection for the whole
-        # run, so two indexers never interleave writes for the same repo.
         locked = await lock_conn.scalar(
             text("SELECT pg_try_advisory_lock(hashtext(:key))"), {"key": f"index:{full_name}"}
         )
         if not locked:
             raise IndexLocked(f"another index run for {full_name} is in progress")
         try:
-            report = await _index_locked(engine, full_name, result, commit_sha, local_path)
+            yield
         finally:
             await lock_conn.execute(
                 text("SELECT pg_advisory_unlock(hashtext(:key))"), {"key": f"index:{full_name}"}
             )
-    report.parse_seconds = parse_seconds
-    return report
 
 
 async def _index_locked(
