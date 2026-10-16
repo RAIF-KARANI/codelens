@@ -19,14 +19,14 @@ export function ReindexButton({
       <button
         type="submit"
         disabled={disabled || pending}
-        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        className="rounded-md border border-input px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
       >
         {pending ? "Queuing…" : disabled ? "Indexing…" : "Re-index"}
       </button>
       {state && (
         <p
           role="status"
-          className={`text-xs ${state.ok ? "text-zinc-500" : "text-red-700 dark:text-red-400"}`}
+          className={`text-xs ${state.ok ? "text-muted-foreground" : "text-critical"}`}
         >
           {state.message}
         </p>

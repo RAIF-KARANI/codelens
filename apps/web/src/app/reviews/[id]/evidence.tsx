@@ -35,7 +35,7 @@ export function EvidenceButton({ nodeId, label }: { nodeId: number; label: strin
     <button
       type="button"
       onClick={() => open({ nodeId, label })}
-      className="max-w-full truncate rounded border border-zinc-300 px-1.5 py-0.5 font-mono text-xs text-zinc-700 hover:border-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+      className="max-w-full truncate rounded border border-input px-1.5 py-0.5 font-mono text-xs text-foreground/85 hover:border-primary/60 hover:bg-accent"
       title={label}
     >
       {label}
@@ -84,14 +84,14 @@ function EvidenceDrawer({
   const node = loaded && "node" in loaded ? loaded.node : null;
   return (
     <div className="fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true" aria-label={`Evidence: ${label}`}>
-      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-black/30" />
-      <div className="relative flex h-full w-full max-w-2xl flex-col border-l border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="flex items-start gap-3 border-b border-zinc-200 p-4 dark:border-zinc-800">
+      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" />
+      <div className="relative flex h-full w-full max-w-2xl flex-col border-l border-border bg-card shadow-xl">
+        <div className="flex items-start gap-3 border-b border-border p-4">
           <div className="min-w-0 flex-1">
-            <p className="text-xs uppercase tracking-wide text-zinc-500">Evidence</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Evidence</p>
             <h2 className="mt-1 break-all font-mono text-sm font-semibold">{node?.qualified_name ?? label}</h2>
             {node && (
-              <p className="mt-1 text-xs text-zinc-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 {node.kind} · {node.path}:{node.start_line}–{node.end_line}
               </p>
             )}
@@ -100,22 +100,22 @@ function EvidenceDrawer({
             type="button"
             onClick={onClose}
             autoFocus
-            className="rounded-md px-2 py-1 text-sm text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+            className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-muted"
           >
             Close
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-4">
-          {loaded === null && <p className="text-sm text-zinc-500">Loading…</p>}
-          {loaded && "error" in loaded && <p className="text-sm text-red-700 dark:text-red-400">{loaded.error}</p>}
+          {loaded === null && <p className="text-sm text-muted-foreground">Loading…</p>}
+          {loaded && "error" in loaded && <p className="text-sm text-critical">{loaded.error}</p>}
           {node?.docstring && (
-            <p className="mb-3 whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-400">{node.docstring}</p>
+            <p className="mb-3 whitespace-pre-wrap text-sm text-muted-foreground">{node.docstring}</p>
           )}
           {node && (
-            <pre className="overflow-x-auto rounded-md bg-zinc-50 p-3 font-mono text-xs leading-5 dark:bg-zinc-900">
+            <pre className="overflow-x-auto rounded-md bg-muted p-3 font-mono text-xs leading-5">
               {node.code.split("\n").map((line, i) => (
                 <div key={i} className="flex">
-                  <span className="w-12 shrink-0 select-none pr-3 text-right text-zinc-400">
+                  <span className="w-12 shrink-0 select-none pr-3 text-right text-muted-foreground">
                     {node.start_line + i}
                   </span>
                   <span className="whitespace-pre">{line}</span>

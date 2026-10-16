@@ -15,7 +15,7 @@ export default function ReviewLayout({ params, children }: LayoutProps<"/reviews
   return (
     <EvidenceProvider>
       {/* The id is only known per request, so the header streams in. */}
-      <Suspense fallback={<div className="h-28 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-900" />}>
+      <Suspense fallback={<div className="h-28 animate-pulse rounded-lg bg-muted" />}>
         <Header params={params} />
       </Suspense>
       <div className="mt-6">{children}</div>
@@ -32,7 +32,7 @@ async function Header({ params }: Pick<LayoutProps<"/reviews/[id]">, "params">) 
     <>
       <Link
         href={`/repos/${repo.id}`}
-        className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+        className="text-sm text-muted-foreground hover:text-foreground"
       >
         ← {repo.full_name}
       </Link>

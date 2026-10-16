@@ -17,7 +17,7 @@ export const metadata: Metadata = { title: "Graph" };
 export default function ReviewGraphPage({ params, searchParams }: PageProps<"/reviews/[id]/graph">) {
   return (
     <Suspense
-      fallback={<div className="h-96 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-900" />}
+      fallback={<div className="h-96 animate-pulse rounded-lg bg-muted" />}
     >
       <Graph params={params} searchParams={searchParams} />
     </Suspense>
@@ -35,7 +35,7 @@ async function Graph({ params, searchParams }: PageProps<"/reviews/[id]/graph">)
   ]);
   if (graph.nodes.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+      <p className="rounded-lg border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
         {review.status === "queued" || review.status === "running"
           ? "The graph appears once the review has found the changed code."
           : "No graph: this review is from before reviews stored their changed code."}
@@ -49,7 +49,7 @@ async function Graph({ params, searchParams }: PageProps<"/reviews/[id]/graph">)
   return (
     <>
       {finding && (
-        <p className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900">
+        <p className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-muted px-3 py-2 text-sm">
           <span>
             Highlighting <span className="font-medium">{finding.title}</span>: the changed code
             it&apos;s in and the evidence it cites

@@ -17,7 +17,7 @@ export const metadata: Metadata = { title: "Trace" };
 export default function ReviewTracePage({ params }: PageProps<"/reviews/[id]/trace">) {
   return (
     <Suspense
-      fallback={<div className="h-64 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-900" />}
+      fallback={<div className="h-64 animate-pulse rounded-lg bg-muted" />}
     >
       <Trace params={params} />
     </Suspense>
@@ -30,7 +30,7 @@ async function Trace({ params }: Pick<PageProps<"/reviews/[id]/trace">, "params"
   const [trace, review] = await Promise.all([getReviewTrace(id), getReview(id)]);
   if (trace.chunks.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+      <p className="rounded-lg border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
         {review.status === "queued" || review.status === "running"
           ? "The trace appears once the review has retrieved its context."
           : "Nothing was retrieved for this review."}
@@ -49,7 +49,7 @@ async function Trace({ params }: Pick<PageProps<"/reviews/[id]/trace">, "params"
             <h2 className="text-sm font-semibold">
               {trace.chunks.length > 1 ? `Chunk ${chunk.index + 1}: ` : ""}what retrieval found
             </h2>
-            <span className="text-xs text-zinc-500">
+            <span className="text-xs text-muted-foreground">
               {chunk.items.filter((i) => i.included).length} of {chunk.items.length} candidates
               shown, {tokensUsed(chunk.items).toLocaleString("en")}
               {contextBudget ? ` of ${contextBudget.toLocaleString("en")}` : ""} context tokens
@@ -62,7 +62,7 @@ async function Trace({ params }: Pick<PageProps<"/reviews/[id]/trace">, "params"
           </div>
         </section>
       ))}
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-muted-foreground">
         Findings validation dropped, with the reason, are on the{" "}
         <Link href={`/reviews/${id}?dropped=1`} className="underline underline-offset-4">
           Diff tab
@@ -91,9 +91,9 @@ function groupBySeed(items: TraceItem[]): [string, TraceItem[]][] {
 }
 
 const OUTCOME_STYLES: Record<Outcome["kind"], string> = {
-  included: "text-emerald-700 dark:text-emerald-400",
-  signature: "text-amber-700 dark:text-amber-400",
-  excluded: "text-zinc-500",
+  included: "text-added",
+  signature: "text-warning",
+  excluded: "text-muted-foreground",
 };
 
 function SeedGroup({
@@ -106,13 +106,13 @@ function SeedGroup({
   cited: Set<number>;
 }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
-      <div className="bg-zinc-50 px-3 py-2 text-xs dark:bg-zinc-900">
-        <span className="text-zinc-500">For the changed </span>
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <div className="bg-muted px-3 py-2 text-xs">
+        <span className="text-muted-foreground">For the changed </span>
         <span className="break-all font-mono font-medium">{seed}</span>
       </div>
       <table className="w-full whitespace-nowrap text-left text-sm">
-        <thead className="text-xs text-zinc-500">
+        <thead className="text-xs text-muted-foreground">
           <tr>
             <th className="px-3 py-1.5 font-medium">Rank</th>
             <th className="px-3 py-1.5 font-medium">Candidate</th>
@@ -121,17 +121,17 @@ function SeedGroup({
             <th className="px-3 py-1.5 text-right font-medium">Tokens</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
+        <tbody className="divide-y divide-border/60">
           {items.map((item) => {
             const result = outcome(item);
             const similarity = score(item, "vector_similarity");
             return (
-              <tr key={item.label} className={item.included ? "" : "text-zinc-500"}>
+              <tr key={item.label} className={item.included ? "" : "text-muted-foreground"}>
                 <td className="px-3 py-1.5 tabular-nums">{score(item, "vector_rank") ?? "—"}</td>
                 <td className="max-w-md px-3 py-1.5">
                   <span className="flex items-center gap-1.5">
                     {item.node_id !== null && cited.has(item.node_id) && (
-                      <span className="text-amber-500" title="Cited as evidence by a finding">
+                      <span className="text-warning" title="Cited as evidence by a finding">
                         ★
                       </span>
                     )}
@@ -165,9 +165,9 @@ function SeedGroup({
 function SimilarityBar({ value }: { value: number }) {
   return (
     <span className="flex items-center gap-2">
-      <span className="h-1.5 w-20 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+      <span className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
         <span
-          className="block h-full rounded-full bg-sky-500"
+          className="block h-full rounded-full bg-primary"
           style={{ width: `${Math.max(0, Math.min(1, value)) * 100}%` }}
         />
       </span>
@@ -180,9 +180,9 @@ function SimilarityBar({ value }: { value: number }) {
  * diff, the changed code in full, and the related code (context). */
 function Budgets({ budgets }: { budgets: Record<string, number> }) {
   const parts = [
-    { key: "diff", label: "Diff", style: "bg-zinc-500" },
-    { key: "changed", label: "Changed code", style: "bg-amber-500" },
-    { key: "context", label: "Context", style: "bg-sky-500" },
+    { key: "diff", label: "Diff", style: "bg-muted-foreground/70" },
+    { key: "changed", label: "Changed code", style: "bg-warning" },
+    { key: "context", label: "Context", style: "bg-primary" },
   ].filter((p) => typeof budgets[p.key] === "number");
   const total = parts.reduce((sum, p) => sum + budgets[p.key], 0);
   if (total === 0) return null;
@@ -202,7 +202,7 @@ function Budgets({ budgets }: { budgets: Record<string, number> }) {
         {parts.map((p) => (
           <div key={p.key} className="flex items-center gap-1.5">
             <span className={`size-2 rounded-full ${p.style}`} aria-hidden="true" />
-            <dt className="text-zinc-500">{p.label}</dt>
+            <dt className="text-muted-foreground">{p.label}</dt>
             <dd className="tabular-nums">up to {budgets[p.key].toLocaleString("en")} tokens</dd>
           </div>
         ))}

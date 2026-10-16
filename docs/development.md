@@ -288,6 +288,18 @@ pnpm test                     # vitest
 pnpm lint && pnpm build
 ```
 
+The UI is built from shadcn/ui components copied into `src/components/ui/` and the theme's tokens in
+`src/app/globals.css` (planning-v2.md D140–D141). To add a component:
+
+```bash
+npx shadcn@latest add <name>
+```
+
+Then undo what the CLI adds besides the component (D153): `shadcn` or `next-themes` in `package.json`,
+and any change to `globals.css`. The variants its components need are already there, and the theme hook
+is `src/lib/use-theme.ts`. Use the tokens (`bg-card`, `text-muted-foreground`, `text-critical`), not
+palette classes like `zinc-500`.
+
 ## Configuration
 
 All config comes from environment variables, parsed by `core.config.Settings`

@@ -74,33 +74,33 @@ function FileDiff({
   return (
     <details
       open={open || findings.length > 0}
-      className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800"
+      className="overflow-hidden rounded-lg border border-border"
     >
-      <summary className="flex cursor-pointer flex-wrap items-center gap-2 bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900">
+      <summary className="flex cursor-pointer flex-wrap items-center gap-2 bg-muted px-3 py-2 text-sm">
         <span className="break-all font-mono font-medium">{path}</span>
         {file.status !== "modified" && <Tag>{file.status}</Tag>}
         {findings.length > 0 && (
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-muted-foreground">
             {findings.length} finding{findings.length === 1 ? "" : "s"}
           </span>
         )}
       </summary>
       {unplaced.length > 0 && (
-        <div className="space-y-2 border-t border-zinc-200 p-3 dark:border-zinc-800">
-          <p className="text-xs text-zinc-500">Not on a changed line:</p>
+        <div className="space-y-2 border-t border-border p-3">
+          <p className="text-xs text-muted-foreground">Not on a changed line:</p>
           {unplaced.map((f) => (
             <FindingCard key={f.id} finding={f} names={names} />
           ))}
         </div>
       )}
       {file.binary ? (
-        <p className="border-t border-zinc-200 px-3 py-2 text-sm text-zinc-500 dark:border-zinc-800">
+        <p className="border-t border-border px-3 py-2 text-sm text-muted-foreground">
           Binary file
         </p>
       ) : (
         // Long lines wrap rather than scroll, so a finding under a line is
         // always fully in view.
-        <div className="border-t border-zinc-200 dark:border-zinc-800">
+        <div className="border-t border-border">
           <table className="w-full table-fixed border-collapse font-mono text-xs leading-5">
             <colgroup>
               <col className="w-12" />
@@ -110,7 +110,7 @@ function FileDiff({
             </colgroup>
             {file.hunks.map((hunk, h) => (
               <tbody key={h}>
-                <tr className="bg-sky-50/60 text-zinc-500 dark:bg-sky-950/30">
+                <tr className="bg-accent/50 text-muted-foreground">
                   <td colSpan={4} className="px-3 py-1">
                     @@ −{hunk.oldStart} +{hunk.newStart} @@ {hunk.header}
                   </td>
@@ -141,8 +141,8 @@ function FileDiff({
 }
 
 const KIND_STYLES = {
-  add: "bg-emerald-50 dark:bg-emerald-950/40",
-  del: "bg-red-50 dark:bg-red-950/40",
+  add: "bg-added-soft",
+  del: "bg-deleted-soft",
   context: "",
 } as const;
 
@@ -169,16 +169,16 @@ function LineRows({
     <>
       <tr className={KIND_STYLES[kind]}>
         {/* A line a finding covers gets a bar in its severity's colour. */}
-        <td className={`select-none px-2 text-right align-top text-zinc-400 ${covered ?? ""}`}>
+        <td className={`select-none px-2 text-right align-top text-muted-foreground ${covered ?? ""}`}>
           {oldNo ?? ""}
         </td>
-        <td className="select-none px-2 text-right align-top text-zinc-400">{newNo ?? ""}</td>
-        <td className="select-none align-top text-zinc-500">{MARKERS[kind]}</td>
+        <td className="select-none px-2 text-right align-top text-muted-foreground">{newNo ?? ""}</td>
+        <td className="select-none align-top text-muted-foreground">{MARKERS[kind]}</td>
         <td className="whitespace-pre-wrap pr-3 [overflow-wrap:anywhere]">{text}</td>
       </tr>
       {findings.length > 0 && (
         <tr>
-          <td colSpan={4} className="space-y-2 bg-zinc-50 px-3 py-2 dark:bg-zinc-900/60">
+          <td colSpan={4} className="space-y-2 bg-muted/60 px-3 py-2">
             {findings.map((f) => (
               <FindingCard key={f.id} finding={f} names={names} />
             ))}

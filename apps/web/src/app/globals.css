@@ -1,26 +1,182 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
+/* Dark mode follows `data-theme="dark"` on <html>, set before first paint by the theme
+   script in layout.tsx (system, light or dark; lib/theme.ts). */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* The state variants shadcn/ui's components use, copied from shadcn's
+   tailwind.css so the CLI isn't a runtime dependency. Radix marks state with
+   data-state="open" and friends. */
+@custom-variant data-open {
+  &:where([data-state="open"]),
+  &:where([data-open]:not([data-open="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-closed {
+  &:where([data-state="closed"]),
+  &:where([data-closed]:not([data-closed="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-active {
+  &:where([data-state="active"]),
+  &:where([data-active]:not([data-active="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-disabled {
+  &:where([data-disabled="true"]),
+  &:where([data-disabled]:not([data-disabled="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-horizontal {
+  &:where([data-orientation="horizontal"]) {
+    @slot;
+  }
+}
+@custom-variant data-vertical {
+  &:where([data-orientation="vertical"]) {
+    @slot;
+  }
+}
+
+/* ── The Aperture brand (planning-v2.md D141) ──────────────────────────────
+   Violet accent, violet-tinted neutrals. Pages use these names (bg-card,
+   text-muted-foreground, border-border, bg-primary), never raw palette values,
+   so the brand is this one block. The severity and change colours are kept
+   apart from the accent: a button must never read as a finding. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8f7fc;
+  --foreground: #16131f;
+  --card: #ffffff;
+  --card-foreground: #16131f;
+  --popover: #ffffff;
+  --popover-foreground: #16131f;
+  --primary: #6e56cf;
+  --primary-foreground: #ffffff;
+  --secondary: #efedf6;
+  --secondary-foreground: #16131f;
+  --muted: #f1eff7;
+  --muted-foreground: #6b6680;
+  --accent: #efecfb;
+  --accent-foreground: #3f2e9a;
+  --destructive: #dc2626;
+  --border: #e6e3f0;
+  --input: #dcd8e8;
+  --ring: #6e56cf;
+  --radius: 0.625rem;
+
+  /* Findings, by severity: the text colour and a soft background. */
+  --critical: #b91c1c;
+  --critical-soft: #fef2f2;
+  --warning: #b45309;
+  --warning-soft: #fffbeb;
+  --suggestion: #0369a1;
+  --suggestion-soft: #f0f9ff;
+
+  /* Code changes, in diffs and the graph. */
+  --added: #059669;
+  --added-soft: rgb(16 185 129 / 0.13);
+  --deleted: #dc2626;
+  --deleted-soft: rgb(239 68 68 / 0.11);
+}
+
+[data-theme="dark"] {
+  --background: #0e0c14;
+  --foreground: #ecebf3;
+  --card: #17141f;
+  --card-foreground: #ecebf3;
+  --popover: #1b1824;
+  --popover-foreground: #ecebf3;
+  --primary: #9d8cf5;
+  --primary-foreground: #120e22;
+  --secondary: #221e2d;
+  --secondary-foreground: #ecebf3;
+  --muted: #1d1a27;
+  --muted-foreground: #9a95ad;
+  --accent: #231d3d;
+  --accent-foreground: #cfc6fb;
+  --destructive: #f87171;
+  --border: #2a2536;
+  --input: #342f42;
+  --ring: #9d8cf5;
+
+  --critical: #f87171;
+  --critical-soft: #2a1215;
+  --warning: #fbbf24;
+  --warning-soft: #2a1f0b;
+  --suggestion: #38bdf8;
+  --suggestion-soft: #0b2030;
+
+  --added: #34d399;
+  --added-soft: rgb(16 185 129 / 0.16);
+  --deleted: #f87171;
+  --deleted-soft: rgb(239 68 68 / 0.15);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-critical: var(--critical);
+  --color-critical-soft: var(--critical-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-suggestion: var(--suggestion);
+  --color-suggestion-soft: var(--suggestion-soft);
+  --color-added: var(--added);
+  --color-added-soft: var(--added-soft);
+  --color-deleted: var(--deleted);
+  --color-deleted-soft: var(--deleted-soft);
+
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-heading: var(--font-geist-sans), system-ui, sans-serif;
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
   }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  html {
+    @apply font-sans;
+    color-scheme: light;
+  }
+  html[data-theme="dark"] {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 }

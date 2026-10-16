@@ -25,7 +25,7 @@ export const metadata: Metadata = { title: "Review" };
 export default function ReviewPage({ params, searchParams }: PageProps<"/reviews/[id]">) {
   return (
     <Suspense
-      fallback={<div className="h-64 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-900" />}
+      fallback={<div className="h-64 animate-pulse rounded-lg bg-muted" />}
     >
       <Review params={params} searchParams={searchParams} />
     </Suspense>
@@ -56,14 +56,14 @@ async function Review({ params, searchParams }: PageProps<"/reviews/[id]">) {
 
         <div className="min-w-0 space-y-4 xl:order-1">
           {review.error && (
-            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+            <p className="rounded-md border border-critical/30 bg-critical-soft px-3 py-2 text-sm text-critical">
               {review.error}
             </p>
           )}
           {live ? (
             // The diff is stored when the review starts and the findings when
             // it ends; the timeline re-renders the page then.
-            <p className="rounded-lg border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+            <p className="rounded-lg border border-dashed border-input p-6 text-center text-sm text-muted-foreground">
               The diff and the findings appear here when the review finishes.
             </p>
           ) : (
@@ -96,7 +96,7 @@ function ReviewBody({
         </h2>
         <Link
           href={withQuery(`/reviews/${review.id}`, { dropped: showDropped ? undefined : "1" })}
-          className="text-xs text-zinc-500 underline underline-offset-4 hover:text-zinc-900 dark:hover:text-zinc-100"
+          className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
         >
           {showDropped ? "Hide dropped findings" : "Show findings validation dropped"}
         </Link>
@@ -105,7 +105,7 @@ function ReviewBody({
         <DiffView files={parseDiff(diff.diff)} findings={review.findings} names={names} />
       ) : (
         <>
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-muted-foreground">
             This review is from before diffs were stored with reviews, so its findings are
             listed without the diff.
           </p>
@@ -115,29 +115,29 @@ function ReviewBody({
         </>
       )}
       {showDropped && dropped.length === 0 && (
-        <p className="text-sm text-zinc-500">Validation dropped nothing in this review.</p>
+        <p className="text-sm text-muted-foreground">Validation dropped nothing in this review.</p>
       )}
     </>
   );
 }
 
 const CHANGE_STYLES: Record<Seed["change"], string> = {
-  added: "text-emerald-700 dark:text-emerald-400",
-  modified: "text-amber-700 dark:text-amber-400",
-  deleted: "text-red-700 dark:text-red-400",
+  added: "text-added",
+  modified: "text-warning",
+  deleted: "text-deleted",
 };
 
 /** The changed definitions the review started from (its seeds). */
 function ChangedCode({ seeds }: { seeds: Seed[] }) {
   return (
-    <section className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+    <section className="rounded-lg border border-border p-4">
       <h2 className="text-sm font-semibold">Changed code</h2>
       <ul className="mt-2 space-y-1.5 text-xs">
         {seeds.map((seed) => (
           <li key={`${seed.path}:${seed.qualified_name}`} className="min-w-0">
             <span className={`mr-1.5 ${CHANGE_STYLES[seed.change]}`}>{seed.change}</span>
             <span className="break-all font-mono">{seed.qualified_name}</span>
-            {seed.signature_changed && <span className="ml-1.5 text-zinc-500">(signature)</span>}
+            {seed.signature_changed && <span className="ml-1.5 text-muted-foreground">(signature)</span>}
           </li>
         ))}
       </ul>
@@ -151,12 +151,12 @@ function Usage({ usage }: { usage: Record<string, number> }) {
     ["Tokens written", usage.output_tokens],
   ] as const;
   return (
-    <section className="rounded-lg border border-zinc-200 p-4 text-xs dark:border-zinc-800">
+    <section className="rounded-lg border border-border p-4 text-xs">
       <h2 className="text-sm font-semibold">Model usage</h2>
       <dl className="mt-2 grid grid-cols-2 gap-1">
         {rows.map(([label, value]) => (
           <div key={label} className="contents">
-            <dt className="text-zinc-500">{label}</dt>
+            <dt className="text-muted-foreground">{label}</dt>
             <dd className="text-right tabular-nums">{value?.toLocaleString("en") ?? "—"}</dd>
           </div>
         ))}

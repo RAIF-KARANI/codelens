@@ -45,7 +45,7 @@ async function Reviews({ params, searchParams }: PageProps<"/repos/[id]">) {
     <>
       <StatusFilter pathname={pathname} current={status} />
       {page.items.length === 0 ? (
-        <p className="mt-6 rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+        <p className="mt-6 rounded-lg border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
           {status
             ? `No ${status} reviews.`
             : repo.source === "github"
@@ -53,9 +53,9 @@ async function Reviews({ params, searchParams }: PageProps<"/repos/[id]">) {
               : "No reviews yet."}
         </p>
       ) : (
-        <div className="mt-4 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className="mt-4 overflow-x-auto rounded-lg border border-border">
           <table className="w-full whitespace-nowrap text-left text-sm">
-            <thead className="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+            <thead className="bg-muted text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-4 py-2 font-medium">Review</th>
                 <th className="px-4 py-2 font-medium">Change</th>
@@ -65,7 +65,7 @@ async function Reviews({ params, searchParams }: PageProps<"/repos/[id]">) {
                 <th className="px-4 py-2 font-medium">When</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            <tbody className="divide-y divide-border">
               {page.items.map((review) => (
                 <ReviewRow key={review.id} review={review} repo={repo} />
               ))}
@@ -99,8 +99,8 @@ function StatusFilter({ pathname, current }: { pathname: string; current?: Revie
             aria-current={selected ? "true" : undefined}
             className={`rounded-full border px-2.5 py-1 ${
               selected
-                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-                : "border-zinc-300 text-zinc-600 hover:border-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-input text-muted-foreground hover:border-primary/60 hover:text-foreground"
             }`}
           >
             {status ?? "all"}
@@ -143,7 +143,7 @@ function ReviewRow({ review, repo }: { review: ReviewSummary; repo: RepoDetail }
           ) : (
             <Tag>{review.source === "eval" ? "eval case" : "branch"}</Tag>
           )}
-          <span className="font-mono text-xs text-zinc-500">
+          <span className="font-mono text-xs text-muted-foreground">
             {onGitHub ? (
               <a
                 href={commitUrl(repo.full_name, review.head_sha)}
@@ -159,7 +159,7 @@ function ReviewRow({ review, repo }: { review: ReviewSummary; repo: RepoDetail }
           </span>
         </div>
         {review.error && (
-          <p className="mt-1 max-w-md truncate text-xs text-red-700 dark:text-red-400" title={review.error}>
+          <p className="mt-1 max-w-md truncate text-xs text-critical" title={review.error}>
             {review.error}
           </p>
         )}
@@ -170,10 +170,10 @@ function ReviewRow({ review, repo }: { review: ReviewSummary; repo: RepoDetail }
       <td className="px-4 py-3">
         {review.status === "completed" ? <SeverityCountsView counts={review.counts} /> : "—"}
       </td>
-      <td className="px-4 py-3 tabular-nums text-zinc-600 dark:text-zinc-400">
+      <td className="px-4 py-3 tabular-nums text-muted-foreground">
         {formatDuration(review.started_at, review.finished_at) ?? "—"}
       </td>
-      <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
+      <td className="px-4 py-3 text-muted-foreground">
         <DateTime iso={review.started_at ?? review.created_at} />
       </td>
     </tr>
