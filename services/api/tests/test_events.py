@@ -202,3 +202,68 @@ def test_no_heartbeat_before_one_is_due(settings: Settings, review_id: int) -> N
 
     assert [f for _, f in received if f.startswith(":")] == []
     assert received[-1][1].split("\n")[1] == "event: end"
+
+
+# --- the route's own database use, while a stream is open
+
+
+async def _pool_in_use_while_streaming(
+    settings: Settings, review_id: int, auth: dict[str, str]
+) -> tuple[int, int]:
+    """Open the route's stream on a running review through the real ASGI app,
+    wait until it is idle between reads, and count the API pool's connections
+    in use: (while streaming, after the client leaves).
+
+    TestClient can't do this: it waits for the whole response, and a running
+    review's stream doesn't end."""
+    app = create_app(settings)
+    async with app.router.lifespan_context(app):
+        started = asyncio.Event()
+        gone = asyncio.Event()
+
+        async def receive() -> dict[str, Any]:
+            await gone.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(message: dict[str, Any]) -> None:
+            if message["type"] == "http.response.start":
+                assert message["status"] == 200
+                started.set()
+
+        path = f"/api/v1/reviews/{review_id}/events"
+        scope = {
+            "type": "http",
+            # 2.3: the server reports disconnects, as uvicorn does, so the
+            # stream ends when the client leaves.
+            "asgi": {"version": "3.0", "spec_version": "2.3"},
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": path,
+            "raw_path": path.encode(),
+            "root_path": "",
+            "query_string": b"",
+            "headers": [(k.lower().encode(), v.encode()) for k, v in auth.items()],
+            "client": ("127.0.0.1", 50000),
+            "server": ("testserver", 80),
+        }
+        request = asyncio.create_task(app(scope, receive, send))
+        await asyncio.wait_for(started.wait(), timeout=10)
+        await asyncio.sleep(1.0)  # past the first read; now waiting on the doorbell
+        streaming = app.state.engine.pool.checkedout()
+        gone.set()
+        await asyncio.wait_for(request, timeout=10)
+        return streaming, app.state.engine.pool.checkedout()
+
+
+def test_an_open_stream_holds_no_database_connection(
+    settings: Settings, review_id: int, auth_headers: dict[str, str]
+) -> None:
+    # The audit's finding (Phase 9 step 3, D129): the route's request session,
+    # used for the access check, kept its pooled connection idle in a
+    # transaction for the stream's whole life, so ~15 open streams exhausted
+    # the API's pool (5 + 10) and every other request waited 30 s.
+    streaming, after = asyncio.run(_pool_in_use_while_streaming(settings, review_id, auth_headers))
+
+    assert streaming == 0
+    assert after == 0

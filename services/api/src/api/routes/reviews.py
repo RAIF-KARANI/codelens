@@ -206,6 +206,11 @@ async def review_events(
     `Last-Event-ID` (an EventSource sends it when it reconnects; `?after=`
     does the same), then live events until `end` (api/sse.py)."""
     await access.review_for(session, user, review_id)
+    # Give the access check's connection back now. The request's session would
+    # otherwise hold it, idle in a transaction, until the stream ends, so ~15
+    # open streams would use up the pool every other request needs (D129). The
+    # stream reads with short connections of its own (api/sse.py).
+    await session.close()
     start = after if after is not None else (last_event_id or 0)
     return StreamingResponse(
         review_stream(engine, redis, review_id, start),
