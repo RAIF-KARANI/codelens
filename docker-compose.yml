@@ -54,7 +54,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-codelens}
     ports:
       # Host port 5433 avoids clashing with a locally installed Postgres.
-      - "${POSTGRES_PORT:-5433}:5432"
+      # Loopback only (IPv4 and IPv6, since Windows resolves localhost to ::1 first):
+      # the default superuser password must not be reachable from the
+      # network the machine is on (D127). Containers use the Compose network instead.
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+      - "[::1]:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -66,7 +70,10 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      # Loopback only: Redis has no password and is the workers' job queue, so anyone
+      # who can reach it can queue reviews (D127). Host tools still use localhost:6379.
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+      - "[::1]:${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -92,7 +99,10 @@ services:
     # --reload + bind mounts give hot reload during development.
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/services/api/src --reload-dir /app/packages/core/src
     ports:
-      - "${API_PORT:-8000}:8000"
+      # Loopback only (D127): the dashboard calls it on localhost, and the relay
+      # reaches it as api:8000 on the Compose network.
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+      - "[::1]:${API_PORT:-8000}:8000"
     volumes:
       - ./services/api/src:/app/services/api/src
       - ./packages/core/src:/app/packages/core/src

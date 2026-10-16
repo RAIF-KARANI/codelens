@@ -109,10 +109,10 @@ flowchart TB
         OL["Ollama (native, GPU) :11434<br/>qwen3:8b · qwen3-embedding:0.6b"]
         WEB["apps/web (Next.js) :3000<br/>pnpm dev"]
         subgraph docker["Docker Desktop (WSL2 VM, 8 GB)"]
-            PG[("postgres<br/>pgvector/pgvector:pg16<br/>host :5433")]
-            RD[("redis 7<br/>host :6379")]
+            PG[("postgres<br/>pgvector/pgvector:pg16<br/>host 127.0.0.1:5433")]
+            RD[("redis 7<br/>host 127.0.0.1:6379")]
             MIG["migrate<br/>(one-shot: alembic upgrade head)"]
-            API["api (FastAPI)<br/>host :8000"]
+            API["api (FastAPI)<br/>host 127.0.0.1:8000"]
             WI["worker<br/>celery -Q index -c 2"]
             WG["worker-gpu<br/>celery -Q gpu -c 1"]
         end
