@@ -16,6 +16,18 @@ _WHITESPACE = re.compile(r"\s+")
 _SPACE_AFTER_OPEN = re.compile(r"([(\[]) ")
 _SPACE_BEFORE_CLOSE = re.compile(r" ([)\]])")
 
+# A file's parse budget (D131). Each definition stores its whole block, so
+# nested definitions store their code again at every level: stored code is the
+# file's size times the average nesting depth. Ordinary code stays well under
+# 4x; 16x leaves room and still bounds the work, and the nesting depth with it.
+# Past either limit the file is skipped, like a minified one.
+MAX_DEFINITIONS_PER_FILE = 5000
+MAX_CODE_AMPLIFICATION = 16
+
+
+class TooComplex(Exception):
+    """A file whose definitions would cost far more than its size to store."""
+
 
 def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -80,6 +92,8 @@ class FileBuilder:
         self._references: list[Reference] = []
         self._seen_references: set[tuple[NodeRef, EdgeKind, str]] = set()
         self._ordinals: dict[str, int] = {}
+        self._definitions = 0
+        self._stored_bytes = 0
 
     @property
     def nodes(self) -> tuple[ParsedNode, ...]:
@@ -130,6 +144,15 @@ class FileBuilder:
         signature: str | None,
         docstring: str | None,
     ) -> Scope:
+        # Check the budget before copying the block, which is the expensive part.
+        self._definitions += 1
+        self._stored_bytes += range_node.end_byte - range_node.start_byte
+        if self._definitions > MAX_DEFINITIONS_PER_FILE:
+            raise TooComplex(f"more than {MAX_DEFINITIONS_PER_FILE} definitions")
+        if self._stored_bytes > MAX_CODE_AMPLIFICATION * max(len(self.source), 1):
+            raise TooComplex(
+                f"definitions nest too deeply (stored code > {MAX_CODE_AMPLIFICATION}x the file)"
+            )
         qualified_name = self._child_qualified_name(parent, name)
         scope = self._add(
             kind,

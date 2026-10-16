@@ -7,7 +7,7 @@ from pathlib import Path
 
 from core.diff import git
 from core.enums import EdgeKind, Language, NodeKind
-from core.parser.builder import sha256_hex
+from core.parser.builder import TooComplex, sha256_hex
 from core.parser.extraction import Extraction
 from core.parser.javascript import extract_javascript
 from core.parser.languages import detect
@@ -65,6 +65,9 @@ def _parse_sources(
     for source in sources:
         try:
             files.append(parse_source(source, package_dirs))
+        except TooComplex as exc:
+            logger.warning("skipped %s: %s", source.path, exc)
+            skipped.append(SkippedFile(source.path, "too_complex"))
         except Exception:
             # One pathological file must not abort indexing a whole repo.
             logger.exception("failed to parse %s", source.path)

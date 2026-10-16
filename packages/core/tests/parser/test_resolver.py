@@ -3,8 +3,11 @@
 from pathlib import Path
 from textwrap import dedent
 
+import pytest
+
 from core.enums import EdgeKind
 from core.parser import ParseResult, parse_repository, summarize
+from core.parser.resolver import _Resolver
 from core.parser.types import ParsedEdge
 
 
@@ -227,3 +230,64 @@ def test_summary_counts_resolution(tmp_path: Path) -> None:
     assert stats.nodes_by_kind == {"module": 5, "function": 5, "class": 2, "method": 3}
     assert stats.calls_external == 1
     assert 0 < stats.call_resolution < stats.internal_call_resolution <= 1
+
+
+# --- traversal cost (Phase 9 step 5, D131): each class / export followed once
+
+
+def lattice(layers: int, method: str) -> str:
+    """X_i and Y_i both inherit X_{i-1} and Y_{i-1}: 2^layers paths to the top."""
+    lines = ["class X0:\n    def found(self):\n        return 1\n", "class Y0:\n    pass\n"]
+    for i in range(1, layers + 1):
+        lines += [f"class X{i}(X{i - 1}, Y{i - 1}):\n    pass\n"]
+        lines += [f"class Y{i}(X{i - 1}, Y{i - 1}):\n    pass\n"]
+    lines += [f"class Z(X{layers}, Y{layers}):\n    def m(self):\n        return self.{method}()\n"]
+    return "\n".join(lines)
+
+
+def counting(monkeypatch: pytest.MonkeyPatch, method: str) -> list[int]:
+    calls = [0]
+    original = getattr(_Resolver, method)
+
+    def wrapper(self: _Resolver, *args: object, **kwargs: object) -> object:
+        calls[0] += 1
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(_Resolver, method, wrapper)
+    return calls
+
+
+def test_a_diamond_lattice_costs_each_class_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Following every path cost 2^(n+2) lookups per unresolved `self.x`: ~1 KB
+    # of classes held a shared index worker for hours.
+    calls = counting(monkeypatch, "_target")
+    result = make_repo(
+        tmp_path, {"lost.py": lattice(20, "missing"), "kept.py": lattice(20, "found")}
+    )
+
+    assert calls[0] < 4_000  # was over 4 million
+    # Behaviour is unchanged: the deep inherited method still resolves, and
+    # the missing one is still named after the class it was looked up on.
+    called = {
+        str(e.source): (e.target_name, resolved(e))
+        for e in result.edges
+        if e.kind is EdgeKind.CALLS
+    }
+    assert called["kept.Z.m"] == ("kept.X0.found", "kept.X0.found")
+    assert called["lost.Z.m"] == ("lost.Z.missing", None)
+
+
+def test_repeated_export_star_costs_each_module_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # k copies of `export * from "./a"` cost k^9 lookups: 165 bytes took 10 s.
+    calls = counting(monkeypatch, "_export")
+    barrel = "export * from './a';\n" * 4
+    make_repo(
+        tmp_path,
+        {"a.ts": barrel + "import { nope } from './a';\nexport function f() { nope(); }\n"},
+    )
+
+    assert calls[0] < 50  # was 699,050 for 4 copies

@@ -136,3 +136,34 @@ def test_head_and_base_sides_are_parsed_from_git_objects(repo: Path) -> None:
 def test_rejects_option_like_revisions(repo: Path) -> None:
     with pytest.raises(GitError, match="invalid revision"):
         collect_changes(repo, "--output=/tmp/x", "feature")
+
+
+# --- review budgets (Phase 9 step 5, D131)
+
+
+def test_a_too_complex_file_is_skipped_not_parsed(repo: Path) -> None:
+    # A fork PR could add one small, deeply nested file and hold the shared
+    # review worker for minutes; now it is skipped, like a minified file.
+    write(repo, "deep.js", "function f(){\n" * 400 + "}\n" * 400)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "deep")
+
+    changes = collect_changes(repo, "main", "feature")
+    deep = next(c for c in changes.files if c.diff.path == "deep.js")
+
+    assert (deep.head, deep.skipped, deep.seeds) == (None, "too_complex", ())
+
+
+def test_files_past_the_cap_stay_in_the_diff_unparsed(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("core.review.changes.MAX_REVIEW_FILES", 2)
+
+    changes = collect_changes(repo, "main", "feature")
+
+    assert len(changes.files) > 2
+    assert all(c.skipped != "too_many_files" for c in changes.files[:2])
+    assert all(
+        (c.head, c.base, c.seeds, c.skipped) == (None, None, (), "too_many_files")
+        for c in changes.files[2:]
+    )
