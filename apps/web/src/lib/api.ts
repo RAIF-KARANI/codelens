@@ -161,6 +161,9 @@ export type ReviewListItem = ReviewSummary & { repo_full_name: string };
  * runs left out (D155). `daily` has one row per UTC day of the window. */
 export type Stats = {
   days: number;
+  /** The window's last UTC day: today, or the newest review's (D157). */
+  ends_on: string;
+  ends_today: boolean;
   reviews: { total: number; completed: number; failed: number; superseded: number };
   findings: SeverityCounts;
   median_seconds: number | null;
@@ -272,7 +275,10 @@ export const listAllReviews = (
     }),
   );
 
-export const getStats = (days = 7) => api<Stats>(withQuery("/stats", { days }));
+/** `anchor: "latest"` ends the window on the newest review's day instead of
+ * today: what the demo needs, since its reviews are made once (D157). */
+export const getStats = (days = 7, anchor: "today" | "latest" = "today") =>
+  api<Stats>(withQuery("/stats", { days, anchor: anchor === "latest" ? "latest" : undefined }));
 
 export const getReview = (id: number, opts: { dropped?: boolean } = {}) =>
   api<ReviewDetail>(withQuery(`/reviews/${id}`, { include_dropped: opts.dropped ? "true" : undefined }));

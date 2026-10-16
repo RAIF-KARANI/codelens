@@ -137,6 +137,9 @@ class Stats(BaseModel):
     left out unless asked for (D155)."""
 
     days: int
+    # The window's last UTC day: today, or the newest review's (anchor=latest).
+    ends_on: date
+    ends_today: bool
     reviews: ReviewCounts
     findings: SeverityCounts
     # Queued to finished, for reviews completed in the window; null with none.

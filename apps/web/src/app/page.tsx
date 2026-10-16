@@ -17,7 +17,7 @@ import { StatTile } from "@/components/stat-tile";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getStats, listAllReviews, type SeverityCounts, type Stats } from "@/lib/api";
 import { isDemo } from "@/lib/config";
-import { formatCount, formatMs } from "@/lib/format";
+import { dayTitle, formatCount, formatMs } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Overview" };
@@ -30,9 +30,6 @@ export default function OverviewPage() {
   return (
     <>
       <h1 className="text-xl font-semibold tracking-tight">Overview</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        The last {DAYS} days across the repositories you can see.
-      </p>
       <Suspense fallback={<SummarySkeleton />}>
         <Summary />
       </Suspense>
@@ -44,11 +41,18 @@ export default function OverviewPage() {
 }
 
 async function Summary() {
-  const stats = await getStats(DAYS);
+  // The demo's reviews were made once and copied (D157): its week ends on the
+  // newest review, or the overview would be empty a week after publishing.
+  const stats = await getStats(DAYS, isDemo() ? "latest" : "today");
   if (stats.repos.total === 0) return <NoRepos />;
   const findings = stats.findings.critical + stats.findings.warning + stats.findings.suggestion;
   return (
     <>
+      <p className="mt-1 text-sm text-muted-foreground">
+        {stats.ends_today
+          ? `The last ${DAYS} days across the repositories you can see.`
+          : `The ${DAYS} days up to the latest review, ${dayTitle(stats.ends_on)}.`}
+      </p>
       {stats.in_progress > 0 && <InProgress count={stats.in_progress} />}
       <section aria-label={`The last ${DAYS} days`} className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile
@@ -77,7 +81,7 @@ async function Summary() {
         />
       </section>
       <div className="mt-4">
-        <DailyChart daily={stats.daily} />
+        <DailyChart daily={stats.daily} endsToday={stats.ends_today} />
       </div>
       {/* While something runs, the numbers change: re-render every few seconds. */}
       <AutoRefresh active={stats.in_progress > 0 || stats.repos.indexing + stats.repos.pending > 0} />
@@ -180,8 +184,9 @@ async function RecentReviews() {
 
 function SummarySkeleton() {
   return (
-    <div className="mt-6" aria-busy="true" aria-label="Loading the overview">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div aria-busy="true" aria-label="Loading the overview">
+      <Skeleton className="mt-2 h-4 w-72" />
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }, (_, i) => (
           <Skeleton key={i} className="h-28 rounded-xl" />
         ))}

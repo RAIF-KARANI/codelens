@@ -3,10 +3,10 @@ over the repos the caller may see (api/access.py, D111), in a few grouped
 queries rather than one per repo."""
 
 from datetime import UTC, date, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import Select, cast, extract, func, select
+from sqlalchemy import Select, and_, cast, extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.types import Date
 
@@ -28,14 +28,15 @@ async def get_stats(
     user: CurrentUser,
     days: Annotated[int, Query(ge=1, le=90)] = 7,
     include_eval: bool = False,
+    anchor: Literal["today", "latest"] = "today",
 ) -> schemas.Stats:
-    """The last `days` UTC days, today included: reviews created and how they
-    ended, the findings they posted, the median time from queued to finished,
-    and one row per day. Plus what is queued or running now, and the repos by
-    index status. Eval runs are left out unless asked for (D155)."""
+    """`days` UTC days ending today (or, with `anchor=latest`, on the day of the
+    newest review: what the public demo asks for, since its reviews are made
+    once and copied, D157): reviews created and how they ended, the findings
+    they posted, the median time from queued to finished, and one row per day.
+    Plus what is queued or running now, and the repos by index status. Eval
+    runs are left out unless asked for (D155)."""
     today = datetime.now(UTC).date()
-    first_day = today - timedelta(days=days - 1)
-    start = datetime.combine(first_day, datetime.min.time(), tzinfo=UTC)
 
     def reviews(query: Select) -> Select:
         """`query`, limited to reviews of visible repos (and not evals). A query
@@ -49,7 +50,15 @@ async def get_stats(
         return query
 
     r = models.Review
-    in_window = r.created_at >= start
+    last_day = today
+    if anchor == "latest":
+        newest = await session.scalar(reviews(select(func.max(r.created_at)).select_from(r)))
+        if newest is not None:
+            last_day = newest.astimezone(UTC).date()
+    first_day = last_day - timedelta(days=days - 1)
+    start = datetime.combine(first_day, datetime.min.time(), tzinfo=UTC)
+    stop = start + timedelta(days=days)
+    in_window = and_(r.created_at >= start, r.created_at < stop)
     review_day = cast(func.timezone("UTC", r.created_at), Date)
 
     by_status = dict(
@@ -116,6 +125,8 @@ async def get_stats(
 
     return schemas.Stats(
         days=days,
+        ends_on=last_day,
+        ends_today=last_day == today,
         reviews=counts,
         findings=findings,
         median_seconds=float(median) if median is not None else None,
