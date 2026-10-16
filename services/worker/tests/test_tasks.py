@@ -15,7 +15,7 @@ from core.config import Settings
 from core.db import create_engine
 from core.indexing import IndexingError, IndexLocked
 from core.review.pipeline import ReviewError
-from worker.celery_app import celery_app
+from worker.celery_app import TASK_SOFT_TIME_LIMIT_S, TASK_TIME_LIMIT_S, celery_app
 from worker.tasks import LOCK_MAX_RETRIES, embed_repo, index_repo, ping, review
 
 Sql = Callable[..., list[Any]]
@@ -38,6 +38,14 @@ def test_ping_runs_eagerly() -> None:
 def test_every_job_is_registered_and_routed(task: str, queue: str) -> None:
     assert task in celery_app.tasks
     assert celery_app.amqp.router.route({}, task)["queue"].name == queue
+
+
+def test_every_task_has_a_ceiling() -> None:
+    # Phase 9 step 5 (D131): nothing set one, so a stuck job held one of the
+    # few shared worker slots for ever.
+    soft, hard = celery_app.conf.task_soft_time_limit, celery_app.conf.task_time_limit
+    assert (soft, hard) == (TASK_SOFT_TIME_LIMIT_S, TASK_TIME_LIMIT_S)
+    assert 0 < soft < hard
 
 
 def queued_review(sql: Sql, repo_id: int, head_sha: str, status: str = "queued") -> int:

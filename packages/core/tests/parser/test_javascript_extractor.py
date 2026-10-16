@@ -1,6 +1,9 @@
 from textwrap import dedent
 
+import pytest
+
 from core.enums import EdgeKind, NodeKind
+from core.parser.builder import MAX_DEFINITIONS_PER_FILE, TooComplex
 from core.parser.extraction import Extraction
 from core.parser.javascript import extract_javascript
 from core.parser.types import Binding, ReExport
@@ -166,3 +169,37 @@ def test_methods_inside_nested_functions_get_locals_names() -> None:
         "src/app:outer.<locals>.Local",
         "src/app:outer.<locals>.Local.m",
     ]
+
+
+# --- the parse budget (Phase 9 step 5, D131)
+
+
+def nested(depth: int) -> str:
+    """`function f(){` nested `depth` deep: each level stores its whole block."""
+    return "function f(){\n" * depth + "}\n" * depth
+
+
+def test_deeply_nested_definitions_exceed_the_budget() -> None:
+    # Stored code grew with depth times size: a 64 KB file took 296 MiB and
+    # 22 s to parse on the shared review worker. Now it stops at the budget.
+    with pytest.raises(TooComplex, match="nest too deeply"):
+        extract(nested(200))
+
+
+def test_too_many_definitions_exceed_the_budget() -> None:
+    flat = "".join(f"function f{i}() {{}}\n" for i in range(MAX_DEFINITIONS_PER_FILE + 1))
+    with pytest.raises(TooComplex, match="definitions"):
+        extract(flat)
+
+
+def test_ordinary_nesting_fits_the_budget() -> None:
+    block = (
+        "class C{i} {{\n"
+        "  m() {{\n"
+        "    function inner() {{ return {i}; }}\n"
+        "    return inner();\n"
+        "  }}\n"
+        "}}\n"
+    )
+    code = "".join(block.format(i=i) for i in range(50))
+    assert len(extract(code).nodes) == 1 + 50 * 3  # the module, then class, method, inner

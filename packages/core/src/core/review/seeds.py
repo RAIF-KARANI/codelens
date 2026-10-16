@@ -16,7 +16,8 @@ rename with edits still yields MODIFIED seeds rather than ADDED + DELETED.
 Whitespace-only lines are ignored throughout: they can't change behaviour.
 """
 
-from collections.abc import Sequence
+from bisect import bisect_left, bisect_right
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -91,6 +92,26 @@ def innermost(nodes: Sequence[ParsedNode], line: int) -> ParsedNode | None:
     return best
 
 
+def innermost_lines(nodes: Sequence[ParsedNode], lines: Iterable[int]) -> dict[int, ParsedNode]:
+    """`innermost` for many lines at once, with the same tie rule.
+
+    Calling `innermost` per changed line scans every node for every line: a
+    flat file of 26k functions with all lines added took ~11 s (D131). Here
+    each node visits only the wanted lines inside its range (a bisect), so
+    the work is the lines times how deeply they nest."""
+    wanted = sorted(set(lines))
+    best: dict[int, ParsedNode] = {}
+    for node in nodes:  # pre-order, so the later of equal-sized nodes wins
+        size = node.end_line - node.start_line
+        for line in wanted[
+            bisect_left(wanted, node.start_line) : bisect_right(wanted, node.end_line)
+        ]:
+            current = best.get(line)
+            if current is None or size <= current.end_line - current.start_line:
+                best[line] = node
+    return best
+
+
 def find_seeds(diff: FileDiff, head: ParsedFile | None, base: ParsedFile | None) -> list[Seed]:
     head_by_name = {local_name(n, head.module_name): n for n in head.nodes} if head else {}
     base_by_name = {local_name(n, base.module_name): n for n in base.nodes} if base else {}
@@ -105,16 +126,20 @@ def find_seeds(diff: FileDiff, head: ParsedFile | None, base: ParsedFile | None)
             entry[1].add(line)
 
     if head:
-        for line in diff.added_lines(ignore_blank=True):
-            node = innermost(head.nodes, line)
+        added = list(diff.added_lines(ignore_blank=True))
+        added_in = innermost_lines(head.nodes, added)
+        for line in added:
+            node = added_in.get(line)
             if node is not None:
                 touch(node, line)
 
     removed_per_base: dict[NodeRef, int] = {}
     deleted: dict[NodeRef, ParsedNode] = {}
     if base:
-        for line in diff.removed_lines(ignore_blank=True):
-            node = innermost(base.nodes, line)
+        removed = list(diff.removed_lines(ignore_blank=True))
+        removed_in = innermost_lines(base.nodes, removed)
+        for line in removed:
+            node = removed_in.get(line)
             if node is None:
                 continue
             removed_per_base[node.ref] = removed_per_base.get(node.ref, 0) + 1

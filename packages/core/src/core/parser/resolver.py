@@ -42,7 +42,9 @@ JS_GLOBALS = frozenset(
     }
 )  # fmt: skip
 
-_MAX_EXPORT_DEPTH = 8  # re-export / __init__ chains; guards against cycles
+_MAX_EXPORT_DEPTH = 8  # re-export / __init__ chains
+# (language, module, name) already followed in one export lookup.
+_Visited = set[tuple[Language, str, str]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,22 +217,31 @@ class _Resolver:
             current = self._target(f"{current.qualified_name}.{name}")
         return current
 
-    def _find_member(
-        self, class_name: str, member: str, *, skip_self: bool, seen: frozenset[str] = frozenset()
-    ) -> _Target | None:
-        if class_name in seen:  # inheritance cycles exist in broken code
-            return None
-        if not skip_self:
-            found = self._target(f"{class_name}.{member}")
-            if found.ref:
-                return found
-        for base in self._bases.get(class_name, []):
-            if base.ref is not None:
-                found_in_base = self._find_member(
-                    base.qualified_name, member, skip_self=False, seen=seen | {class_name}
-                )
-                if found_in_base is not None:
-                    return found_in_base
+    def _find_member(self, class_name: str, member: str, *, skip_self: bool) -> _Target | None:
+        """`member` on the class or its bases: depth first, bases left to right,
+        as Python's own lookup reads in simple hierarchies.
+
+        Each class is visited once per lookup. Following every path instead
+        cost 2^n visits on a lattice of n diamond layers: ~1 KB of classes
+        held a shared index worker for hours (D131). Cycles, which broken code
+        has, end the same way."""
+        visited: set[str] = set()
+        stack = [(class_name, skip_self)]
+        while stack:
+            name, skip = stack.pop()
+            if name in visited:
+                continue
+            visited.add(name)
+            if not skip:
+                found = self._target(f"{name}.{member}")
+                if found.ref:
+                    return found
+            # Reversed, so the leftmost base is popped (searched) first.
+            stack.extend(
+                (base.qualified_name, False)
+                for base in reversed(self._bases.get(name, []))
+                if base.ref is not None
+            )
         return None
 
     def _enclosing_class(self, node: ParsedNode) -> ParsedNode | None:
@@ -243,11 +254,15 @@ class _Resolver:
 
     # --------------------------------------------------------------- imports
 
-    def _binding_target(self, file: ParsedFile, binding: Binding, *, depth: int) -> _Target:
+    def _binding_target(
+        self, file: ParsedFile, binding: Binding, *, depth: int, visited: _Visited | None = None
+    ) -> _Target:
         if file.language is Language.PYTHON:
             if binding.name is None:
                 return self._python_module(binding.module)
-            exported = self._export(Language.PYTHON, binding.module, binding.name, depth=depth)
+            exported = self._export(
+                Language.PYTHON, binding.module, binding.name, depth=depth, visited=visited
+            )
             if exported is not None:
                 return exported
             return _Target(
@@ -264,7 +279,7 @@ class _Resolver:
             return _Target(name, is_module=whole_module, external=external)
         if binding.name is None:
             return self._target(module)
-        exported = self._export(file.language, module, binding.name, depth=depth)
+        exported = self._export(file.language, module, binding.name, depth=depth, visited=visited)
         return exported if exported is not None else _Target(f"{module}:{binding.name}")
 
     def _resolve_import(self, file: ParsedFile, module: str, name: str | None) -> _Target:
@@ -291,11 +306,28 @@ class _Resolver:
                 return exported
         return self._target(resolved_module)
 
-    def _export(self, language: Language, module: str, name: str, *, depth: int) -> _Target | None:
+    def _export(
+        self,
+        language: Language,
+        module: str,
+        name: str,
+        *,
+        depth: int,
+        visited: _Visited | None = None,
+    ) -> _Target | None:
         """What `name` means when imported from `module`, following Python
-        `__init__` re-imports and JS/TS re-exports (barrel files)."""
+        `__init__` re-imports and JS/TS re-exports (barrel files).
+
+        Each (module, name) is followed once per lookup. The search returns on
+        the first hit, so meeting one again means a cycle or a branch that
+        already failed. Without this, k copies of `export * from "./a"` cost
+        k^9 calls: 165 bytes took 10 s, a few more would take hours (D131)."""
         if depth > _MAX_EXPORT_DEPTH:
             return None
+        visited = set() if visited is None else visited
+        if (language, module, name) in visited:
+            return None
+        visited.add((language, module, name))
         sep = "." if language is Language.PYTHON else ":"
         direct = self._target(f"{module}{sep}{name}")
         if direct.ref is not None:
@@ -308,14 +340,16 @@ class _Resolver:
             # `from pkg import helper` where pkg/__init__.py did `from .utils import helper`.
             binding = self._bindings[file.path].get(name)
             if binding is not None:
-                return self._binding_target(file, binding, depth=depth + 1)
+                return self._binding_target(file, binding, depth=depth + 1, visited=visited)
             return None
 
         for rx in file.reexports:
             if rx.exported_name != name:
                 continue
             if rx.module is None:  # export { foo as bar } / export default foo
-                return self._export(language, module, rx.name or name, depth=depth + 1)
+                return self._export(
+                    language, module, rx.name or name, depth=depth + 1, visited=visited
+                )
             target_module, found, external = self._resolve_specifier(file.path, rx.module)
             if external or not found:
                 return _Target(
@@ -323,12 +357,14 @@ class _Resolver:
                 )
             if rx.name is None:  # export * as ns from "./m"
                 return self._target(target_module)
-            return self._export(language, target_module, rx.name, depth=depth + 1)
+            return self._export(language, target_module, rx.name, depth=depth + 1, visited=visited)
         for rx in file.reexports:  # export * from "./m"
             if rx.exported_name == "*" and rx.module is not None:
                 target_module, found, _ = self._resolve_specifier(file.path, rx.module)
                 if found:
-                    exported = self._export(language, target_module, name, depth=depth + 1)
+                    exported = self._export(
+                        language, target_module, name, depth=depth + 1, visited=visited
+                    )
                     if exported is not None and exported.ref is not None:
                         return exported
         return None

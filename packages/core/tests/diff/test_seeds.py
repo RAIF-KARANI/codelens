@@ -9,6 +9,7 @@ from core.parser.repository import parse_source
 from core.parser.types import ParsedFile
 from core.parser.walker import SourceFile, source_from_content
 from core.review import ChangeKind, Seed, find_seeds
+from core.review.seeds import innermost, innermost_lines
 
 
 def parse(path: str, code: str) -> ParsedFile:
@@ -173,3 +174,34 @@ def test_js_method_edit() -> None:
     seeds = seeds_for(base, head, old_path="src/cart.ts", new_path="src/cart.ts")
 
     assert summary(seeds) == [("modified", "src/cart:Cart.total")]
+
+
+def test_one_pass_attribution_matches_the_per_line_scan() -> None:
+    # Phase 9 step 5 (D131): innermost_lines replaces a full scan per line,
+    # with the same answers, ties included (a file that is one function).
+    nested = parse(
+        "shop/nested.py",
+        """
+        import os
+
+
+        class Cart:
+            def total(self, items):
+                def line(item):
+                    return item.price
+
+                return sum(line(i) for i in items)
+
+            rate = 2
+
+
+        def free():
+            return os.sep
+        """,
+    )
+    single = parse("shop/one.py", "def only():\n    return 1\n")
+    for parsed in (nested, single):
+        lines = range(0, parsed.module_node.end_line + 2)
+        swept = innermost_lines(parsed.nodes, lines)
+        for line in lines:
+            assert swept.get(line) == innermost(parsed.nodes, line), line

@@ -11,11 +11,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from core.diff import FileDiff, FileStatus, git, parse_unified_diff
+from core.parser.builder import TooComplex
 from core.parser.modules import python_package_dirs
 from core.parser.repository import parse_source
 from core.parser.types import ParsedFile, SkippedFile
 from core.parser.walker import source_from_content
 from core.review.seeds import Seed, find_seeds
+
+# Files parsed per review. Each changed file is read and parsed twice (base and
+# head), and nothing else bounds a PR's size, so the rest stay in the diff
+# unparsed: a review reads its first chunks anyway (max_chunks, D131).
+MAX_REVIEW_FILES = 300
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,7 +56,10 @@ def collect_changes(repo: Path, base: str, head: str) -> ChangeSet:
     base_packages = python_package_dirs(git.list_files(repo, base_sha))
 
     files: list[FileChange] = []
-    for diff in diffs:
+    for index, diff in enumerate(diffs):
+        if index >= MAX_REVIEW_FILES:
+            files.append(FileChange(diff, None, None, (), "too_many_files"))
+            continue
         head_file, base_file, skipped = None, None, None
         if diff.new_path and diff.status is not FileStatus.DELETED and not diff.binary:
             head_file, skipped = _parse_at(repo, head_sha, diff.new_path, head_packages)
@@ -73,4 +82,8 @@ def _parse_at(
         return None, "not_source"
     if isinstance(source, SkippedFile):
         return None, source.reason
-    return parse_source(source, package_dirs), None
+    try:
+        return parse_source(source, package_dirs), None
+    except TooComplex:
+        # Deeply nested or huge definitions: skipped, as minified files are (D131).
+        return None, "too_complex"
