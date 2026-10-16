@@ -58,6 +58,7 @@ class AppCredentials:
     client_id: str
     client_secret: str
     owner: str  # the account that created the App: the first one it works for
+    owner_id: int | None = None  # its GitHub id, which pins it in the allowlist (D136)
 
     @classmethod
     def from_conversion(cls, data: dict[str, Any]) -> "AppCredentials":
@@ -70,7 +71,14 @@ class AppCredentials:
             client_id=data["client_id"],
             client_secret=data["client_secret"],
             owner=data["owner"]["login"],
+            owner_id=data["owner"].get("id"),
         )
+
+
+def pinned(login: str, account_id: int | None) -> str:
+    """An allowlist entry: `login:id` when the id is known, so the entry
+    keeps meaning this account if the login changes hands (D136)."""
+    return login if account_id is None else f"{login}:{account_id}"
 
 
 def save_credentials(creds: AppCredentials, secrets_dir: Path) -> tuple[Path, Path]:
@@ -91,7 +99,7 @@ def save_credentials(creds: AppCredentials, secrets_dir: Path) -> tuple[Path, Pa
         f"GITHUB_APP_PRIVATE_KEY_PATH={key_path.as_posix()}\n"
         f"GITHUB_WEBHOOK_SECRET={creds.webhook_secret}\n"
         "# Whose installations are acted on (comma-separated); unset means nobody.\n"
-        f"GITHUB_ALLOWED_ACCOUNTS={creds.owner}\n"
+        f"GITHUB_ALLOWED_ACCOUNTS={pinned(creds.owner, creds.owner_id)}\n"
         "# For GitHub login on the dashboard (Phase 6); unused until then.\n"
         f"GITHUB_CLIENT_ID={creds.client_id}\n"
         f"GITHUB_CLIENT_SECRET={creds.client_secret}\n",

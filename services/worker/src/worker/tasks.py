@@ -174,7 +174,9 @@ def _covered(settings: Settings, row: Any) -> bool:
     """The account policy webhooks apply, checked again before any token is
     minted: a job queued before an account was removed, or one queued another
     way (a re-index, or straight through Redis), does no work for it (D130)."""
-    return Policy(settings.allowed_accounts).covers(row.account_login, row.suspended_at)
+    return Policy(settings.allowed_accounts).covers(
+        row.account_login, row.account_id, row.suspended_at
+    )
 
 
 async def _installation_token(settings: Settings, gh: GitHubClient, installation_id: int) -> str:
@@ -337,6 +339,7 @@ async def _load_review(engine: AsyncEngine, review_id: int) -> Any:
                     Repo.local_path,
                     Installation.github_installation_id,
                     Installation.account_login,
+                    Installation.account_id,
                     Installation.suspended_at,
                 )
                 .join(Repo, Repo.id == Review.repo_id)
@@ -499,6 +502,7 @@ async def _load_repo(engine: AsyncEngine, repo_id: int) -> Any:
                     Repo.local_path,
                     Installation.github_installation_id,
                     Installation.account_login,
+                    Installation.account_id,
                     Installation.suspended_at,
                 )
                 .outerjoin(Installation, Installation.id == Repo.installation_id)

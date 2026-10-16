@@ -22,10 +22,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
-from sqlalchemy import ColumnElement, delete, func, or_, select, update
+from sqlalchemy import ColumnElement, and_, delete, false, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from core.accounts import Accounts
 from core.db.models import Installation, Repo, Review
 from core.enums import RepoSource, ReviewSource, ReviewStatus
 
@@ -57,19 +58,21 @@ def verify_signature(secret: str, body: bytes, header: str | None) -> bool:
 class Policy:
     """Whose installations CodeLens acts on, and how much it reviews for each."""
 
-    # Lowercased GitHub logins (users or organisations). Empty: nobody.
-    allowed_accounts: frozenset[str]
+    # Users or organisations, by login or pinned to their id (D136). Empty: nobody.
+    allowed_accounts: Accounts
     reviews_per_hour: int = 0  # per account; 0 means no cap
 
-    def allows(self, login: str) -> bool:
-        return login.lower() in self.allowed_accounts
+    def allows(self, login: str | None, account_id: int | None) -> bool:
+        return self.allowed_accounts.allows(login, account_id)
 
-    def covers(self, login: str | None, suspended_at: datetime | None) -> bool:
+    def covers(
+        self, login: str | None, account_id: int | None, suspended_at: datetime | None
+    ) -> bool:
         """Whether CodeLens may act on an installation: an allowed account,
         and not suspended. Every path that ends in an installation token checks
         this, not only webhooks: re-index, and the worker's index and review
         tasks, so removing an account takes effect everywhere at once (D130)."""
-        return login is not None and suspended_at is None and self.allows(login)
+        return suspended_at is None and self.allows(login, account_id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,7 +117,8 @@ async def apply_event(
     """
     if event in ("installation", "installation_repositories") and "installation" in payload:
         account = payload["installation"]["account"]["login"]
-        if action != "deleted" and not policy.allows(account):
+        account_id = payload["installation"]["account"].get("id")
+        if action != "deleted" and not policy.allows(account, account_id):
             # A warning, not an error: it is what the allowlist is for. It
             # also tells the owner who forgot to list themselves.
             logger.warning(
@@ -152,9 +156,23 @@ def _covered_for(policy: Policy, github_repo_id: object) -> list[ColumnElement[b
     return [
         repos_t.c.github_id == github_repo_id,
         repos_t.c.installation_id == installations_t.c.id,
-        func.lower(installations_t.c.account_login).in_(policy.allowed_accounts),
+        _allowed(policy.allowed_accounts),
         installations_t.c.suspended_at.is_(None),
     ]
+
+
+def _allowed(accounts: Accounts) -> ColumnElement[bool]:
+    """`Accounts.allows`, in SQL, on the mirrored installation."""
+    login = func.lower(installations_t.c.account_login)
+    return or_(
+        false(),
+        *(
+            login == name
+            if pin is None
+            else and_(login == name, installations_t.c.account_id == pin)
+            for name, pin in accounts.pins.items()
+        ),
+    )
 
 
 async def apply_installation_event(
@@ -290,15 +308,15 @@ async def _pull_request(
         return EventOutcome("ignored")
     covered = (
         await conn.execute(
-            select(repos_t.c.id, installations_t.c.account_login).where(
-                *_covered_for(policy, (payload.get("repository") or {}).get("id"))
-            )
+            select(
+                repos_t.c.id, installations_t.c.account_login, installations_t.c.account_id
+            ).where(*_covered_for(policy, (payload.get("repository") or {}).get("id")))
         )
     ).first()
     if covered is None:
         return EventOutcome("ignored")
     await rename_repository(conn, payload.get("repository") or {})
-    repo_id, account = covered
+    repo_id, account, account_id = covered
     number, head_sha = pr["number"], pr["head"]["sha"]
 
     same_pr = (reviews_t.c.repo_id == repo_id) & (reviews_t.c.pr_number == number)
@@ -316,7 +334,7 @@ async def _pull_request(
     if done is not None:
         return EventOutcome("ignored")
     if policy.reviews_per_hour:
-        started = await _reviews_started(conn, account, besides=same_pr)
+        started = await _reviews_started(conn, account_id, besides=same_pr)
         if started >= policy.reviews_per_hour:
             # Recorded, not queued: the dashboard says why. A failed review
             # may be retried, so the next push, or reopening the PR, reviews
@@ -373,12 +391,14 @@ async def _pull_request(
 
 
 async def _reviews_started(
-    conn: AsyncConnection, account: str, *, besides: ColumnElement[bool]
+    conn: AsyncConnection, account_id: int, *, besides: ColumnElement[bool]
 ) -> int:
-    """Reviews of `account`'s repos that started in the last hour or are
+    """Reviews of the account's repos that started in the last hour or are
     waiting to: what uses, or will use, the GPU. Reviews refused for the
     limit and superseded ones never start, so they don't count; neither do
-    the PR's own queued reviews (`besides`), which the new one supersedes."""
+    the PR's own queued reviews (`besides`), which the new one supersedes.
+    Counted by the account's id: another account under a login it gave up
+    neither shares nor uses up its budget (D136)."""
     return await conn.scalar(
         select(func.count())
         .select_from(
@@ -387,7 +407,7 @@ async def _reviews_started(
             )
         )
         .where(
-            func.lower(installations_t.c.account_login) == account.lower(),
+            installations_t.c.account_id == account_id,
             or_(
                 reviews_t.c.status == ReviewStatus.QUEUED,
                 reviews_t.c.started_at > func.now() - timedelta(hours=1),

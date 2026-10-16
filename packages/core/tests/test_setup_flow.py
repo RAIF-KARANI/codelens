@@ -33,6 +33,7 @@ CREDS = AppCredentials(
     client_id="Iv1.x",
     client_secret="cs",
     owner="Friend",
+    owner_id=4242,
 )
 
 
@@ -136,7 +137,8 @@ def test_a_fresh_clone_ends_with_an_install_link(clone: Path) -> None:
     # The App was made for the relay's channel, named after the user.
     assert machine.apps == [("CodeLens (friend)", "https://smee.io/channel1")]
     assert (env["GITHUB_APP_ID"], env["GITHUB_WEBHOOK_SECRET"]) == ("42", "whsec")
-    assert env["GITHUB_ALLOWED_ACCOUNTS"] == "Friend"  # the owner, so their PRs count
+    # The owner, so their PRs count, pinned to its id (D136).
+    assert env["GITHUB_ALLOWED_ACCOUNTS"] == "Friend:4242"
     # The comments of .env.example are kept: .env is also the documentation.
     assert "# The accounts whose installations are reviewed" in (clone / ".env").read_text()
     assert machine.commands == [
@@ -274,3 +276,15 @@ def test_rerunning_setup_repairs_an_absolute_key_path(clone: Path) -> None:
     setup(clone, machine.tools(existing))
 
     assert read_env(clone / ".env")["GITHUB_APP_PRIVATE_KEY_PATH"] == "secrets/github-app.pem"
+
+
+def test_an_owner_listed_by_login_alone_gets_pinned(clone: Path) -> None:
+    # Phase 9 step 10 (D136): a bare login matches whoever holds it now.
+    (clone / ".env").write_text(EXAMPLE)
+    set_env(clone / ".env", {"GITHUB_APP_ID": "7", "GITHUB_ALLOWED_ACCOUNTS": "friend,other"})
+    existing = AppInfo("codelens-friend", CREDS.html_url, "Friend", "https://smee.io/x", 4242)
+    machine = Machine(clone, pulled=["qwen3:8b", "qwen3-embedding:0.6b"])
+    setup(clone, machine.tools(existing))
+
+    assert read_env(clone / ".env")["GITHUB_ALLOWED_ACCOUNTS"] == "other,Friend:4242"
+    assert "allowed accounts: pinned Friend:4242" in machine.said

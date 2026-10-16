@@ -27,7 +27,7 @@ from pathlib import Path
 import httpx
 
 from core.config import Settings
-from core.github.manifest import AppCredentials
+from core.github.manifest import AppCredentials, pinned
 from core.privatefile import write_private
 from core.setup.checks import Fetcher, Runner
 from core.setup.envfile import read_env, set_env
@@ -52,6 +52,7 @@ class AppInfo:
     html_url: str
     owner: str
     webhook_url: str | None
+    owner_id: int | None = None
 
 
 @dataclass
@@ -126,7 +127,7 @@ def _github_app(root: Path, env: Path, tools: Tools) -> tuple[AppInfo | None, st
                     "not smee.io; keep your own tunnel running"
                 )
         _key_path_for_containers(root, env, tools)
-        _allow(env, info.owner, tools)
+        _allow(env, info.owner, info.owner_id, tools)
         return info, None
 
     smee = values.get("SMEE_URL") or _new_channel(env, tools)
@@ -138,7 +139,7 @@ def _github_app(root: Path, env: Path, tools: Tools) -> tuple[AppInfo | None, st
     set_env(env, {key: saved[key] for key in APP_KEYS if key in saved})
     tools.say(f"GitHub App: created {creds.slug}; its settings are in .env")
     _key_path_for_containers(root, env, tools)
-    _allow(env, creds.owner, tools)
+    _allow(env, creds.owner, creds.owner_id, tools)
     return None, f"{creds.html_url}/installations/new"
 
 
@@ -172,13 +173,19 @@ def _new_channel(env: Path, tools: Tools) -> str:
     return url
 
 
-def _allow(env: Path, owner: str, tools: Tools) -> None:
-    """Make sure the App's owner is allowed (D119): an empty list means nobody."""
+def _allow(env: Path, owner: str, owner_id: int | None, tools: Tools) -> None:
+    """Make sure the App's owner is allowed (D119), pinned to its id (D136):
+    an empty list means nobody, and a bare login matches whoever holds it.
+    An entry for the owner without an id gets one; other entries stay."""
     current = read_env(env).get("GITHUB_ALLOWED_ACCOUNTS", "")
-    accounts = [a.strip() for a in current.split(",") if a.strip()]
-    if owner.lower() not in {a.lower() for a in accounts}:
-        set_env(env, {"GITHUB_ALLOWED_ACCOUNTS": ",".join([*accounts, owner])})
-        tools.say(f"allowed accounts: added {owner}")
+    entries = [a.strip() for a in current.split(",") if a.strip()]
+    wanted = pinned(owner, owner_id)
+    mine = [e for e in entries if e.partition(":")[0].strip().lower() == owner.lower()]
+    if mine and (owner_id is None or any(":" in e for e in mine)):
+        return  # listed already, pinned or with no id to pin it to
+    others = [e for e in entries if e not in mine]
+    set_env(env, {"GITHUB_ALLOWED_ACCOUNTS": ",".join([*others, wanted])})
+    tools.say(f"allowed accounts: {'pinned' if mine else 'added'} {wanted}")
 
 
 # --- 4. models

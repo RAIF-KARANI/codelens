@@ -708,3 +708,35 @@ def test_a_rename_on_github_reaches_the_repo_with_the_next_event(
     assert (pr.json()["status"], pushed.json()["status"]) == ("processed", "processed")
     names = {r.github_id: r.full_name for r in sql("SELECT github_id, full_name FROM repos")}
     assert names == {1: "octo/api-v3", 2: "octo/api-v2~stale-2"}
+
+
+@pytest.mark.integration
+def test_a_pinned_account_is_matched_by_id_and_the_cap_by_account(
+    settings: Settings, sql: Sql
+) -> None:
+    # Phase 9 step 10 (D136), the audit's reproduction: octo (id 7) is listed;
+    # another account (id 8) takes the login "Octo" and installs the App.
+    secret = settings.github_webhook_secret.get_secret_value()
+    taken = installation("created", id_=100)
+    taken["installation"]["account"] = {"id": 8, "login": "Octo", "type": "User"}
+    taken["repositories"] = [repo_payload(2, "Octo/other")]
+    mine = {**installation("created"), "repositories": [repo_payload(1, "octo/api")]}
+    with client(allowing(settings, "octo:7")) as c:
+        refused = deliver(c, secret, "installation", taken, delivery="i-8")
+        allowed = deliver(c, secret, "installation", mine, delivery="i-7")
+    assert (refused.json()["status"], allowed.json()["status"]) == ("ignored", "processed")
+    assert [r.account_id for r in sql("SELECT account_id FROM installations")] == [7]
+
+    # Unpinned, both installations get in, but the hourly cap is per account
+    # id now, so one doesn't use up the other's budget.
+    with client(allowing(settings, "octo", github_reviews_per_hour=1)) as c:
+        # Installed again (a new event, so a new body: the same one would be a
+        # replay, step 8).
+        taken["installation"]["repository_selection"] = "all"
+        deliver(c, secret, "installation", taken, delivery="i-8b")
+        theirs = pr_event("opened", repo_github_id=2)
+        theirs["installation"] = {"id": 100}
+        deliver(c, secret, "pull_request", theirs, delivery="pr-8")
+        deliver(c, secret, "pull_request", pr_event("opened"), delivery="pr-7")
+    rows = sql("SELECT r.github_id, v.status FROM reviews v JOIN repos r ON r.id = v.repo_id")
+    assert sorted((r.github_id, r.status) for r in rows) == [(1, "queued"), (2, "queued")]

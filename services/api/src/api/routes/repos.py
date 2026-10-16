@@ -98,7 +98,7 @@ async def index_repo(
             else None
         )
         indexable = installation is not None and Policy(settings.allowed_accounts).covers(
-            installation.account_login, installation.suspended_at
+            installation.account_login, installation.account_id, installation.suspended_at
         )
     else:
         indexable = repo.local_path is not None

@@ -101,3 +101,24 @@ def test_framework_errors_use_the_same_shape() -> None:
     body = error(invalid)
     assert body["code"] == "invalid_request"
     assert body["details"]["errors"][0]["loc"] == ["path", "repo_id"]  # type: ignore[index]
+
+
+def test_a_pinned_admin_needs_its_user_id_not_only_its_login() -> None:
+    # Phase 9 step 10 (D136): admin came from the token's login claim alone,
+    # so whoever registered a configured admin's old login became admin.
+    from fastapi.security import HTTPAuthorizationCredentials
+
+    from api.auth import current_user
+
+    settings = Settings(_env_file=None, api_jwt_secret=SECRET, api_admin_logins="boss:1001,old")
+
+    def user(sub: str, login: str) -> object:
+        token = issue_token(SECRET, sub, login)
+        return current_user(
+            settings, HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        )
+
+    assert user("1001", "boss").is_admin  # type: ignore[attr-defined]
+    assert user("1001", "renamed-boss").is_admin is False  # type: ignore[attr-defined]
+    assert user("999999", "BOSS").is_admin is False  # type: ignore[attr-defined]
+    assert user("5", "old").is_admin  # type: ignore[attr-defined]  # unpinned: by login

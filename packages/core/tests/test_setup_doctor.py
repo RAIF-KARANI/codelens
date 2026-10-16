@@ -123,10 +123,17 @@ def test_github_settings_complete(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         github_app_id=5,
         github_webhook_secret="w",
         github_app_private_key_path=key,
-        github_allowed_accounts="Me",
+        github_allowed_accounts="Me:1",
         api_jwt_secret="x" * 32,
     )
     assert [c.status for c in check_github_settings(s)] == [Status.OK, Status.OK]
+
+    # A bare login matches whoever holds it (D136): worth a warning.
+    bare = s.model_copy(update={"github_allowed_accounts": "Me:1,friend"})
+    allowed = check_github_settings(bare)[1]
+    assert allowed.status is Status.WARN
+    assert "friend matched by login only" in allowed.detail
+    assert allowed.fix is not None and "login:id" in allowed.fix
 
 
 def test_ports_held_by_our_own_containers_are_fine() -> None:
@@ -203,7 +210,7 @@ def test_a_ready_machine_passes(
         github_app_id=5,
         github_webhook_secret="w",
         github_app_private_key_path=key,
-        github_allowed_accounts="me",
+        github_allowed_accounts="me:1",
         api_jwt_secret="x" * 32,
         embed_provider="fake",
     )

@@ -259,10 +259,19 @@ def check_github_settings(settings: Settings) -> list[Check]:
         )
     else:
         checks.append(Check("GitHub App settings", Status.OK, f"App id {settings.github_app_id}"))
-    if settings.allowed_accounts:
+    if settings.allowed_accounts.unpinned:
+        # A bare login matches whoever holds it, and a login can change hands.
+        unpinned = ", ".join(settings.allowed_accounts.unpinned)
         checks.append(
-            Check("allowed accounts", Status.OK, ", ".join(sorted(settings.allowed_accounts)))
+            Check(
+                "allowed accounts",
+                Status.WARN,
+                f"{settings.allowed_accounts} ({unpinned} matched by login only, D136)",
+                "pin each as login:id (gh api users/LOGIN --jq .id); setup pins the App's owner",
+            )
         )
+    elif settings.allowed_accounts:
+        checks.append(Check("allowed accounts", Status.OK, str(settings.allowed_accounts)))
     else:
         checks.append(
             Check(

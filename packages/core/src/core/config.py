@@ -10,6 +10,8 @@ from typing import Literal
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from core.accounts import Accounts
+
 
 class Settings(BaseSettings):
     # env_ignore_empty: `GITHUB_APP_ID=` (as copied from .env.example) means
@@ -89,9 +91,9 @@ class Settings(BaseSettings):
     api_admin_logins: str = ""
 
     @property
-    def admin_logins(self) -> frozenset[str]:
-        # GitHub logins are case-insensitive.
-        return frozenset(x.strip().lower() for x in self.api_admin_logins.split(",") if x.strip())
+    def admins(self) -> Accounts:
+        # `login` or `login:<GitHub user id>` entries (D136).
+        return Accounts.parse(self.api_admin_logins)
 
     # --- GitHub App (docs/github-app.md). `python -m core.github register` creates
     # the App and writes these to secrets/github-app.env.
@@ -114,14 +116,18 @@ class Settings(BaseSettings):
     github_web_url: str = "https://github.com"
 
     @property
-    def allowed_accounts(self) -> frozenset[str]:
-        # GitHub logins are case-insensitive.
-        return frozenset(
-            x.strip().lower() for x in self.github_allowed_accounts.split(",") if x.strip()
-        )
+    def allowed_accounts(self) -> Accounts:
+        # `login` or `login:<GitHub account id>` entries (D136).
+        return Accounts.parse(self.github_allowed_accounts)
 
     # --- storage: bare mirrors of GitHub repos live in DATA_DIR/repos/ (gitignored)
     data_dir: Path = Path("data")
+
+    @field_validator("api_admin_logins", "github_allowed_accounts")
+    @classmethod
+    def _accounts_parse(cls, value: str) -> str:
+        Accounts.parse(value)  # a bad id fails here, at startup
+        return value
 
     @field_validator("api_jwt_secret")
     @classmethod
