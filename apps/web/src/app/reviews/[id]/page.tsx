@@ -1,9 +1,11 @@
+import { ChevronDownIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import {
+  type Finding,
   getReview,
   getReviewDiff,
   getReviewTrace,
@@ -11,17 +13,22 @@ import {
   type ReviewDiff,
   type Seed,
 } from "@/lib/api";
-import { parseDiff } from "@/lib/diff";
+import { findingOrder, type Token } from "@/lib/code";
+import { type DiffFile, filePath, parseDiff } from "@/lib/diff";
+import { highlightDiff } from "@/lib/highlight";
 import { first, parseId, withQuery } from "@/lib/params";
 
 import { DiffView } from "./diff-view";
 import { FindingCard } from "./finding-card";
 import { LiveTimeline } from "./live-timeline";
+import { FindingSlot, ReviewNav } from "./review-nav";
 
 export const metadata: Metadata = { title: "Review" };
 
-/** The review's Diff tab: what changed, what CodeLens found and where, and
- * the review's timeline (live while it runs). The header is the layout's. */
+/** The review's Diff tab, findings first: a panel with the findings (filters,
+ * j/k), the files and the run's details, beside the highlighted diff with each
+ * finding on its line. While the review runs, its live timeline instead. The
+ * header is the layout's. */
 export default function ReviewPage({ params, searchParams }: PageProps<"/reviews/[id]">) {
   return (
     <Suspense
@@ -44,56 +51,97 @@ async function Review({ params, searchParams }: PageProps<"/reviews/[id]">) {
     if (item.node_id !== null) names.set(item.node_id, item.qualified_name);
   }
   const live = review.status === "queued" || review.status === "running";
+  const details = (
+    <RunDetails open={live}>
+      <LiveTimeline reviewId={review.id} live={live} />
+      {diff && diff.seeds.length > 0 && <ChangedCode seeds={diff.seeds} />}
+      {review.token_usage && <Usage usage={review.token_usage} />}
+    </RunDetails>
+  );
 
-  return (
-    <>
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
-        <aside className="space-y-4 xl:order-2">
-          <LiveTimeline reviewId={review.id} live={live} />
-          {diff && diff.seeds.length > 0 && <ChangedCode seeds={diff.seeds} />}
-          {review.token_usage && <Usage usage={review.token_usage} />}
-        </aside>
-
-        <div className="min-w-0 space-y-4 xl:order-1">
-          {review.error && (
-            <p className="rounded-md border border-critical/30 bg-critical-soft px-3 py-2 text-sm text-critical">
-              {review.error}
-            </p>
-          )}
-          {live ? (
-            // The diff is stored when the review starts and the findings when
-            // it ends; the timeline re-renders the page then.
-            <p className="rounded-lg border border-dashed border-input p-6 text-center text-sm text-muted-foreground">
-              The diff and the findings appear here when the review finishes.
-            </p>
-          ) : (
-            <ReviewBody review={review} diff={diff} names={names} showDropped={showDropped} />
-          )}
-        </div>
+  if (live) {
+    // The diff is stored when the review starts and the findings when it
+    // ends; the timeline re-renders the page then.
+    return (
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <p className="rounded-lg border border-dashed border-input p-6 text-center text-sm text-muted-foreground lg:order-1">
+          The diff and the findings appear here when the review finishes.
+        </p>
+        <div className="lg:order-2">{details}</div>
       </div>
-    </>
+    );
+  }
+
+  const files = diff ? parseDiff(diff.diff) : [];
+  const tokens = await highlightDiff(files);
+  const ordered = findingOrder(files, review.findings);
+  return (
+    <ReviewNav
+      reviewId={review.id}
+      findings={ordered.map((f) => ({
+        id: f.id,
+        severity: f.severity,
+        category: f.category,
+        title: f.title,
+        file_path: f.file_path,
+        line_start: f.line_start,
+        dropped: f.status === "dropped",
+        evidence:
+          f.evidence_node_ids.length > 0
+            ? {
+                nodeId: f.evidence_node_ids[0],
+                label: names.get(f.evidence_node_ids[0]) ?? `node ${f.evidence_node_ids[0]}`,
+              }
+            : null,
+      }))}
+      files={files.map((file) => ({
+        path: filePath(file),
+        status: file.status,
+        findings: review.findings.filter((f) => f.file_path === filePath(file)).length,
+      }))}
+      details={details}
+    >
+      <div className="space-y-4">
+        {review.error && (
+          <p className="rounded-md border border-critical/30 bg-critical-soft px-3 py-2 text-sm text-critical">
+            {review.error}
+          </p>
+        )}
+        <ReviewBody
+          review={review}
+          diff={diff}
+          files={files}
+          tokens={tokens}
+          ordered={ordered}
+          names={names}
+          showDropped={showDropped}
+        />
+      </div>
+    </ReviewNav>
   );
 }
 
 function ReviewBody({
   review,
   diff,
+  files,
+  tokens,
+  ordered,
   names,
   showDropped,
 }: {
   review: ReviewDetail;
   diff: ReviewDiff | null;
+  files: DiffFile[];
+  tokens: Token[][][][];
+  ordered: Finding[];
   names: Map<number, string>;
   showDropped: boolean;
 }) {
-  const posted = review.findings.filter((f) => f.status === "posted");
   const dropped = review.findings.filter((f) => f.status === "dropped");
   return (
     <>
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-sm font-semibold">
-          {posted.length} finding{posted.length === 1 ? "" : "s"}
-        </h2>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <Link
           href={withQuery(`/reviews/${review.id}`, { dropped: showDropped ? undefined : "1" })}
           className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
@@ -102,15 +150,17 @@ function ReviewBody({
         </Link>
       </div>
       {diff ? (
-        <DiffView files={parseDiff(diff.diff)} findings={review.findings} names={names} />
+        <DiffView files={files} tokens={tokens} findings={review.findings} names={names} />
       ) : (
         <>
           <p className="text-sm text-muted-foreground">
             This review is from before diffs were stored with reviews, so its findings are
             listed without the diff.
           </p>
-          {review.findings.map((f) => (
-            <FindingCard key={f.id} finding={f} names={names} />
+          {ordered.map((f) => (
+            <FindingSlot key={f.id} id={f.id}>
+              <FindingCard finding={f} names={names} />
+            </FindingSlot>
           ))}
         </>
       )}
@@ -118,6 +168,25 @@ function ReviewBody({
         <p className="text-sm text-muted-foreground">Validation dropped nothing in this review.</p>
       )}
     </>
+  );
+}
+
+/** The run's own story (timeline, changed code, tokens), folded away once the
+ * review is done: the findings come first (planning-v2.md, Phase 10 step 4). */
+function RunDetails({ open, children }: { open: boolean; children: React.ReactNode }) {
+  return (
+    <details open={open} className="group rounded-xl border border-border bg-card">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+        Run details
+        <ChevronDownIcon
+          className="size-4 text-muted-foreground transition-transform group-open:rotate-180"
+          aria-hidden="true"
+        />
+      </summary>
+      <div className="space-y-3 border-t border-border p-3 [&>section]:rounded-lg [&>section]:border-0 [&>section]:p-0">
+        {children}
+      </div>
+    </details>
   );
 }
 

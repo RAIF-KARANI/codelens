@@ -2,9 +2,19 @@
 
 import { createContext, use, useEffect, useState } from "react";
 
+import { CodeLine } from "@/components/code-line";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { CodeNode } from "@/lib/api";
+import type { Token } from "@/lib/code";
 
-/** The evidence drawer: a finding's evidence buttons open the code the model
+/** The evidence sheet: a finding's evidence buttons open the code the model
  * was shown for it, fetched on demand from /api/nodes/[id]. One drawer for
  * the page, opened through context. */
 
@@ -35,7 +45,7 @@ export function EvidenceButton({ nodeId, label }: { nodeId: number; label: strin
     <button
       type="button"
       onClick={() => open({ nodeId, label })}
-      className="max-w-full truncate rounded border border-input px-1.5 py-0.5 font-mono text-xs text-foreground/85 hover:border-primary/60 hover:bg-accent"
+      className="max-w-full truncate rounded border border-input px-1.5 py-0.5 font-mono text-xs text-foreground/85 outline-none hover:border-primary/60 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/60"
       title={label}
     >
       {label}
@@ -43,8 +53,10 @@ export function EvidenceButton({ nodeId, label }: { nodeId: number; label: strin
   );
 }
 
-type Loaded = { node: CodeNode } | { error: string } | null;
+type Loaded = { node: CodeNode & { tokens: Token[][] } } | { error: string } | null;
 
+/** The code a finding cites, in a sheet from the right (Radix: focus moves in
+ * and comes back, Escape closes it), highlighted by the server. */
 function EvidenceDrawer({
   nodeId,
   label,
@@ -55,6 +67,10 @@ function EvidenceDrawer({
   onClose: () => void;
 }) {
   const [loaded, setLoaded] = useState<Loaded>(null);
+  // Where focus was when the sheet opened (an evidence button, or the finding
+  // `e` was pressed on): the sheet has no trigger of its own, so Radix can't
+  // know where to send focus back on close.
+  const [returnTo] = useState(() => document.activeElement as HTMLElement | null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -66,7 +82,7 @@ function EvidenceDrawer({
         } else if (!response.ok) {
           setLoaded({ error: `Couldn't load it (HTTP ${response.status}).` });
         } else {
-          setLoaded({ node: (await response.json()) as CodeNode });
+          setLoaded({ node: await response.json() });
         }
       })
       .catch((error: unknown) => {
@@ -75,56 +91,53 @@ function EvidenceDrawer({
     return () => controller.abort();
   }, [nodeId]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const node = loaded && "node" in loaded ? loaded.node : null;
   return (
-    <div className="fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true" aria-label={`Evidence: ${label}`}>
-      <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" />
-      <div className="relative flex h-full w-full max-w-2xl flex-col border-l border-border bg-card shadow-xl">
-        <div className="flex items-start gap-3 border-b border-border p-4">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Evidence</p>
-            <h2 className="mt-1 break-all font-mono text-sm font-semibold">{node?.qualified_name ?? label}</h2>
-            {node && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                {node.kind} · {node.path}:{node.start_line}–{node.end_line}
-              </p>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            autoFocus
-            className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-muted"
-          >
-            Close
-          </button>
-        </div>
+    <Sheet open onOpenChange={(open) => !open && onClose()}>
+      <SheetContent
+        side="right"
+        className="w-full gap-0 p-0 data-[side=right]:sm:max-w-2xl"
+        onCloseAutoFocus={(event) => {
+          if (returnTo?.isConnected) {
+            event.preventDefault();
+            returnTo.focus({ preventScroll: true });
+          }
+        }}
+      >
+        <SheetHeader className="border-b border-border p-4 pr-12">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Evidence</p>
+          <SheetTitle className="break-all font-mono text-sm">{node?.qualified_name ?? label}</SheetTitle>
+          <SheetDescription className="text-xs">
+            {node ? `${node.kind} · ${node.path}:${node.start_line}–${node.end_line}` : "The code this finding cites."}
+          </SheetDescription>
+        </SheetHeader>
         <div className="min-h-0 flex-1 overflow-auto p-4">
-          {loaded === null && <p className="text-sm text-muted-foreground">Loading…</p>}
+          {loaded === null && (
+            <div className="space-y-2" aria-busy="true" aria-label="Loading the code">
+              <Skeleton className="h-4 w-1/2" />
+              <Skeleton className="h-40" />
+            </div>
+          )}
           {loaded && "error" in loaded && <p className="text-sm text-critical">{loaded.error}</p>}
           {node?.docstring && (
             <p className="mb-3 whitespace-pre-wrap text-sm text-muted-foreground">{node.docstring}</p>
           )}
           {node && (
-            <pre className="overflow-x-auto rounded-md bg-muted p-3 font-mono text-xs leading-5">
-              {node.code.split("\n").map((line, i) => (
+            <pre className="overflow-x-auto rounded-lg border border-border bg-muted/50 p-3 font-mono text-xs leading-5">
+              {node.tokens.map((line, i) => (
                 <div key={i} className="flex">
                   <span className="w-12 shrink-0 select-none pr-3 text-right text-muted-foreground">
                     {node.start_line + i}
                   </span>
-                  <span className="whitespace-pre">{line}</span>
+                  <span className="whitespace-pre">
+                    <CodeLine tokens={line} />
+                  </span>
                 </div>
               ))}
             </pre>
           )}
         </div>
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
   );
 }
