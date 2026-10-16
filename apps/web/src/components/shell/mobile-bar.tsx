@@ -37,7 +37,7 @@ export function MobileBar({ children }: { children: ReactNode }) {
           </div>
         </SheetContent>
       </Sheet>
-      <Link href="/repos" aria-label="CodeLens, home">
+      <Link href="/" aria-label="CodeLens, home">
         <Logo />
       </Link>
       <div className="ml-auto">

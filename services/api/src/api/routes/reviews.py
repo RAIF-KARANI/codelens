@@ -17,7 +17,14 @@ from api.auth import User, current_user, require_writable
 from api.dependencies import get_engine, get_events_redis, get_queue, get_session
 from api.errors import ApiError
 from api.graph import review_graph
-from api.queries import severity_counts, votes
+from api.queries import (
+    DEFAULT_LIMIT,
+    MAX_LIMIT,
+    page_of,
+    review_summaries,
+    severity_counts,
+    votes,
+)
 from api.queue import JobQueue, QueueUnavailable
 from api.sse import review_stream
 from core.db import models
@@ -29,8 +36,45 @@ router = APIRouter(prefix="/api/v1/reviews", tags=["reviews"], dependencies=[Dep
 
 Session = Annotated[AsyncSession, Depends(get_session)]
 CurrentUser = Annotated[User, Depends(current_user)]
+Limit = Annotated[int, Query(ge=1, le=MAX_LIMIT)]
 
 _SEVERITY_ORDER = {Severity.CRITICAL: 0, Severity.WARNING: 1, Severity.SUGGESTION: 2}
+
+
+@router.get("")
+async def list_reviews(
+    session: Session,
+    user: CurrentUser,
+    status_: Annotated[ReviewStatus | None, Query(alias="status")] = None,
+    include_eval: bool = False,
+    cursor: int | None = None,
+    limit: Limit = DEFAULT_LIMIT,
+) -> schemas.Page[schemas.ReviewListItem]:
+    """Reviews across every repo the caller may see, newest first: the
+    dashboard's Reviews page and command palette. Eval runs are left out unless
+    asked for: they are measurements, hundreds per run, not reviews anyone
+    waits for (D155); an eval repo's own list still has them."""
+    query = (
+        select(models.Review, models.Repo.full_name)
+        .join(models.Repo, models.Repo.id == models.Review.repo_id)
+        .where(access.visible(user))
+    )
+    if not include_eval:
+        query = query.where(models.Review.source != ReviewSource.EVAL)
+    if status_ is not None:
+        query = query.where(models.Review.status == status_)
+    if cursor is not None:
+        query = query.where(models.Review.id < cursor)
+    rows = (await session.execute(query.order_by(models.Review.id.desc()).limit(limit + 1))).all()
+    names = {review.id: name for review, name in rows}
+    items, next_cursor = page_of([review for review, _ in rows], limit)
+    return schemas.Page(
+        items=[
+            schemas.ReviewListItem(**summary.model_dump(), repo_full_name=names[summary.id])
+            for summary in await review_summaries(session, items)
+        ],
+        next_cursor=next_cursor,
+    )
 
 
 @router.post("", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_writable)])

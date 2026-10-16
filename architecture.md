@@ -945,6 +945,8 @@ FastAPI (`services/api`). `/health` is public; everything under `/api/v1` needs 
 | GET | `/api/v1/repos/{id}/index-runs` | Index history, newest first, keyset-paginated |
 | GET | `/api/v1/repos/{id}/reviews` | Reviews, newest first, `?status=`, with posted counts by severity |
 | POST | `/api/v1/reviews` | Queue a manual review `{repo_id, base, head}`; `202 {review_id, status, head_sha}` |
+| GET | `/api/v1/reviews` | Reviews across every repo the caller may see, newest first, keyset pages, `?status=`; eval runs left out unless `?include_eval=true` (D155); each with its repo's name |
+| GET | `/api/v1/stats` | The overview's numbers over the visible repos, `?days=` (1–90, default 7): reviews by outcome, posted findings by severity, the median from queued to finished, one row per UTC day, what is queued or running, repos by index status; eval runs left out unless asked for (D155) |
 | GET | `/api/v1/reviews/{id}` | A review: summary, counts, token usage, exact pipeline config, findings (`?include_dropped=true`) |
 | GET | `/api/v1/reviews/{id}/events` | The review's timeline as **Server-Sent Events**: replay after `Last-Event-ID` (or `?after=`), then live, until `end` (§10.2) |
 | GET | `/api/v1/reviews/{id}/diff` | The unified diff and the changed nodes, as stored with the review (D110) |
@@ -1173,6 +1175,8 @@ Installations are read once per sign-in, so a new installation shows after the n
 
 | Route | Shows |
 |---|---|
+| `/` | The overview (D156): four stat tiles for the last 7 days, reviews per day as a column chart (hover or focus a bar for its numbers; a table for screen readers), what is queued or running, the latest reviews |
+| `/reviews` | Every review across your repos, newest first, filterable by status; eval runs behind "Show eval runs" |
 | `/login` | Sign in with GitHub; why a sign-in failed |
 | `/repos` | Every repo the user can see: status, the indexed commit, the last review |
 | `/repos/[id]` | The repo's header (status, branch @ commit, **Re-index**) and its reviews, newest first: PR and commit (linked to GitHub), status, findings by severity, duration, error. `?status=` filters, `?cursor=` pages |

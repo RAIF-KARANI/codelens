@@ -1,11 +1,13 @@
 import type { Repo, RepoStatus } from "@/lib/api";
 
-/** A sidebar destination. `match` lists the path prefixes it owns: a review
- * lives under its repo, so the review pages light up "Repositories". */
+/** A sidebar destination. `match` lists the path prefixes it owns ("/" owns
+ * only itself: no other path starts with "//"). */
 export type NavItem = { href: string; label: string; match: readonly string[] };
 
 export const NAV_ITEMS: readonly NavItem[] = [
-  { href: "/repos", label: "Repositories", match: ["/repos", "/reviews"] },
+  { href: "/", label: "Overview", match: ["/"] },
+  { href: "/reviews", label: "Reviews", match: ["/reviews"] },
+  { href: "/repos", label: "Repositories", match: ["/repos"] },
 ];
 
 /** Whether `pathname` is inside one of the item's prefixes (a whole segment:
