@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { config, isDemo } from "@/lib/config";
 import { exchangeCode, fetchInstallationIds, fetchUser } from "@/lib/github";
 import { OAUTH_COOKIE, readPending, redirectUri, sameState } from "@/lib/oauth";
-import { safeNext } from "@/lib/paths";
+import { postLoginUrl } from "@/lib/paths";
 import { startSession } from "@/lib/session";
 
 /** Step 2 of login: GitHub sends the browser back here with a one-time `code`
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     return fail("github");
   }
 
-  const response = NextResponse.redirect(new URL(safeNext(pending.next), appUrl));
+  const response = NextResponse.redirect(postLoginUrl(pending.next, appUrl));
   response.cookies.delete({ name: OAUTH_COOKIE, path: "/api/auth" });
   return response;
 }
