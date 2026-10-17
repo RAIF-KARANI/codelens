@@ -1,3 +1,4 @@
+import { GitPullRequestIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -6,7 +7,9 @@ import { AutoRefresh } from "@/components/auto-refresh";
 import { Pager } from "@/components/pager";
 import { ReviewTable } from "@/components/review-table";
 import { TableSkeleton } from "@/components/skeleton";
+import { StateMessage } from "@/components/state-message";
 import { StatusFilter } from "@/components/status-filter";
+import { Button } from "@/components/ui/button";
 import { listAllReviews, REVIEW_STATUSES } from "@/lib/api";
 import { parseChoice, parseCursor, withQuery } from "@/lib/params";
 import { cn } from "@/lib/utils";
@@ -58,11 +61,22 @@ async function Reviews({ searchParams }: Pick<PageProps<"/reviews">, "searchPara
         </Link>
       </div>
       {page.items.length === 0 ? (
-        <p className="mt-6 rounded-lg border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
+        <StateMessage
+          className="mt-6"
+          icon={<GitPullRequestIcon />}
+          title={status ? `No ${status} reviews` : "No reviews yet"}
+          action={
+            status ? (
+              <Button asChild variant="outline">
+                <Link href={withQuery(PATHNAME, keep)}>Show all reviews</Link>
+              </Button>
+            ) : undefined
+          }
+        >
           {status
-            ? `No ${status} reviews.`
-            : "No reviews yet. CodeLens reviews every push to an open pull request in an installed repository."}
-        </p>
+            ? "None of the reviews you can see has this status."
+            : "CodeLens reviews every push to an open pull request in a repository its App is installed on."}
+        </StateMessage>
       ) : (
         <div className="mt-4">
           <ReviewTable reviews={page.items} />

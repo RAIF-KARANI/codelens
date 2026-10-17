@@ -1180,7 +1180,7 @@ Installations are read once per sign-in, so a new installation shows after the n
 | `/login` | Sign in with GitHub; why a sign-in failed |
 | `/repos` | Every repo the user can see: status, the indexed commit, the last review |
 | `/repos/[id]` | The repo's header (status, branch @ commit, **Re-index**) and its reviews, newest first: PR and commit (linked to GitHub), status, findings by severity, duration, error. `?status=` filters, `?cursor=` pages |
-| `/repos/[id]/indexing` | The code graph's size (nodes, edges) and call resolution from the latest run; every index run with files and nodes added, changed and deleted |
+| `/repos/[id]/indexing` | Four stat tiles from the latest run: definitions, edges, files parsed, and calls resolved (a meter); every index run with the files and definitions it added, changed and deleted, each in its colour |
 | `/reviews/[id]` (tab **Diff**) | One review, findings first (D158): a panel with the findings (severity and category filters; `j`/`k` move between them, `e` opens one's evidence, `g` its graph), the changed files with finding counts, and the run's details folded away (the timeline, changed definitions, tokens; open while it runs); beside it the stored diff, highlighted on the server by Shiki, with each finding under the line it ends on. `?dropped=1` adds the findings validation dropped, with the reason. **While a review runs**, a stepper shows where it is (changes → context → review chunk *i* of *n* → validate → post) with the time since it started, from the page's one event stream (D159); at the end a toast says how it went and the page turns into the findings |
 | `/reviews/[id]/graph` | The call graph around the change (React Flow), in four headed columns: callers → changed code → callees → other context the model saw. Each node shows its kind, its change (written, not just coloured), ★ when cited, and describes itself to screen readers; hovering or focusing a node lights its neighbours; click or Enter opens its code; a minimap and a legend (D160). `?finding=` (a finding's **Show in graph**, or `g`) highlights and zooms to that finding's changed code and evidence (`lib/focus.ts`) |
 | `/reviews/[id]/trace` | The token budgets, then per chunk: the context tokens spent against the budget, and every retrieved candidate in one table, sortable (rank, name, similarity, tokens) and filterable (outcome, the changed code it was found for, name): rank, the changed code it was for, similarity, what happened to it (shown in full, signature only, or why not), tokens (D160) |
@@ -1194,9 +1194,15 @@ How they work:
 - **Paging is keyset,** like the API's: **Older** passes `next_cursor`; **Newest** goes
   back to the start.
 - **Re-index is a Server Action** (`repos/[id]/actions.ts`). An action is a public
-  endpoint, so it reads the session itself and lets the API check access. API errors
-  (`demo_mode`, `not_indexable`, `queue_unavailable`) become a message under the
-  button.
+  endpoint, so it reads the session itself and lets the API check access. Its answer
+  is a toast; API errors (`demo_mode`, `not_indexable`, `queue_unavailable`) also stay
+  as a message under the button. While the repo is pending the button says Queued…,
+  while indexing Indexing….
+- **Every empty and error state is a `StateMessage`** (`components/state-message.tsx`,
+  D161): an icon, what happened, what to do, and a link that does it (Show all
+  reviews, Back to the newest, How to install it). `not-found.tsx` is also what a repo
+  or review you can't access looks like (D111); `error.tsx` offers Try again and
+  points at `codelens doctor`.
 - **Background progress:** while a repo is indexing or a review is queued or running,
   the page re-renders from the server every 3 s (`components/auto-refresh.tsx`; only
   while the tab is visible). A review's own page uses its event stream instead.

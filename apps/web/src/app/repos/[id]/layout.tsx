@@ -56,7 +56,12 @@ async function RepoHeader({ params }: Pick<LayoutProps<"/repos/[id]">, "params">
           </p>
         </div>
         {/* A demo can't index: nothing runs there but the pages. */}
-        {!isDemo() && <ReindexButton action={reindex.bind(null, repo.id)} disabled={busy} />}
+        {!isDemo() && (
+          <ReindexButton
+            action={reindex.bind(null, repo.id)}
+            busy={busy ? (repo.status === "pending" ? "Queued…" : "Indexing…") : null}
+          />
+        )}
       </div>
       <RepoTabs repoId={repo.id} />
       {/* While indexing, re-render every few seconds to show progress. */}

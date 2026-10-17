@@ -1,33 +1,44 @@
 "use client";
 
-import { useActionState } from "react";
+import { RefreshCwIcon } from "lucide-react";
+import { useActionState, useEffect } from "react";
+import { toast } from "sonner";
 
 import { AutoRefresh } from "@/components/auto-refresh";
+import { Button } from "@/components/ui/button";
 
 import type { ReindexState } from "./actions";
 
+/** Re-index the repo (then embed what changed). The outcome is a toast; a
+ * refusal also stays under the button, so it can still be read once the toast
+ * has gone. */
 export function ReindexButton({
   action,
-  disabled,
+  busy,
 }: {
   action: (state: ReindexState, form: FormData) => Promise<ReindexState>;
-  disabled: boolean;
+  /** What the repo is busy with ("Queued…", "Indexing…"), or null when it can
+   * be re-indexed. */
+  busy: string | null;
 }) {
   const [state, formAction, pending] = useActionState(action, null);
+
+  useEffect(() => {
+    if (!state) return;
+    if (state.ok) toast.success(state.message, { description: "The status changes when the worker picks it up." });
+    else toast.error("Couldn't re-index", { description: state.message });
+  }, [state]);
+
   return (
     <form action={formAction} className="flex flex-col items-end gap-1">
-      <button
-        type="submit"
-        disabled={disabled || pending}
-        className="rounded-md border border-input px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {pending ? "Queuing…" : disabled ? "Indexing…" : "Re-index"}
-      </button>
-      {state && (
-        <p
-          role="status"
-          className={`text-xs ${state.ok ? "text-muted-foreground" : "text-critical"}`}
-        >
+      <Button type="submit" variant="outline" disabled={busy !== null || pending}>
+        <RefreshCwIcon
+          className={pending || busy ? "animate-spin motion-reduce:animate-none" : ""}
+        />
+        {pending ? "Queuing…" : (busy ?? "Re-index")}
+      </Button>
+      {state && !state.ok && (
+        <p role="status" className="max-w-xs text-right text-xs text-critical">
           {state.message}
         </p>
       )}

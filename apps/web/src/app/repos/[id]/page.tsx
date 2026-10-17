@@ -1,4 +1,6 @@
+import { GitPullRequestIcon } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
@@ -6,7 +8,9 @@ import { AutoRefresh } from "@/components/auto-refresh";
 import { Pager } from "@/components/pager";
 import { ReviewTable } from "@/components/review-table";
 import { TableSkeleton } from "@/components/skeleton";
+import { StateMessage } from "@/components/state-message";
 import { StatusFilter } from "@/components/status-filter";
+import { Button } from "@/components/ui/button";
 import { getRepo, listReviews, REVIEW_STATUSES } from "@/lib/api";
 import { parseChoice, parseCursor, parseId, withQuery } from "@/lib/params";
 
@@ -36,13 +40,24 @@ async function Reviews({ params, searchParams }: PageProps<"/repos/[id]">) {
     <>
       <StatusFilter pathname={pathname} current={status} />
       {page.items.length === 0 ? (
-        <p className="mt-6 rounded-lg border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
+        <StateMessage
+          className="mt-6"
+          icon={<GitPullRequestIcon />}
+          title={status ? `No ${status} reviews` : "No reviews yet"}
+          action={
+            status ? (
+              <Button asChild variant="outline">
+                <Link href={pathname}>Show all reviews</Link>
+              </Button>
+            ) : undefined
+          }
+        >
           {status
-            ? `No ${status} reviews.`
+            ? "None of this repository's reviews has this status."
             : repo.source === "github"
-              ? "No reviews yet. CodeLens reviews every push to an open pull request."
-              : "No reviews yet."}
-        </p>
+              ? "CodeLens reviews every push to an open pull request on this repository."
+              : "Review a branch of this checkout with python -m core.review."}
+        </StateMessage>
       ) : (
         <div className="mt-4">
           <ReviewTable reviews={page.items} repoName={repo.full_name} />
