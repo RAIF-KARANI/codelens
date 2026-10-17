@@ -316,6 +316,8 @@ cd apps/desktop
 pnpm install && pnpm build
 pnpm stack up --local         # build the images from this checkout, start, wait until healthy
 pnpm stack stop --local
+pnpm start                    # the Electron app: starts the stack and shows the dashboard
+pnpm dist                     # the unsigned Windows installer, in release/
 ```
 
 It keeps its data in `%LOCALAPPDATA%\CodeLens` (or `CODELENS_HOME`) and its own database
