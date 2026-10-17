@@ -130,6 +130,22 @@ services:
     <<: *worker
     command: celery -A worker.celery_app worker -Q gpu -c 1 -n gpu@%h
 
+  # One-off commands the first-run wizard runs (`docker compose run --rm
+  # tools ...`), never started with the stack: creating the user's GitHub App
+  # by the manifest flow (the only writer of secrets/, so it's mounted
+  # read-write here alone) and `codelens doctor --desktop --json` (D174).
+  tools:
+    <<: *python
+    image: ${CODELENS_API_IMAGE:?}
+    profiles: ["tools"]
+    restart: "no"
+    # It runs as root, as the API image does: a folder made on Windows shows
+    # up as root's here, and only its owner may lock it down (D132). The app
+    # then hands secrets/ to the workers' user (uid 1000) in a second run, or
+    # they can't read the App's key (found live: "Permission denied").
+    volumes:
+      - ${CODELENS_HOME:?}/secrets:/app/secrets
+
   web:
     image: ${CODELENS_WEB_IMAGE:?}
     environment:

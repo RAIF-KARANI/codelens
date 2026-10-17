@@ -42,6 +42,12 @@ class Registration:
         secrets_dir: Path,
         org: str | None = None,
         port: int = 0,  # 0: any free port
+        webhook_active: bool = True,
+        # The address the server listens on. Inside a container (CodeLens
+        # Desktop) that is all of its interfaces, published only to the host's
+        # 127.0.0.1; the browser still uses 127.0.0.1, which is all the URLs
+        # and the Host check name.
+        bind: str = "127.0.0.1",
     ) -> None:
         self.state = secrets.token_urlsafe(16)
         # In the URL the CLI opens (start_url): only that browser gets the page.
@@ -55,16 +61,20 @@ class Registration:
         self.error: str | None = None
         self._convert = convert
         self._secrets_dir = secrets_dir
-        self._server = ThreadingHTTPServer(("127.0.0.1", port), _handler(self))
+        self._server = ThreadingHTTPServer((bind, port), _handler(self))
         self.manifest = build_manifest(
-            name=name, webhook_url=webhook_url, redirect_url=f"{self.url}/callback"
+            name=name,
+            webhook_url=webhook_url,
+            redirect_url=f"{self.url}/callback",
+            webhook_active=webhook_active,
         )
         self._action = f"{new_app_url(org)}?state={self.state}"
 
     @property
     def url(self) -> str:
-        host, port = self._server.server_address[:2]
-        return f"http://{host}:{port}"
+        # Always the loopback address the browser uses, whatever is bound.
+        port = self._server.server_address[1]
+        return f"http://127.0.0.1:{port}"
 
     @property
     def start_url(self) -> str:

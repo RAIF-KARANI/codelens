@@ -1,7 +1,8 @@
-/** The first-run wizard's flow (planning-v2.md §4, Phase 11 step 5a): this
+/** The first-run wizard's flow (planning-v2.md §4, Phase 11 step 5): this
  * computer's checks, then Docker Desktop, then Ollama, each installed from
  * its publisher if missing, after the user's yes, and only once its
- * signature checks out (D150). Each step looks before it acts, so closing the
+ * signature checks out (D150, 5a); then the models, the user's own GitHub
+ * App and its installation, and the stack's own checks (5b). Each step looks before it acts, so closing the
  * app halfway, or the restart Docker may need, picks up at the first step not
  * done yet. Everything with a side effect comes in `FirstRunDeps`, so tests
  * play a machine with nothing on it. */
@@ -33,6 +34,16 @@ export type FirstRunDeps = {
   launch(exe: string): void;
   dockerDesktopExe(): string;
   ollamaAppExe(): string;
+  /** The models CodeLens needs that Ollama doesn't have yet. */
+  missingModels(): Promise<string[]>;
+  pullModel(name: string, onProgress: (p: { completed: number; total: number }) => void): Promise<void>;
+  /** codelens.env has an App's settings. */
+  hasApp(): Promise<boolean>;
+  /** The manifest flow; `openBrowser` gets its start link. */
+  createApp(openBrowser: (url: string) => void): Promise<{ installUrl: string }>;
+  openExternal(url: string): void;
+  /** `codelens doctor --desktop --json`, run in the stack's tools container. */
+  doctor(): Promise<Check[]>;
   /** Open CodeLens once at the next sign-in (on), or forget that (off). */
   resumeAfterRestart(on: boolean): Promise<void>;
   removeFile(path: string): Promise<void>;
@@ -201,6 +212,112 @@ export async function firstRun(d: FirstRunDeps): Promise<FirstRunResult> {
     // Installed: the next pass starts it if its installer didn't.
   }
   marks.ollama = "done";
+
+  // 4. The models, into the user's own Ollama (D146).
+  for (;;) {
+    let missing: string[];
+    try {
+      missing = await d.missingModels();
+    } catch (error) {
+      await view("models", "failed", { title: "Ollama didn't answer", detail: String(error), buttons: [{ label: "Check again", href: "codelens://check-again" }] });
+      await d.waitFor(["check-again"]);
+      continue;
+    }
+    if (missing.length === 0) break;
+    await view("models", "active", {
+      title: "Download the models",
+      detail: `CodeLens reviews with ${missing.join(" and ")}, which run in Ollama on this computer. Ollama downloads them from its own registry (about 6 GB in all) and checks every part against its digest.`,
+      buttons: [{ label: "Download the models", href: "codelens://download-models" }],
+    });
+    await d.waitFor(["download-models"]);
+    try {
+      for (const name of missing) {
+        await view("models", "active", { title: `Downloading ${name}…`, detail: "Into Ollama, on this computer.", progress: { label: "Starting…", fraction: 0 } });
+        let shown = Number.NEGATIVE_INFINITY;
+        await d.pullModel(name, ({ completed, total }) => {
+          const at = d.now();
+          if (at - shown < 250 && completed !== total) return;
+          shown = at;
+          void d.progress(total ? completed / total : null, total ? `${name}: ${progressLabel(completed, total)}` : name);
+        });
+        await d.log(`pulled ${name}`);
+      }
+    } catch (error) {
+      await view("models", "failed", {
+        title: "The models weren't downloaded",
+        detail: `${error instanceof Error ? error.message : String(error)}. Check the connection and try again: what was already downloaded is kept.`,
+        buttons: [{ label: "Check again", href: "codelens://check-again" }],
+      });
+      await d.waitFor(["check-again"]);
+    }
+  }
+  marks.models = "done";
+
+  // 5. The user's own GitHub App (D139), by the manifest flow (D93, D174).
+  for (;;) {
+    if (await d.hasApp()) break;
+    await view("app", "active", {
+      title: "Create your GitHub App",
+      detail:
+        "CodeLens reads your repositories and posts its reviews as a GitHub App of your own, on your account: nobody else's App, server or relay is involved. Your browser opens on GitHub, which shows the App's name (you can change it) and what it may do: read code, and write pull request reviews. Click Create GitHub App there, then come back here.",
+      buttons: [{ label: "Create my App", href: "codelens://create-app" }],
+    });
+    await d.waitFor(["create-app"]);
+    await view("app", "active", {
+      title: "Finish in your browser",
+      detail: "On GitHub: check the name, then Create GitHub App. GitHub sends you back to a page that says it's done; this window goes on by itself.",
+      progress: { label: "Waiting for GitHub…", fraction: null },
+    });
+    let installUrl: string;
+    try {
+      ({ installUrl } = await d.createApp((url) => d.openExternal(url)));
+    } catch (error) {
+      await d.log(`creating the App failed: ${String(error)}`);
+      await view("app", "failed", {
+        title: "The App wasn't created",
+        detail: `${error instanceof Error ? error.message : String(error)}. Nothing was saved; try again.`,
+        buttons: [{ label: "Try again", href: "codelens://check-again" }],
+      });
+      await d.waitFor(["check-again"]);
+      continue;
+    }
+    await view("app", "active", {
+      title: "Install your App on your repositories",
+      detail: "On GitHub, choose Only select repositories, pick the ones to review, and Install. Each is copied to this computer and indexed (a few minutes for a small repository). You can add more later from the App's settings on GitHub.",
+      buttons: [
+        { label: "Open the install page", href: installUrl },
+        { label: "I've installed it", href: "codelens://installed" },
+      ],
+    });
+    await d.waitFor(["installed"]);
+    break;
+  }
+  marks.app = "done";
+
+  // 6. What the stack itself says: Ollama, the models, the App on GitHub.
+  for (;;) {
+    await view("start", "active", { title: "Checking…", detail: "Ollama, the models, and your App on GitHub.", progress: { label: "Checking…", fraction: null } });
+    let checks: Check[];
+    try {
+      checks = await d.doctor();
+    } catch (error) {
+      checks = [{ name: "Checks", status: "fail", detail: String(error) }];
+    }
+    await d.log(`doctor: ${checks.map((c) => `${c.name} ${c.status}`).join(", ")}`);
+    const install = checks.find((c) => c.fix?.startsWith("install it: "))?.fix?.slice("install it: ".length);
+    const failed = checks.some((c) => c.status === "fail");
+    await view("start", failed ? "failed" : "active", {
+      title: failed ? "Something isn't ready yet" : "Ready to start",
+      detail: failed ? "What's marked ✕ needs a look. CodeLens can start anyway, and its dashboard still works." : "The rest happens by itself: your repositories are indexed, and every push to a pull request is reviewed.",
+      checks,
+      buttons: [
+        ...(failed ? [{ label: "Check again", href: "codelens://check-again" }] : []),
+        { label: failed ? "Start anyway" : "Start CodeLens", href: "codelens://continue" },
+        ...(install?.startsWith("https://github.com/apps/") ? [{ label: "Open the install page", href: install }] : []),
+      ],
+    });
+    if ((await d.waitFor(failed ? ["check-again", "continue"] : ["continue"])) === "continue") break;
+  }
   await d.show({ marks: { ...marks, start: "active" }, title: "Starting CodeLens…", detail: "The database, the API, the workers and the dashboard.", progress: { label: "Starting…", fraction: null } });
   return "ready";
 }

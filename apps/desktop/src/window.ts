@@ -37,7 +37,10 @@ export type AppAction =
   | "continue"
   | "check-again"
   | "install-docker"
-  | "install-ollama";
+  | "install-ollama"
+  | "download-models"
+  | "create-app"
+  | "installed";
 
 const ACTIONS: readonly AppAction[] = [
   "retry",
@@ -47,6 +50,9 @@ const ACTIONS: readonly AppAction[] = [
   "check-again",
   "install-docker",
   "install-ollama",
+  "download-models",
+  "create-app",
+  "installed",
 ];
 
 export function appAction(url: string): AppAction | null {

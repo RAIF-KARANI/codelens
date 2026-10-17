@@ -26,13 +26,20 @@ HOMEPAGE = "https://github.com/RAIF-KARANI/codelens"
 # Where GitHub sends users back after the dashboard's "Sign in with GitHub"
 # (apps/web, D113). More can be added in the App's settings, e.g. for a deploy.
 DASHBOARD_CALLBACK_URL = "http://localhost:3000/api/auth/callback"
+# CodeLens Desktop's Apps poll GitHub (D145): their webhook is created off,
+# with a secret but pointing nowhere of anyone's (a reserved example
+# domain), so a relay can be switched on later without remaking the App
+# (the user's choice, 2026-10-17, D174).
+PLACEHOLDER_WEBHOOK_URL = "https://example.com/codelens-webhook-not-in-use"
 
 
-def build_manifest(*, name: str, webhook_url: str, redirect_url: str) -> dict[str, Any]:
+def build_manifest(
+    *, name: str, webhook_url: str, redirect_url: str, webhook_active: bool = True
+) -> dict[str, Any]:
     return {
         "name": name,
         "url": HOMEPAGE,
-        "hook_attributes": {"url": webhook_url, "active": True},
+        "hook_attributes": {"url": webhook_url, "active": webhook_active},
         "redirect_url": redirect_url,
         "callback_urls": [DASHBOARD_CALLBACK_URL],
         "public": False,  # only its owner can install it

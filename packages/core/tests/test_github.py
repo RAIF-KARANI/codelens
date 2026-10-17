@@ -16,12 +16,14 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from core.config import Settings
 from core.github import GitHubClient, GitHubError, InstallationTokens, app_jwt
 from core.github.auth import APP_JWT_LIFETIME, CLOCK_SKEW
 from core.github.manifest import (
     DASHBOARD_CALLBACK_URL,
     EVENTS,
     PERMISSIONS,
+    PLACEHOLDER_WEBHOOK_URL,
     AppCredentials,
     build_manifest,
     save_credentials,
@@ -317,3 +319,85 @@ def test_mirror_sync_keeps_the_token_off_argv_and_disk(
             ["git", "-C", str(work), "rev-parse", "HEAD"], capture_output=True, text=True
         ).stdout.strip()
     )
+
+
+def test_a_desktop_app_has_its_webhook_off(tmp_path: Path) -> None:
+    # CodeLens Desktop polls (D145): its App is made with the webhook off, at
+    # a placeholder that is nobody's, with its secret, so a relay can be
+    # switched on later (the user's choice, D174).
+    manifest = build_manifest(
+        name="CodeLens (t)",
+        webhook_url=PLACEHOLDER_WEBHOOK_URL,
+        redirect_url="http://127.0.0.1:1/cb",
+        webhook_active=False,
+    )
+    assert manifest["hook_attributes"] == {"url": PLACEHOLDER_WEBHOOK_URL, "active": False}
+    assert PLACEHOLDER_WEBHOOK_URL.startswith("https://example.com/")
+    assert manifest["default_events"] == EVENTS  # what the poller turns into the same events
+
+
+def test_registration_in_a_container_still_names_loopback(tmp_path: Path) -> None:
+    # Bound to every interface (a container's port is published only to the
+    # host's 127.0.0.1), the links and the Host check still say 127.0.0.1.
+    registration = Registration(
+        name="CodeLens (t)",
+        webhook_url=PLACEHOLDER_WEBHOOK_URL,
+        convert=lambda code: AppCredentials.from_conversion(CONVERSION),
+        secrets_dir=tmp_path,
+        webhook_active=False,
+        bind="0.0.0.0",
+    )
+    registration.start()
+    try:
+        port = int(registration.url.rsplit(":", 1)[1])
+        assert registration.url == f"http://127.0.0.1:{port}"
+        assert registration.manifest["redirect_url"] == f"http://127.0.0.1:{port}/callback"
+        assert registration.manifest["hook_attributes"]["active"] is False
+        assert registration.host_ok(f"127.0.0.1:{port}")
+        assert not registration.host_ok(f"0.0.0.0:{port}")
+        with httpx.Client() as browser:
+            assert browser.get(registration.start_url).status_code == 200
+    finally:
+        registration.stop()
+
+
+def test_register_hands_the_link_to_the_desktop_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from core.github import __main__ as cli
+
+    opened: list[str] = []
+    monkeypatch.setattr(cli.webbrowser, "open", opened.append)
+    monkeypatch.setattr(cli, "REGISTER_TIMEOUT_S", 0.2)
+    with pytest.raises(cli.RegistrationFailed, match="timed out"):
+        cli.create_app(
+            Settings(_env_file=None),
+            name="CodeLens (t)",
+            webhook_url=PLACEHOLDER_WEBHOOK_URL,
+            secrets_dir=tmp_path,
+            port=0,
+            webhook_active=False,
+            open_browser=False,
+        )
+    out = capsys.readouterr().out.strip().splitlines()
+    assert opened == []  # the app opens the browser itself
+    assert len(out) == 1 and out[0].startswith(cli.START_URL_PREFIX + "http://127.0.0.1:")
+    assert "/?t=" in out[0]
+
+
+def test_register_hands_the_install_link_to_the_desktop_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import argparse
+
+    from core.github import __main__ as cli
+
+    creds = AppCredentials.from_conversion(CONVERSION)
+    monkeypatch.setattr(cli, "create_app", lambda *a, **k: (creds, tmp_path / "k", tmp_path / "e"))
+    args = argparse.Namespace(
+        name="x", webhook_url="u", org=None, port=0, secrets_dir=tmp_path,
+        webhook_inactive=True, bind="0.0.0.0", no_browser=True,
+    )  # fmt: skip
+    assert cli.register(args, Settings(_env_file=None)) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert f"{cli.INSTALL_URL_PREFIX}{CONVERSION['html_url']}/installations/new" in lines

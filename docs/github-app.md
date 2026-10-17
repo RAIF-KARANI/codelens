@@ -72,6 +72,12 @@ uv run python -m core.github register --name "CodeLens (your-login)" --webhook-u
 Copy the lines of `secrets/github-app.env` into `.env`. Never commit either file; both
 are gitignored.
 
+CodeLens Desktop runs the same command for you, in a container, with three more options:
+`--webhook-inactive` (its App polls GitHub, so the webhook is created off, at a
+placeholder), `--bind 0.0.0.0` (the container's port is published to the host's
+127.0.0.1 only) and `--no-browser` (the app opens your browser itself, from the
+`CODELENS_START_URL=` line, and reads `CODELENS_INSTALL_URL=` once the App exists).
+
 ## 3. Install it on a test repository
 
 Open the install link the command printed (`https://github.com/apps/<slug>/installations/new`),

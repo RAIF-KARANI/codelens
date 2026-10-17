@@ -1,5 +1,6 @@
 """codelens doctor on imaginary machines: every command and HTTP call is faked."""
 
+import json
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -7,7 +8,7 @@ import httpx
 import pytest
 
 from core.config import Settings
-from core.setup.__main__ import doctor, report
+from core.setup.__main__ import as_json, desktop_doctor, doctor, report
 from core.setup.checks import (
     Check,
     Ran,
@@ -260,3 +261,50 @@ def test_an_absolute_key_path_fails_because_containers_cant_read_it(tmp_path: Pa
     )
     [app] = [c for c in check_github_settings(s) if c.name == "GitHub App settings"]
     assert app.status is Status.FAIL and app.by_setup
+
+
+NOT_INSTALLED = "codelens-me works, but isn't installed on any repo yet"
+
+
+def test_the_desktop_asks_only_what_the_stack_can_answer() -> None:
+    # CodeLens Desktop (Phase 11 step 5b): run in its API container, where
+    # git, Docker, the GPU, ports and .env aren't the stack's to check.
+    s = settings(
+        github_app_id=5,
+        github_webhook_secret="w",
+        github_allowed_accounts="me:1",
+        embed_provider="fake",
+    )
+    asked: list[str] = []
+
+    def app(_: Settings) -> Check:
+        asked.append("app")
+        return Check(
+            "GitHub App", Status.WARN, "codelens-me works, but isn't installed on any repo yet"
+        )
+
+    checks = desktop_doctor(
+        s, get=http({"/api/tags": {"models": [{"name": "qwen3:8b"}]}}), github_app=app
+    )
+    names = [c.name for c in checks]
+    assert names[:2] == ["Ollama", "model qwen3:8b"]
+    assert "GitHub App settings" in names and "GitHub App" in names
+    assert not {"git", "Docker", "GPU", ".env", "webhook relay"} & set(names)
+    rows = json.loads(as_json(checks))
+    assert rows[-1] == {
+        "name": "GitHub App",
+        "status": "warn",
+        "detail": NOT_INSTALLED,
+        "fix": None,
+    }
+
+
+def test_the_desktop_doesnt_ask_github_without_an_app() -> None:
+    asked: list[str] = []
+    checks = desktop_doctor(
+        settings(embed_provider="fake"),
+        get=http({"/api/tags": {"models": [{"name": "qwen3:8b"}]}}),
+        github_app=lambda s: asked.append("app") or Check("GitHub App", Status.OK, ""),
+    )
+    assert asked == []
+    assert by_name(checks)["GitHub App settings"].status is Status.FAIL

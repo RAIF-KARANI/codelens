@@ -103,6 +103,7 @@ and code and prompts never leave the machine (D20).
 | CodeLens Desktop's spike: an Electron window that starts the stack, holds the launch's key and shows the dashboard; an unsigned Windows installer (§3.3) | ✅ Phase 11 step 1b (D168) |
 | CodeLens Desktop's supervisor and tray: start order, services brought back, Docker and Ollama watched, logs per service, pause, start at login (§3.3) | ✅ Phase 11 step 4a (D172) |
 | The first-run wizard's first half: the machine's checks; Docker Desktop and Ollama found, started or installed from their publishers after a signature check (§3.3) | ✅ Phase 11 step 5a (D173) |
+| The wizard's second half: the models pulled with progress; the user's own GitHub App by the manifest flow in a `tools` container; its install page; `codelens doctor --desktop --json` (§3.3) | ✅ Phase 11 step 5b (D174) |
 | GitHub polling: installations, pushes and pull requests learned by asking GitHub, through the webhook intake (§10.5) | ✅ Phase 11 step 2 (D169, D170) |
 | A failed review says so on its pull request, with a reason from a fixed list (§7 S11) | ✅ Phase 11 step 4b (D171) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
@@ -226,6 +227,7 @@ codelens/
 |---|---|
 | `compose.yaml` | The Compose project `codelens-desktop` (D166): the same services as `docker-compose.yml` plus `web`, from images pinned by digest, under their own name and volume. Only `web` is published, on `127.0.0.1` at a port chosen per launch; the API, Postgres and Redis have no host ports. The data folder (`CODELENS_HOME`, by default `%LOCALAPPDATA%\CodeLens`) holds `codelens.env` (secrets generated per install), `data/` (mirrors) and `secrets/` (the App's key) |
 | `compose.build.yaml` | The developer's fallback: CodeLens's three images built from the checkout |
+| `compose.yaml` → `tools` | A one-off service (`--profile tools`, `docker compose run --rm`), never started with the stack: the App's creation, with `secrets/` mounted read-write here alone, and the desktop doctor |
 | `images.json` | The published images (`ghcr.io/raif-karani/codelens-{api,worker,web}`), each `name@sha256:…`; filled from the `Images` workflow's summary (D167) |
 | `src/stack.ts` | The stack as plain functions: the data folder and its secrets (`ensureHome`), image pins (`pinnedImages`), a free port and a key per launch (`newLaunch`), `docker compose up --wait / stop / ps`. Never through a shell |
 | `src/cli.ts` | `pnpm stack init / up / status / stop / env`, `--local` to build the images |
@@ -237,6 +239,8 @@ codelens/
 | `src/machine.ts` | The machine's checks: Windows build and x64, virtualization, memory, disk, NVIDIA GPU |
 | `src/installers.ts` | The publishers' installers: download with progress, Windows' signature check against the expected organisation, running (elevated for Docker), the one-time restart entry |
 | `src/wizard.ts` | The wizard's screen: the steps, the checks, a progress bar the app moves in place, `codelens://` buttons |
+| `src/models.ts` | The models CodeLens needs (codelens.env, else the defaults), what Ollama lacks, `POST /api/pull` with one bar across all layers |
+| `src/githubapp.ts` | The user's App (D174): `core.github register` in the `tools` container, the start link opened only if it is the flow's own, the settings merged into `codelens.env`, `secrets/` handed to the workers' user; the install link; `codelens doctor --desktop --json` |
 | `scripts/render-icons.mjs`, `assets/` | The lens mark drawn into the window, installer and tray icons (PNG, no image library) |
 | `package.json` → `build` | electron-builder: `pnpm dist` makes `release/CodeLens-Setup-<version>.exe` (NSIS, per user, unsigned, D148), with `compose.yaml` and `images.json` in `resources/` |
 
