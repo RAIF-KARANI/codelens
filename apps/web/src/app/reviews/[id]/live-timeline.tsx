@@ -1,9 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { describe, type Tone } from "@/lib/events";
 
-import { describe, EVENT_TYPES, type ReviewEvent, type Tone } from "@/lib/events";
+import { useReviewEvents } from "./review-events";
 
 const TONES: Record<Tone, string> = {
   info: "bg-muted-foreground/60",
@@ -11,53 +10,10 @@ const TONES: Record<Tone, string> = {
   bad: "bg-critical",
 };
 
-/** The review's timeline, from the API's event stream (through
- * /api/reviews/[id]/events). A finished review replays its events and ends at
- * once; a running one streams them live, and when it ends the page re-renders
- * from the server to show the findings. */
-export function LiveTimeline({ reviewId, live }: { reviewId: number; live: boolean }) {
-  const router = useRouter();
-  // Whether it was running when the page loaded. The refresh at `end` turns
-  // the prop false; reconnecting then would replay every event again.
-  const [wasLive] = useState(live);
-  const [events, setEvents] = useState<ReviewEvent[]>([]);
-  const [state, setState] = useState<"connecting" | "open" | "ended" | "lost">("connecting");
-
-  useEffect(() => {
-    const source = new EventSource(`/api/reviews/${reviewId}/events`);
-    const seen = new Set<string>();
-    const onEvent = (type: string) => (message: MessageEvent<string>) => {
-      // After a reconnect the API replays from Last-Event-ID; skip any repeat.
-      if (message.lastEventId) {
-        if (seen.has(message.lastEventId)) return;
-        seen.add(message.lastEventId);
-      }
-      let data: Record<string, unknown> = {};
-      try {
-        data = JSON.parse(message.data);
-      } catch {
-        // A malformed payload still shows as its event name.
-      }
-      setEvents((all) => [...all, { id: message.lastEventId || null, type, data }]);
-      if (type === "end") {
-        // The server closes the stream after `end`; without close() the
-        // EventSource would reconnect and replay everything.
-        source.close();
-        setState("ended");
-        if (wasLive) router.refresh();
-      }
-    };
-    for (const type of EVENT_TYPES) {
-      source.addEventListener(type, onEvent(type) as EventListener);
-    }
-    source.onopen = () => setState("open");
-    source.onerror = () => {
-      // The browser retries on its own while the state is CONNECTING.
-      if (source.readyState === EventSource.CLOSED) setState("lost");
-    };
-    return () => source.close();
-  }, [reviewId, wasLive, router]);
-
+/** The review's timeline in words, from the page's event stream
+ * (review-events.tsx). */
+export function LiveTimeline() {
+  const { events, state, wasLive } = useReviewEvents();
   return (
     <section aria-label="Timeline" className="rounded-lg border border-border p-4">
       <h2 className="flex items-center gap-2 text-sm font-semibold">

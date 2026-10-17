@@ -21,6 +21,8 @@ import { first, parseId, withQuery } from "@/lib/params";
 import { DiffView } from "./diff-view";
 import { FindingCard } from "./finding-card";
 import { LiveTimeline } from "./live-timeline";
+import { ProgressStepper } from "./progress-stepper";
+import { ReviewEventsProvider } from "./review-events";
 import { FindingSlot, ReviewNav } from "./review-nav";
 
 export const metadata: Metadata = { title: "Review" };
@@ -31,9 +33,7 @@ export const metadata: Metadata = { title: "Review" };
  * header is the layout's. */
 export default function ReviewPage({ params, searchParams }: PageProps<"/reviews/[id]">) {
   return (
-    <Suspense
-      fallback={<div className="h-64 animate-pulse rounded-lg bg-muted" />}
-    >
+    <Suspense fallback={<div className="h-64 animate-pulse rounded-lg bg-muted" />}>
       <Review params={params} searchParams={searchParams} />
     </Suspense>
   );
@@ -53,7 +53,7 @@ async function Review({ params, searchParams }: PageProps<"/reviews/[id]">) {
   const live = review.status === "queued" || review.status === "running";
   const details = (
     <RunDetails open={live}>
-      <LiveTimeline reviewId={review.id} live={live} />
+      <LiveTimeline />
       {diff && diff.seeds.length > 0 && <ChangedCode seeds={diff.seeds} />}
       {review.token_usage && <Usage usage={review.token_usage} />}
     </RunDetails>
@@ -61,14 +61,22 @@ async function Review({ params, searchParams }: PageProps<"/reviews/[id]">) {
 
   if (live) {
     // The diff is stored when the review starts and the findings when it
-    // ends; the timeline re-renders the page then.
+    // ends; the event stream re-renders the page then.
     return (
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <p className="rounded-lg border border-dashed border-input p-6 text-center text-sm text-muted-foreground lg:order-1">
-          The diff and the findings appear here when the review finishes.
-        </p>
-        <div className="lg:order-2">{details}</div>
-      </div>
+      <ReviewEventsProvider reviewId={review.id} live>
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="space-y-3 lg:order-1">
+            <ProgressStepper
+              startedAt={review.started_at ?? review.created_at}
+              posts={review.source === "github"}
+            />
+            <p className="text-center text-sm text-muted-foreground">
+              The diff and the findings appear here when the review finishes.
+            </p>
+          </div>
+          <div className="lg:order-2">{details}</div>
+        </div>
+      </ReviewEventsProvider>
     );
   }
 
@@ -76,48 +84,50 @@ async function Review({ params, searchParams }: PageProps<"/reviews/[id]">) {
   const tokens = await highlightDiff(files);
   const ordered = findingOrder(files, review.findings);
   return (
-    <ReviewNav
-      reviewId={review.id}
-      findings={ordered.map((f) => ({
-        id: f.id,
-        severity: f.severity,
-        category: f.category,
-        title: f.title,
-        file_path: f.file_path,
-        line_start: f.line_start,
-        dropped: f.status === "dropped",
-        evidence:
-          f.evidence_node_ids.length > 0
-            ? {
-                nodeId: f.evidence_node_ids[0],
-                label: names.get(f.evidence_node_ids[0]) ?? `node ${f.evidence_node_ids[0]}`,
-              }
-            : null,
-      }))}
-      files={files.map((file) => ({
-        path: filePath(file),
-        status: file.status,
-        findings: review.findings.filter((f) => f.file_path === filePath(file)).length,
-      }))}
-      details={details}
-    >
-      <div className="space-y-4">
-        {review.error && (
-          <p className="rounded-md border border-critical/30 bg-critical-soft px-3 py-2 text-sm text-critical">
-            {review.error}
-          </p>
-        )}
-        <ReviewBody
-          review={review}
-          diff={diff}
-          files={files}
-          tokens={tokens}
-          ordered={ordered}
-          names={names}
-          showDropped={showDropped}
-        />
-      </div>
-    </ReviewNav>
+    <ReviewEventsProvider reviewId={review.id} live={false}>
+      <ReviewNav
+        reviewId={review.id}
+        findings={ordered.map((f) => ({
+          id: f.id,
+          severity: f.severity,
+          category: f.category,
+          title: f.title,
+          file_path: f.file_path,
+          line_start: f.line_start,
+          dropped: f.status === "dropped",
+          evidence:
+            f.evidence_node_ids.length > 0
+              ? {
+                  nodeId: f.evidence_node_ids[0],
+                  label: names.get(f.evidence_node_ids[0]) ?? `node ${f.evidence_node_ids[0]}`,
+                }
+              : null,
+        }))}
+        files={files.map((file) => ({
+          path: filePath(file),
+          status: file.status,
+          findings: review.findings.filter((f) => f.file_path === filePath(file)).length,
+        }))}
+        details={details}
+      >
+        <div className="space-y-4">
+          {review.error && (
+            <p className="rounded-md border border-critical/30 bg-critical-soft px-3 py-2 text-sm text-critical">
+              {review.error}
+            </p>
+          )}
+          <ReviewBody
+            review={review}
+            diff={diff}
+            files={files}
+            tokens={tokens}
+            ordered={ordered}
+            names={names}
+            showDropped={showDropped}
+          />
+        </div>
+      </ReviewNav>
+    </ReviewEventsProvider>
   );
 }
 
@@ -154,8 +164,8 @@ function ReviewBody({
       ) : (
         <>
           <p className="text-sm text-muted-foreground">
-            This review is from before diffs were stored with reviews, so its findings are
-            listed without the diff.
+            This review is from before diffs were stored with reviews, so its findings are listed
+            without the diff.
           </p>
           {ordered.map((f) => (
             <FindingSlot key={f.id} id={f.id}>
@@ -206,7 +216,9 @@ function ChangedCode({ seeds }: { seeds: Seed[] }) {
           <li key={`${seed.path}:${seed.qualified_name}`} className="min-w-0">
             <span className={`mr-1.5 ${CHANGE_STYLES[seed.change]}`}>{seed.change}</span>
             <span className="break-all font-mono">{seed.qualified_name}</span>
-            {seed.signature_changed && <span className="ml-1.5 text-muted-foreground">(signature)</span>}
+            {seed.signature_changed && (
+              <span className="ml-1.5 text-muted-foreground">(signature)</span>
+            )}
           </li>
         ))}
       </ul>
