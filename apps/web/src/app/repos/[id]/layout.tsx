@@ -9,6 +9,7 @@ import { isDemo } from "@/lib/config";
 import { shortSha } from "@/lib/format";
 import { githubUrl } from "@/lib/github-links";
 import { parseId } from "@/lib/params";
+import { reindexBusy } from "@/lib/reindex";
 
 import { reindex } from "./actions";
 import { ReindexButton } from "./reindex-button";
@@ -32,7 +33,8 @@ async function RepoHeader({ params }: Pick<LayoutProps<"/repos/[id]">, "params">
   const id = parseId((await params).id);
   if (id === null) notFound();
   const repo = await getRepo(id);
-  const busy = repo.status === "pending" || repo.status === "indexing";
+  // A server component, rendered once per request: "now" is that request's.
+  const busy = reindexBusy(repo);
   const link = repo.source === "github" ? githubUrl(repo.full_name) : null;
 
   return (
@@ -59,13 +61,13 @@ async function RepoHeader({ params }: Pick<LayoutProps<"/repos/[id]">, "params">
         {!isDemo() && (
           <ReindexButton
             action={reindex.bind(null, repo.id)}
-            busy={busy ? (repo.status === "pending" ? "Queued…" : "Indexing…") : null}
+            busy={busy}
           />
         )}
       </div>
       <RepoTabs repoId={repo.id} />
       {/* While indexing, re-render every few seconds to show progress. */}
-      <AutoRefresh active={busy} />
+      <AutoRefresh active={busy !== null} />
     </header>
   );
 }
