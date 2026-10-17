@@ -116,6 +116,10 @@ class Settings(BaseSettings):
     # Pull request reviews one account may start per hour (0: no cap). The
     # one over the cap is recorded as failed, saying why, and not queued.
     github_reviews_per_hour: int = Field(default=10, ge=0)
+    # The poller (planning-v2.md D145): seconds between two looks at GitHub.
+    # It waits longer by itself when an installation has many repos, so its
+    # requests stay within GitHub's hourly allowance.
+    github_poll_interval_s: int = Field(default=60, ge=10)
     github_api_url: str = "https://api.github.com"
     # Clone URLs are "<github_web_url>/<owner>/<name>.git".
     github_web_url: str = "https://github.com"

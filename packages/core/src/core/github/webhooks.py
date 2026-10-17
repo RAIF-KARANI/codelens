@@ -318,6 +318,13 @@ async def _pull_request(
     await rename_repository(conn, payload.get("repository") or {})
     repo_id, account, account_id = covered
     number, head_sha = pr["number"], pr["head"]["sha"]
+    # One intake at a time per pull request: a webhook and the poller (D145),
+    # or two deliveries, handling the same push at once would each find no
+    # review of the head and queue one each. The lock lasts until this
+    # transaction ends, so the second one in sees the first one's row.
+    await conn.execute(
+        select(func.pg_advisory_xact_lock(func.hashtext(f"pull_request:{repo_id}:{number}")))
+    )
 
     same_pr = (reviews_t.c.repo_id == repo_id) & (reviews_t.c.pr_number == number)
     # This exact head is already queued, running or reviewed: a redelivery, or
