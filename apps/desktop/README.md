@@ -7,7 +7,8 @@ and shows the dashboard in its window, with no sign-in.
 **Status: Phase 11 step 5b.** On its first run a wizard checks the computer; finds,
 starts or installs Docker Desktop and Ollama (from their publishers, signature checked);
 pulls the models; creates your own GitHub App in your browser and opens its install page;
-and checks it all with `codelens doctor --desktop --json`. Then the app starts the stack,
+and checks it all with `codelens doctor --desktop --json`. Then the app starts the stack
+(and its control API, for the dashboard's Settings page),
 shows the dashboard, keeps it all up (a supervisor every 10 s), lives in the tray, and
 stops the stack when it quits; `pnpm dist` builds an unsigned installer. Settings,
 updates and releases come in later steps.
@@ -23,6 +24,7 @@ updates and releases come in later steps.
 | `src/supervisor.ts` | What to start or restart, the backoff, what to tell the user |
 | `src/firstrun.ts`, `src/wizard.ts` | The first-run wizard's flow and its screen |
 | `src/machine.ts`, `src/installers.ts` | The computer's checks; downloading, checking and running Docker's and Ollama's installers |
+| `src/control.ts`, `src/appsettings.ts`, `src/ollamaenv.ts` | The control API the Settings page calls; the settings it may change; the 16k window |
 | `src/models.ts`, `src/githubapp.ts` | Pulling the models; creating your GitHub App (in the `tools` container) and the stack's own checks |
 | `src/logs.ts`, `src/settings.ts` | Each service's log file; `desktop.json` |
 | `src/cli.ts` | `pnpm stack …`: the stack from a terminal |

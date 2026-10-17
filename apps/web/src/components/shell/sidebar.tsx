@@ -1,4 +1,4 @@
-import { FolderGit2Icon, GitPullRequestIcon, LayoutDashboardIcon } from "lucide-react";
+import { FolderGit2Icon, GitPullRequestIcon, LayoutDashboardIcon, SettingsIcon } from "lucide-react";
 import Link from "next/link";
 import { connection } from "next/server";
 import { cache, Suspense } from "react";
@@ -11,6 +11,7 @@ import { SidebarToggle } from "@/components/shell/sidebar-toggle";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Skeleton } from "@/components/ui/skeleton";
 import { callApi, type Repo } from "@/lib/api";
+import { isLocal } from "@/lib/config";
 import { NAV_ITEMS, REPO_DOT, sidebarRepos } from "@/lib/nav";
 import { requestUser } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -52,6 +53,9 @@ export function SidebarContent() {
         {NAV_ITEMS.map((item) => (
           <NavLink key={item.href} {...item} icon={NAV_ICONS[item.href]} />
         ))}
+        <Suspense fallback={null}>
+          <LocalNav />
+        </Suspense>
       </nav>
       <Suspense fallback={<RepoListSkeleton />}>
         <SidebarRepos />
@@ -106,4 +110,13 @@ function RepoListSkeleton() {
       <Skeleton className="h-6" />
     </div>
   );
+}
+
+/** CodeLens Desktop's own pages (D175). Whether this is the desktop is known
+ * where the dashboard runs, not when its image is built, so this part of the
+ * sidebar renders per request. */
+async function LocalNav() {
+  await connection();
+  if (!isLocal()) return null;
+  return <NavLink href="/settings" label="Settings" match={["/settings"]} icon={<SettingsIcon />} />;
 }
