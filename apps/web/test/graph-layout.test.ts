@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { COLUMN_WIDTH, layout, type LayoutNode, ROW_HEIGHT } from "@/lib/graph-layout";
+import {
+  COLUMN_WIDTH,
+  layout,
+  type LayoutNode,
+  neighbourhood,
+  ROW_HEIGHT,
+} from "@/lib/graph-layout";
 
 const node = (id: string, extra: Partial<LayoutNode> = {}): LayoutNode => ({
   id,
@@ -52,5 +58,22 @@ describe("layout", () => {
 
   it("handles an empty graph", () => {
     expect(layout([], [])).toEqual([]);
+  });
+});
+
+describe("neighbourhood", () => {
+  const edges = [
+    { source: "caller", target: "seed" },
+    { source: "seed", target: "callee" },
+    { source: "other", target: "callee" },
+  ];
+
+  it("is the node and everything one edge away, either direction", () => {
+    expect([...neighbourhood("seed", edges)].sort()).toEqual(["callee", "caller", "seed"]);
+    expect([...neighbourhood("callee", edges)].sort()).toEqual(["callee", "other", "seed"]);
+  });
+
+  it("is just the node when nothing touches it", () => {
+    expect([...neighbourhood("alone", edges)]).toEqual(["alone"]);
   });
 });

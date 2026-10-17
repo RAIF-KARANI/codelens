@@ -61,3 +61,14 @@ export function layout(nodes: LayoutNode[], edges: LayoutEdge[]): Placed[] {
   });
   return placed;
 }
+
+/** A node and the nodes one edge away from it, either way: what hovering or
+ * focusing a node in the graph lights up. */
+export function neighbourhood(id: string, edges: LayoutEdge[]): Set<string> {
+  const around = new Set([id]);
+  for (const e of edges) {
+    if (e.source === id) around.add(e.target);
+    if (e.target === id) around.add(e.source);
+  }
+  return around;
+}
