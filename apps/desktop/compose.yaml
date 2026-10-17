@@ -154,9 +154,15 @@ services:
       LOCAL_APP_KEY: ${CODELENS_APP_KEY:-}
       API_URL: http://api:8000
       API_JWT_SECRET: ${API_JWT_SECRET:?}
+      # The app's control API (D175): Settings asks it to change codelens.env.
+      # On the host's loopback; the key is new every launch, like the app's.
+      CODELENS_CONTROL_URL: http://host.docker.internal:${CODELENS_CONTROL_PORT:-0}
+      CODELENS_CONTROL_KEY: ${CODELENS_CONTROL_KEY:-}
     ports:
       # Loopback only, IPv4: the app's window opens http://127.0.0.1:<port>.
       - "127.0.0.1:${CODELENS_WEB_PORT:-0}:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       api:
         condition: service_healthy

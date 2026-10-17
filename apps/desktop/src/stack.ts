@@ -145,7 +145,13 @@ export type Stack = {
 /** What one launch adds: the dashboard's port and key. The key is new every
  * launch and only ever in memory and in the containers' environment, never on
  * disk (D147). */
-export type Launch = { port: number; appKey: string };
+export type Launch = {
+  port: number;
+  appKey: string;
+  /** The app's control API for the dashboard's server (D175), once started. */
+  controlPort?: number;
+  controlKey?: string;
+};
 
 /** A new launch: a free port and a new key. */
 export async function newLaunch(): Promise<Launch> {
@@ -181,6 +187,9 @@ export function composeEnv(stack: Stack, launch?: Launch): Record<string, string
     CODELENS_WORKER_IMAGE: stack.images.worker,
     CODELENS_WEB_IMAGE: stack.images.web,
     ...(launch && { CODELENS_WEB_PORT: String(launch.port), CODELENS_APP_KEY: launch.appKey }),
+    ...(launch?.controlPort && launch.controlKey
+      ? { CODELENS_CONTROL_PORT: String(launch.controlPort), CODELENS_CONTROL_KEY: launch.controlKey }
+      : {}),
   };
 }
 

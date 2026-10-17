@@ -16,7 +16,8 @@ pnpm dev                     # http://localhost:3000
 
 It needs the API running. With `LOCAL_MODE=true` (CodeLens Desktop) nobody signs in
 either, but every request must come from the desktop app's window: a loopback host and
-the launch's key in a cookie (`src/proxy.ts`, `LOCAL_APP_KEY`). With `DEMO_MODE=true` (and the API in demo mode too) nobody
+the launch's key in a cookie (`src/proxy.ts`, `LOCAL_APP_KEY`), and `/settings` changes
+CodeLens's settings through the app (`lib/control.ts`). With `DEMO_MODE=true` (and the API in demo mode too) nobody
 signs in, every visitor sees the demo's repos read-only, and Re-index and 👍/👎 are
 hidden ([`docs/demo.md`](../../docs/demo.md)).
 

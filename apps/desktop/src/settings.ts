@@ -12,9 +12,16 @@ export type DesktopSettings = {
   /** The first-run wizard got to the end once (step 5): later starts go
    * straight to the dashboard, and what breaks later gets the status pages. */
   setupDone: boolean;
+  /** The App's install page, from the wizard (shown in Settings). */
+  installUrl: string | null;
 };
 
-export const DEFAULTS: DesktopSettings = { askedStartAtLogin: false, paused: false, setupDone: false };
+export const DEFAULTS: DesktopSettings = {
+  askedStartAtLogin: false,
+  paused: false,
+  setupDone: false,
+  installUrl: null,
+};
 
 /** The settings, or the defaults for anything missing or unreadable: a broken
  * file never stops the app. */
@@ -28,6 +35,7 @@ export async function loadSettings(home: string): Promise<DesktopSettings> {
         typeof raw.askedStartAtLogin === "boolean" ? raw.askedStartAtLogin : DEFAULTS.askedStartAtLogin,
       paused: typeof raw.paused === "boolean" ? raw.paused : DEFAULTS.paused,
       setupDone: typeof raw.setupDone === "boolean" ? raw.setupDone : DEFAULTS.setupDone,
+      installUrl: typeof raw.installUrl === "string" ? raw.installUrl : DEFAULTS.installUrl,
     };
   } catch {
     return { ...DEFAULTS };

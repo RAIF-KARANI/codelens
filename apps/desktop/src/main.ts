@@ -12,7 +12,7 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { appendFile, readFile, rm } from "node:fs/promises";
+import { appendFile, readFile, rm, writeFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { join } from "node:path";
 
@@ -31,6 +31,8 @@ import {
 
 import { APP_KEY_COOKIE } from "./key.js";
 import { ServiceLogs } from "./logs.js";
+import { applyChanges, checkChanges, readSettings, type SettingsView, WINDOWS } from "./appsettings.js";
+import { startControl } from "./control.js";
 import { firstRun } from "./firstrun.js";
 import { appName, createApp, hasApp, runDoctor } from "./githubapp.js";
 import {
@@ -46,6 +48,7 @@ import {
 } from "./installers.js";
 import { machineChecks } from "./machine.js";
 import { missingModels, ollamaTags, pullModel, wantedModels } from "./models.js";
+import { prepareOllamaForLong, readyForLong, userEnvironment } from "./ollamaenv.js";
 import { DEFAULTS, type DesktopSettings, loadSettings, saveSettings } from "./settings.js";
 import {
   APP_DIR,
@@ -61,6 +64,7 @@ import {
   type Launch,
   LOCAL_IMAGES,
   newLaunch,
+  newSecret,
   PROJECT,
   readImages,
   restartServices,
@@ -112,6 +116,11 @@ let stopped = false;
 let toldAboutTray = false;
 /** A start failed for a reason Docker coming back won't fix: wait for Try again. */
 let waitForUser = false;
+/** Settings are being applied (codelens.env written, services recreated):
+ * the supervisor leaves the stack alone meanwhile. */
+let applying = false;
+/** The control API's port and key (D175), for the dashboard's server. */
+let control: { port: number; key: string; close(): Promise<void> } | null = null;
 let health: Health | null = null;
 let logsChild: ChildProcess | null = null;
 const backoff = new Backoff();
@@ -251,6 +260,10 @@ async function bringUp(): Promise<void> {
       ),
     );
     launch ??= await newLaunch();
+    if (control) {
+      launch.controlPort = control.port;
+      launch.controlKey = control.key;
+    }
     const started = performance.now();
     await log(`starting the stack on port ${launch.port} (images ${cached ? "cached" : "to pull"})`);
     const home = stack.home;
@@ -370,7 +383,7 @@ async function ollamaAnswers(): Promise<boolean> {
 }
 
 async function tick(): Promise<void> {
-  if (!stack || !launch || ticking || starting || quitting) return;
+  if (!stack || !launch || ticking || starting || quitting || applying) return;
   ticking = true;
   try {
     const dockerNow = await dockerState().catch(() => "stopped" as const);
@@ -465,6 +478,63 @@ function updateTray(): void {
   );
 }
 
+// --- Settings (the dashboard asks through the control API, D175)
+
+async function currentSettings(home: string): Promise<SettingsView> {
+  const envText = await readFile(join(home, "codelens.env"), "utf8");
+  const pulled: Record<string, boolean> = {};
+  try {
+    const wanted = wantedModels(envText);
+    const missing = missingModels(await ollamaTags(), wanted);
+    for (const model of wanted) pulled[model] = !missing.includes(model);
+  } catch {
+    // Ollama not answering: every model reads as not pulled.
+  }
+  return readSettings(envText, {
+    pulled,
+    ollamaReadyForLong: readyForLong(await userEnvironment()),
+    installUrl: settings.installUrl,
+  });
+}
+
+/** Writes codelens.env and recreates the services that read it; the
+ * supervisor waits meanwhile. The dashboard's own container isn't among them
+ * (its settings don't change), so the request that asked survives. */
+async function applySettings(home: string, update: (envText: string) => string): Promise<void> {
+  if (!stack || !launch) throw new Error("CodeLens isn't running yet");
+  applying = true;
+  try {
+    const envFile = join(home, "codelens.env");
+    await writeFile(envFile, update(await readFile(envFile, "utf8")), { mode: 0o600 });
+    const run = await up(stack, launch, (chunk) => void appendFile(join(home, "logs", "compose.log"), chunk));
+    if (run.code !== 0) throw new Error("the services didn't come back healthy: see logs/compose.log");
+  } finally {
+    applying = false;
+  }
+}
+
+function settingsApi(home: string) {
+  return {
+    getSettings: () => currentSettings(home),
+    saveSettings: async (body: unknown) => {
+      const checked = checkChanges(body);
+      if (!checked.ok) return { errors: checked.errors };
+      await log(`settings: ${Object.keys(checked.changes).join(", ")} changed`);
+      await applySettings(home, (text) => applyChanges(text, checked.changes));
+      return { settings: await currentSettings(home) };
+    },
+    prepareLongWindow: async () => {
+      if (!readyForLong(await userEnvironment())) {
+        await log("settings: preparing Ollama for a 16k window, and restarting it");
+        await prepareOllamaForLong(ollamaAppExe());
+        for (let i = 0; i < 30 && !(await ollamaAnswers()); i++) await new Promise((r) => setTimeout(r, 1000));
+      }
+      await applySettings(home, (text) => applyChanges(text, { contextWindow: WINDOWS.long }));
+      return currentSettings(home);
+    },
+  };
+}
+
 // --- the spike's numbers
 
 /** The idle-memory reading: the app's own processes (Electron's working sets)
@@ -507,6 +577,11 @@ async function start(): Promise<void> {
   tray.on("click", showWindow);
   updateTray();
 
+  // The control API first: the dashboard's container gets its port and key.
+  const controlKey = newSecret();
+  const started = await startControl(settingsApi(home), controlKey, (message) => void log(message));
+  control = { port: started.port, key: controlKey, close: started.close };
+
   // Docker installed after this process's PATH was set: use its own docker.exe.
   const cli = dockerCli();
   if (cli && (await dockerState()) === "missing") useDocker(cli);
@@ -541,8 +616,12 @@ async function start(): Promise<void> {
         missingModels(await ollamaTags(), wantedModels(await readFile(join(home, "codelens.env"), "utf8"))),
       pullModel: (name, onProgress) => pullModel(name, onProgress),
       hasApp: async () => hasApp(await readFile(join(home, "codelens.env"), "utf8")),
-      createApp: (openBrowser) =>
-        createApp(stack as Stack, appName(userInfo().username), openBrowser, (line) => void log(line)),
+      createApp: async (openBrowser) => {
+        const created = await createApp(stack as Stack, appName(userInfo().username), openBrowser, (line) => void log(line));
+        settings = { ...settings, installUrl: created.installUrl };
+        await saveSettings(home, settings);
+        return created;
+      },
       openExternal: (url) => void shell.openExternal(url),
       doctor: () => runDoctor(stack as Stack),
       resumeAfterRestart: (on) => resumeAfterRestart(app.isPackaged ? process.execPath : null, on),
@@ -579,6 +658,7 @@ if (!app.requestSingleInstanceLock()) {
     event.preventDefault();
     stopped = true;
     logsChild?.kill();
+    void control?.close();
     const begun = performance.now();
     void stop(stack).then(async (run) => {
       await log(`stack stopped (exit ${run.code}) in ${seconds(performance.now() - begun)}`);

@@ -14,18 +14,19 @@ describe("desktop settings", () => {
   afterEach(async () => rm(home, { recursive: true, force: true }));
 
   it("starts from the defaults: not asked yet, not paused", async () => {
-    expect(await loadSettings(home)).toEqual({ askedStartAtLogin: false, paused: false, setupDone: false });
+    expect(await loadSettings(home)).toEqual(DEFAULTS);
   });
 
   it("round-trips", async () => {
-    await saveSettings(home, { askedStartAtLogin: true, paused: true, setupDone: true });
-    expect(await loadSettings(home)).toEqual({ askedStartAtLogin: true, paused: true, setupDone: true });
+    const all = { askedStartAtLogin: true, paused: true, setupDone: true, installUrl: "https://github.com/apps/x/installations/new" };
+    await saveSettings(home, all);
+    expect(await loadSettings(home)).toEqual(all);
   });
 
   it("falls back to the defaults for a broken file or wrong types", async () => {
     await writeFile(join(home, "desktop.json"), "{not json");
     expect(await loadSettings(home)).toEqual(DEFAULTS);
     await writeFile(join(home, "desktop.json"), '{"paused": "yes", "askedStartAtLogin": true}');
-    expect(await loadSettings(home)).toEqual({ askedStartAtLogin: true, paused: false, setupDone: false });
+    expect(await loadSettings(home)).toEqual({ ...DEFAULTS, askedStartAtLogin: true });
   });
 });
