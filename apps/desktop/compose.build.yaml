@@ -30,3 +30,7 @@ services:
   web:
     build:
       context: ../web
+  tools:
+    build:
+      context: ../..
+      dockerfile: services/api/Dockerfile

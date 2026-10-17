@@ -16,6 +16,10 @@ from core.github.manifest import EVENTS, PERMISSIONS, AppCredentials
 from core.github.register import Registration
 
 REGISTER_TIMEOUT_S = 15 * 60
+# With --no-browser, the line that carries the start link (CodeLens Desktop reads it).
+START_URL_PREFIX = "CODELENS_START_URL="
+# ... and, once the App exists, the line with its install link.
+INSTALL_URL_PREFIX = "CODELENS_INSTALL_URL="
 
 
 class RegistrationFailed(Exception):
@@ -30,6 +34,9 @@ def create_app(
     secrets_dir: Path,
     org: str | None = None,
     port: int = 8765,
+    webhook_active: bool = True,
+    bind: str = "127.0.0.1",
+    open_browser: bool = True,
 ) -> tuple[AppCredentials, Path, Path]:
     """Run the manifest flow in the user's browser; returns the saved credentials
     and where they were written (the key, the env file). Also used by
@@ -49,12 +56,20 @@ def create_app(
         secrets_dir=secrets_dir,
         org=org,
         port=port,
+        webhook_active=webhook_active,
+        bind=bind,
     )
     registration.start()
     # The link carries the launch token: only a browser opened with it gets
     # the page (D132). Printed too, for when no browser opens by itself.
-    print(f"Open {registration.start_url} to create the App (opening your browser) ...", flush=True)
-    webbrowser.open(registration.start_url)
+    if open_browser:
+        url = registration.start_url
+        print(f"Open {url} to create the App (opening your browser) ...", flush=True)
+        webbrowser.open(registration.start_url)
+    else:
+        # For CodeLens Desktop, which opens the user's browser itself: one
+        # line it can find in the output.
+        print(f"{START_URL_PREFIX}{registration.start_url}", flush=True)
     finished = registration.done.wait(REGISTER_TIMEOUT_S)
     registration.stop()
     if not finished:
@@ -73,10 +88,15 @@ def register(args: argparse.Namespace, settings: Settings) -> int:
             secrets_dir=args.secrets_dir,
             org=args.org,
             port=args.port,
+            webhook_active=not args.webhook_inactive,
+            bind=args.bind,
+            open_browser=not args.no_browser,
         )
     except RegistrationFailed as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    if args.no_browser:
+        print(f"{INSTALL_URL_PREFIX}{creds.html_url}/installations/new", flush=True)
     print(
         f"\nCreated {creds.slug} (App id {creds.app_id}).\n"
         f"  private key  {key_path}\n"
@@ -125,6 +145,15 @@ def main() -> None:
     reg.add_argument("--org", help="create it under this organisation instead of your account")
     reg.add_argument("--port", type=int, default=8765, help="local callback port (default 8765)")
     reg.add_argument("--secrets-dir", type=Path, default=Path("secrets"))
+    # For CodeLens Desktop (D174): its App polls, it runs this in a container,
+    # and it opens the browser itself.
+    reg.add_argument(
+        "--webhook-inactive", action="store_true", help="create the App with its webhook off"
+    )
+    reg.add_argument("--bind", default="127.0.0.1", help="the address to listen on")
+    reg.add_argument(
+        "--no-browser", action="store_true", help=f"print the link as {START_URL_PREFIX}<url>"
+    )
     sub.add_parser("check", help="verify the App's credentials and installations")
     args = parser.parse_args()
 

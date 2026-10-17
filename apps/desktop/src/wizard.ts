@@ -8,13 +8,15 @@
 import type { Check } from "./machine.js";
 import { type Button, escapeHtml } from "./window.js";
 
-export type StepId = "machine" | "docker" | "ollama" | "start";
+export type StepId = "machine" | "docker" | "ollama" | "models" | "app" | "start";
 export type Mark = "todo" | "active" | "done" | "warn" | "failed";
 
 export const STEPS: { id: StepId; label: string }[] = [
   { id: "machine", label: "Check this computer" },
   { id: "docker", label: "Docker Desktop" },
   { id: "ollama", label: "Ollama" },
+  { id: "models", label: "Models" },
+  { id: "app", label: "Your GitHub App" },
   { id: "start", label: "Start CodeLens" },
 ];
 

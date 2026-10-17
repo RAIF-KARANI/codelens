@@ -10,6 +10,7 @@
 
 import argparse
 import asyncio
+import json
 import subprocess
 import sys
 from collections.abc import Callable, Iterable, Sequence
@@ -100,6 +101,35 @@ def doctor(
     checks.append(check_relay(read_env(env_path).get("SMEE_URL"), ours))
     checks += [*check_ports(ours, port_free), check_stack(api_url, get)]
     return checks
+
+
+def desktop_doctor(
+    settings: Settings,
+    *,
+    get: Fetcher = fetch,
+    github_app: Callable[[Settings], Check] | None = None,
+) -> list[Check]:
+    """What CodeLens Desktop's wizard asks the stack (Phase 11 step 5b, D174),
+    run inside its API container: Ollama and the models, the App's settings
+    and the App on GitHub. The rest of `doctor` is the app's own business
+    there (Windows, Docker, the GPU, ports) or doesn't apply (git, the relay,
+    .env), so it isn't asked."""
+    checks = check_ollama(settings, get)
+    github = check_github_settings(settings)
+    checks += github
+    if all(c.status is not Status.FAIL for c in github if c.name == "GitHub App settings"):
+        checks.append((github_app or _github_app_sync)(settings))
+    return checks
+
+
+def as_json(checks: Iterable[Check]) -> str:
+    """The checks as JSON: [{name, status, detail, fix}], for a program to show."""
+    return json.dumps(
+        [
+            {"name": c.name, "status": str(c.status), "detail": c.detail, "fix": c.fix}
+            for c in checks
+        ]
+    )
 
 
 def _github_app_sync(settings: Settings) -> Check:
@@ -219,13 +249,25 @@ def main() -> None:
         p = sub.add_parser(name, help=help_)
         p.add_argument("--env-file", type=Path, default=Path(".env"))
         p.add_argument("--api-url", default="http://localhost:8000")
+        if name == "doctor":
+            p.add_argument(
+                "--desktop", action="store_true", help="only what CodeLens Desktop asks the stack"
+            )
+            p.add_argument("--json", action="store_true", help="the checks as JSON, nothing else")
         if name == "setup":
             p.add_argument("--yes", action="store_true", help="pull missing models without asking")
     args = parser.parse_args()
 
     if args.command == "doctor":
+        if args.desktop:
+            checks = desktop_doctor(get_settings())
+        else:
+            checks = doctor(get_settings(), env_path=args.env_file, api_url=args.api_url)
+        if args.json:
+            print(as_json(checks))
+            sys.exit(1 if any(c.status is Status.FAIL for c in checks) else 0)
         print("CodeLens doctor: checking this machine (nothing is changed)\n")
-        sys.exit(report(doctor(get_settings(), env_path=args.env_file, api_url=args.api_url)))
+        sys.exit(report(checks))
 
     root = args.env_file.resolve().parent
     print("CodeLens setup: each step is skipped if it's already done\n")

@@ -12,7 +12,8 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { appendFile, rm } from "node:fs/promises";
+import { appendFile, readFile, rm } from "node:fs/promises";
+import { userInfo } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -31,6 +32,7 @@ import {
 import { APP_KEY_COOKIE } from "./key.js";
 import { ServiceLogs } from "./logs.js";
 import { firstRun } from "./firstrun.js";
+import { appName, createApp, hasApp, runDoctor } from "./githubapp.js";
 import {
   dockerCli,
   dockerDesktopExe,
@@ -43,6 +45,7 @@ import {
   runInstaller,
 } from "./installers.js";
 import { machineChecks } from "./machine.js";
+import { missingModels, ollamaTags, pullModel, wantedModels } from "./models.js";
 import { DEFAULTS, type DesktopSettings, loadSettings, saveSettings } from "./settings.js";
 import {
   APP_DIR,
@@ -534,6 +537,14 @@ async function start(): Promise<void> {
       launch: launchProgram,
       dockerDesktopExe,
       ollamaAppExe,
+      missingModels: async () =>
+        missingModels(await ollamaTags(), wantedModels(await readFile(join(home, "codelens.env"), "utf8"))),
+      pullModel: (name, onProgress) => pullModel(name, onProgress),
+      hasApp: async () => hasApp(await readFile(join(home, "codelens.env"), "utf8")),
+      createApp: (openBrowser) =>
+        createApp(stack as Stack, appName(userInfo().username), openBrowser, (line) => void log(line)),
+      openExternal: (url) => void shell.openExternal(url),
+      doctor: () => runDoctor(stack as Stack),
       resumeAfterRestart: (on) => resumeAfterRestart(app.isPackaged ? process.execPath : null, on),
       removeFile: (path) => rm(path, { force: true }),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
