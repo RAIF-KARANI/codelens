@@ -13,8 +13,10 @@ export type ReviewRowData = ReviewSummary & { repo_full_name?: string };
  * repo's page); without it, each row names its own repo in a column. */
 export function ReviewTable({ reviews, repoName }: { reviews: ReviewRowData[]; repoName?: string }) {
   const showRepo = repoName === undefined;
+  // `relative` keeps screen-reader-only text (positioned absolutely) inside the
+  // scroll box; otherwise it can widen the whole page on a phone.
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-card">
+    <div className="relative overflow-x-auto rounded-lg border border-border bg-card">
       <table className="w-full whitespace-nowrap text-left text-sm">
         <thead className="bg-muted text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
@@ -76,7 +78,7 @@ function ReviewRow({
               href={pullRequestUrl(repoName, review.pr_number)}
               target="_blank"
               rel="noreferrer"
-              className="hover:underline"
+              className="inline-flex min-h-6 items-center hover:underline"
             >
               PR #{review.pr_number}
             </a>
@@ -89,7 +91,7 @@ function ReviewRow({
                 href={commitUrl(repoName, review.head_sha)}
                 target="_blank"
                 rel="noreferrer"
-                className="hover:underline"
+                className="inline-flex min-h-6 items-center hover:underline"
               >
                 {shortSha(review.head_sha)}
               </a>

@@ -92,10 +92,11 @@
      --primary; dark: one step darker than --primary, which is too light to fill). */
   --chart-1: #6e56cf;
 
-  /* Code changes, in diffs and the graph. */
-  --added: #059669;
+  /* Code changes, in diffs and the graph. Dark enough for small text on
+     their own tint (4.5:1, checked by e2e/a11y.spec.ts). */
+  --added: #047857;
   --added-soft: rgb(16 185 129 / 0.13);
-  --deleted: #dc2626;
+  --deleted: #b91c1c;
   --deleted-soft: rgb(239 68 68 / 0.11);
 }
 
@@ -213,5 +214,19 @@
   button:not(:disabled),
   [role="button"]:not(:disabled) {
     cursor: pointer;
+  }
+}
+
+/* Reduced motion (the system setting): no pulsing, spinning or sliding, and
+   state changes land at once. Everything that moves here only decorates a
+   change the page also says in words, so nothing is lost (D162). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

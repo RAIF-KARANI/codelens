@@ -34,3 +34,8 @@ data/
 
 # Eval run outputs (per-case JSONL, scorecards); summaries go in evals/RESULTS.md
 evals/results/
+
+# Playwright (apps/web/e2e)
+test-results/
+playwright-report/
+blob-report/

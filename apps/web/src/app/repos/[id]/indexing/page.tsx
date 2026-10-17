@@ -68,7 +68,7 @@ async function Indexing({ params, searchParams }: PageProps<"/repos/[id]/indexin
           </StateMessage>
         )
       ) : (
-        <div className="mt-3 overflow-x-auto rounded-lg border border-border bg-card">
+        <div className="relative mt-3 overflow-x-auto rounded-lg border border-border bg-card">
           <table className="w-full whitespace-nowrap text-left text-sm">
             <thead className="bg-muted text-xs uppercase tracking-wide text-muted-foreground">
               <tr>

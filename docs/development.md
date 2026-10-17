@@ -286,7 +286,11 @@ pnpm install
 pnpm dev                      # http://localhost:3000
 pnpm test                     # vitest
 pnpm lint && pnpm build
+pnpm e2e                      # Playwright, against a database loaded with the demo export
 ```
+
+The end-to-end tests need that database first; [`apps/web/e2e/README.md`](../apps/web/e2e/README.md)
+has the two commands, and how to update the stored screenshots from Windows or macOS.
 
 The UI is built from shadcn/ui components copied into `src/components/ui/` and the theme's tokens in
 `src/app/globals.css` (planning-v2.md D140–D141). To add a component:
