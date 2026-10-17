@@ -4,6 +4,7 @@ integration tests use the test database and fake models (services/conftest.py)."
 import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -13,7 +14,7 @@ import worker.tasks
 from core import jobs
 from core.config import Settings
 from core.db import create_engine
-from core.indexing import IndexingError, IndexLocked
+from core.indexing import IndexingError, IndexLocked, indexer
 from core.review.pipeline import ReviewError
 from worker.celery_app import TASK_SOFT_TIME_LIMIT_S, TASK_TIME_LIMIT_S, celery_app
 from worker.tasks import LOCK_MAX_RETRIES, embed_repo, index_repo, ping, review
@@ -169,6 +170,65 @@ def test_index_refuses_a_repo_it_cannot_reach(sql: Sql, worker_on_fakes: Any) ->
     assert "not covered by any installation" in str(uninstalled.result)
     assert isinstance(no_checkout.result, IndexingError)
     assert "no local checkout" in str(no_checkout.result)
+    # Each repo is left 'failed', with a failed run saying why (D163).
+    rows = sql(
+        "SELECT r.status, i.status AS run_status, i.error FROM repos r"
+        " JOIN index_runs i ON i.repo_id = r.id WHERE r.id IN (:a, :b) ORDER BY r.id",
+        a=github.id,
+        b=local.id,
+    )
+    assert [(r.status, r.run_status) for r in rows] == [("failed", "failed")] * 2
+    assert [r.error for r in rows] == [str(uninstalled.result), str(no_checkout.result)]
+
+
+@pytest.mark.integration
+def test_a_failure_before_the_run_fails_the_claimed_repo(
+    sql: Sql, tmp_path: Path, worker_on_fakes: Any
+) -> None:
+    # D163: a re-index claims the repo ('pending'); a failure before the
+    # indexer opened a run used to leave it there, and the dashboard's
+    # Re-index button disabled for good.
+    gone = tmp_path / "none"
+    [repo] = sql(
+        "INSERT INTO repos (full_name, source, local_path, status)"
+        " VALUES ('local/none', 'local', :path, 'pending') RETURNING id",
+        path=str(gone),
+    )
+
+    result = index_repo.apply(args=(repo.id,))
+
+    assert isinstance(result.result, IndexingError)
+    [row] = sql("SELECT status FROM repos WHERE id = :id", id=repo.id)
+    assert row.status == "failed"
+    [run] = sql("SELECT status, finished_at, error FROM index_runs WHERE repo_id = :id", id=repo.id)
+    assert run.status == "failed"
+    assert run.finished_at is not None
+    assert run.error == f"not a directory: {gone.resolve()}"
+
+
+@pytest.mark.integration
+def test_a_failure_inside_the_run_is_recorded_once(
+    shop: Any, sql: Sql, worker_on_fakes: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Once a run exists the indexer records its own failure: the task adds
+    # no second failed run.
+    async def broken(*args: Any) -> None:
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(indexer, "_write_graph", broken)
+    sql("UPDATE repos SET status = 'pending' WHERE id = :id", id=shop.repo_id)
+
+    result = index_repo.apply(args=(shop.repo_id,))
+
+    assert isinstance(result.result, RuntimeError)
+    [row] = sql("SELECT status FROM repos WHERE id = :id", id=shop.repo_id)
+    assert row.status == "failed"
+    runs = sql(
+        "SELECT status, error FROM index_runs WHERE repo_id = :id ORDER BY id", id=shop.repo_id
+    )
+    # The fixture's run, then this one's.
+    assert [r.status for r in runs] == ["succeeded", "failed"]
+    assert "disk full" in runs[-1].error
 
 
 @pytest.mark.integration
@@ -223,7 +283,11 @@ def test_jobs_for_an_account_no_longer_covered_mint_no_token(
 
 @pytest.mark.integration
 def test_index_retries_while_another_run_holds_the_lock(
-    shop: Any, settings: Settings, monkeypatch: pytest.MonkeyPatch, worker_on_fakes: Any
+    shop: Any,
+    sql: Sql,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    worker_on_fakes: Any,
 ) -> None:
     attempts = 0
     original = worker.tasks._index
@@ -253,6 +317,12 @@ def test_index_retries_while_another_run_holds_the_lock(
 
     assert attempts == 2
     assert isinstance(result.result, IndexLocked)
+    # The run holding the lock owns the repo's status: a locked-out attempt
+    # records no failure of its own (D163).
+    [row] = sql("SELECT status FROM repos WHERE id = :id", id=shop.repo_id)
+    assert row.status == "ready"
+    runs = sql("SELECT status FROM index_runs WHERE repo_id = :id", id=shop.repo_id)
+    assert [r.status for r in runs] == ["succeeded"]
 
 
 @pytest.mark.integration

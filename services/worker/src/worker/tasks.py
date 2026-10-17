@@ -15,16 +15,23 @@ from pathlib import Path
 from typing import Any
 
 from redis.asyncio import Redis
-from sqlalchemy import func, select, update
+from sqlalchemy import func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from core import jobs
 from core.config import Settings, get_settings
 from core.db import create_engine
-from core.db.models import Finding, Installation, Repo, Review
+from core.db.models import Finding, IndexRun, Installation, Repo, Review
 from core.diff.git import GitError, resolve
 from core.embedding import embed_repository
-from core.enums import FindingStatus, RepoSource, ReviewSource, ReviewStatus
+from core.enums import (
+    FindingStatus,
+    IndexRunStatus,
+    RepoSource,
+    RepoStatus,
+    ReviewSource,
+    ReviewStatus,
+)
 from core.github import (
     GitHubClient,
     GitHubError,
@@ -110,12 +117,19 @@ async def _index(settings: Settings, repo_id: int) -> dict[str, Any]:
     engine = create_engine(settings.database_url, pooled=False)
     try:
         repo = await _load_repo(engine, repo_id)
-        if repo.source is RepoSource.GITHUB:
-            report = await _index_github(settings, engine, repo_id, repo)
-        elif repo.local_path:
-            report = await index_repository(engine, Path(repo.local_path), name=repo.full_name)
-        else:
-            raise IndexingError(f"{repo.full_name} has no local checkout to index")
+        last_run = await _latest_index_run(engine, repo_id)
+        try:
+            if repo.source is RepoSource.GITHUB:
+                report = await _index_github(settings, engine, repo_id, repo)
+            elif repo.local_path:
+                report = await index_repository(engine, Path(repo.local_path), name=repo.full_name)
+            else:
+                raise IndexingError(f"{repo.full_name} has no local checkout to index")
+        except IndexLocked:
+            raise  # the run holding the lock sets the repo's status; the task retries
+        except Exception as exc:
+            await _fail_before_run(engine, repo_id, last_run, str(exc) or repr(exc))
+            raise
     finally:
         await engine.dispose()
     return {
@@ -124,6 +138,43 @@ async def _index(settings: Settings, repo_id: int) -> dict[str, Any]:
         "commit_sha": report.commit_sha,
         "wrote_graph": report.wrote_graph,
     }
+
+
+async def _latest_index_run(engine: AsyncEngine, repo_id: int) -> int:
+    async with engine.connect() as conn:
+        latest = await conn.scalar(select(func.max(IndexRun.id)).where(IndexRun.repo_id == repo_id))
+    return latest or 0
+
+
+async def _fail_before_run(engine: AsyncEngine, repo_id: int, last_run: int, error: str) -> None:
+    """Record a failure that came before the indexer opened a run: no
+    checkout, a path that isn't a directory, no installation, a failed fetch.
+    Once a run exists the indexer records its own failure (and sets the repo
+    'failed'); before that nothing did, so a re-index's 'pending' claim, and
+    the disabled button with it, stayed for good (D163). The failed run
+    carries the error, so the Indexing tab says why.
+
+    A run newer than `last_run` means the indexer got that far, and has
+    already written how it ended."""
+    async with engine.begin() as conn:
+        opened = await conn.scalar(
+            select(IndexRun.id).where(IndexRun.repo_id == repo_id, IndexRun.id > last_run)
+        )
+        if opened is not None:
+            return
+        await conn.execute(
+            insert(IndexRun).values(
+                repo_id=repo_id,
+                status=IndexRunStatus.FAILED,
+                finished_at=func.now(),
+                error=error,
+            )
+        )
+        await conn.execute(
+            update(Repo)
+            .where(Repo.id == repo_id)
+            .values(status=RepoStatus.FAILED, updated_at=func.now())
+        )
 
 
 async def _index_github(

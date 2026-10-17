@@ -840,6 +840,10 @@ engine (D7): each task runs its own event loop, and a pooled connection can't cr
     crashed.
 - **Lock contention:** `index_repo` catches `IndexLocked` and retries every 30 s, for up to
   30 min, keeping its place in the chain (D89).
+- **A failure before the run is recorded too** (D163). The indexer records a run's failure
+  once the run exists; one before it (no checkout, not a directory, no installation, a
+  failed fetch) is recorded by `index_repo`: a failed index run with the error, and the
+  repo set `failed`, so a re-index's `pending` claim never outlives the job.
 - **`worker_prefetch_multiplier = 1`**, so one worker can't hoard long jobs.
 - **Q17, answered (D107):** `gpu` is FIFO, but embedding gives way every slice, so a
   review waits for at most one (measured live: 6 s).
@@ -1197,7 +1201,8 @@ How they work:
   endpoint, so it reads the session itself and lets the API check access. Its answer
   is a toast; API errors (`demo_mode`, `not_indexable`, `queue_unavailable`) also stay
   as a message under the button. While the repo is pending the button says Queued…,
-  while indexing Indexing….
+  while indexing Indexing…, unless that status is older than the API's `STALE_CLAIM`
+  (1 h): the API would take the claim again, so the button works again (D163).
 - **Every empty and error state is a `StateMessage`** (`components/state-message.tsx`,
   D161): an icon, what happened, what to do, and a link that does it (Show all
   reviews, Back to the newest, How to install it). `not-found.tsx` is also what a repo
