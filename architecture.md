@@ -2,7 +2,7 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-16: all of v1, Phases 1–9 (through the public demo, hardening, running your own CodeLens, and the security fixes). v2 is planned, not built.
+> follows. It describes `main` as of 2026-10-17: all of v1, Phases 1–9 (through the public demo, hardening, running your own CodeLens, and the security fixes), and v2's Phase 10 (the dashboard rebuilt on a design system, with its end-to-end checks). Phase 11, CodeLens Desktop, is planned, not built.
 >
 > | File | Answers |
 > |---|---|
@@ -213,8 +213,9 @@ codelens/
 
 ## 4. Data model
 
-One Postgres 16 database with pgvector 0.8. Eight migrations so far (D29: one per phase,
-never edited once applied; Phase 6 has two, D114); head is `cd53acf29082`.
+One Postgres 16 database with pgvector 0.8. Nine migrations so far (D29: one per phase,
+never edited once applied; Phase 6 has two, D114, and Phase 9 one, D134); head is
+`a8d3c41f0b27`.
 
 ```mermaid
 erDiagram
@@ -1175,7 +1176,7 @@ Installations are read once per sign-in, so a new installation shows after the n
 
 **The shell (Phase 10 step 2, D154).** Every page sits in one shell (`app/layout.tsx`, `components/shell/`): a sidebar on a desktop (the logo, a search field, the navigation, your repos with a dot for their index status, then the theme toggle, your account and a collapse button), and on a phone a top bar whose menu opens the same content in a sheet. Collapsed to its icons, the sidebar is remembered like the theme: `localStorage`, the same inline script (`lib/head-script.ts`), and a desktop-only `collapsed:` variant in `globals.css`. Repo and review pages start with breadcrumbs (`components/crumbs.tsx`). **⌘K / Ctrl+K** opens a command palette (`command-palette.tsx`, cmdk): go to any repo, one of the latest reviews, or switch the theme. Its data comes from `GET /api/palette` (a session-checked route handler, like the evidence drawer's) the first time it opens.
 
-**Pages so far:**
+**Pages:**
 
 | Route | Shows |
 |---|---|
@@ -1455,9 +1456,10 @@ diagnoses a machine, `codelens setup` brings it up with the user's own App, and 
 fresh-clone rehearsal took a new checkout to a posted review (`docs/run-your-own.md` is
 the guide). Not built: a desktop app, and Windows/macOS installers for the prerequisites.
 
-**Planned in v2** (`planning-v2.md`): Phase 10 rebuilds the dashboard on a design system
-(shadcn/ui) with its own brand, and adds an overview and a cross-repo reviews list. Phase
-11 builds **CodeLens Desktop** for Windows: an Electron app (`apps/desktop`) that drives
+**v2** (`planning-v2.md`): Phase 10 is done: the dashboard is rebuilt on a design system
+(shadcn/ui) with its own brand, has an overview and a cross-repo reviews list, and is
+checked end to end in CI (D138–D162). Phase 11, not built yet, makes **CodeLens Desktop**
+for Windows: an Electron app (`apps/desktop`) that drives
 its own Docker Compose project (with the dashboard as a `web` container), learns about
 PRs by polling GitHub (`core/github/poll.py`), runs the dashboard in a no-sign-in local
 mode, and sets everything up from a first-run wizard. Some of the gaps below close on the

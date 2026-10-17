@@ -135,8 +135,10 @@ Every run, with its setup and caveats: [`evals/RESULTS.md`](evals/RESULTS.md).
   functions pinned next to the database, Supabase's transaction pooler for serverless
   connections, and rate limits at Vercel's edge. Reviews are made on the laptop and
   exported, since GPU hosting isn't free ([`docs/demo.md`](docs/demo.md)).
-- **Tested:** 360+ Python tests (unit and against real Postgres and Redis) and 65
-  dashboard tests, run in CI on every pull request.
+- **Tested:** 410+ Python tests (unit and against real Postgres and Redis), 130+
+  dashboard unit tests, and 79 browser tests (Playwright: every page and its keys,
+  accessibility with axe in both themes, phone and tablet layouts, screenshots), run in
+  CI on every pull request.
 
 ## Run it on your own repos
 
@@ -181,10 +183,10 @@ and letting a friend use it) and [`docs/e2e.md`](docs/e2e.md) (running and watch
 v1 is done. v2 ([`planning-v2.md`](planning-v2.md)) keeps both ways of using CodeLens and
 improves each:
 
-- **On the web:** a new dashboard UI on a design system with its own brand, a home page,
-  reviews across repos, and a review page that puts the findings first. It ships to the
-  live demo and to everyone running CodeLens.
-- **As software:** **CodeLens Desktop**, a Windows installer. A first-run wizard sets up
+- **On the web (done):** the dashboard is rebuilt on a design system with its own brand,
+  with an overview, reviews across repos, a review page that puts the findings first,
+  and accessibility and layout checks in CI. The live demo runs it.
+- **As software (next):** **CodeLens Desktop**, a Windows installer. A first-run wizard sets up
   Docker Desktop, Ollama, the models and your own GitHub App, with no terminal. It depends
   on nothing of this project's owner: your App, your machine, your data. It learns about
   pull requests by polling GitHub, so no webhook relay is needed.
@@ -199,7 +201,7 @@ Until the desktop app ships, the clone-and-run setup above is the way to run you
 | Models | Ollama: `qwen3:8b` (structured JSON output), `qwen3-embedding:0.6b` |
 | Storage and jobs | Postgres 16 with pgvector (HNSW), Redis, Celery |
 | API | FastAPI, Server-Sent Events, JWT; a GitHub App (webhooks, installation tokens) |
-| Dashboard | Next.js 16 (App Router, Server Components), React 19, Tailwind 4, React Flow |
+| Dashboard | Next.js 16 (App Router, Server Components), React 19, Tailwind 4, shadcn/ui (Radix), React Flow, Shiki; Playwright and axe for end-to-end checks |
 | Demo hosting | Vercel (dashboard and API in Mumbai), Supabase, Cloudflare DNS |
 
 ## The repository

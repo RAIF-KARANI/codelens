@@ -8,7 +8,7 @@
 > narrative, and [`architecture.md`](architecture.md) still describes what is built (it
 > changes as v2 lands).
 
-**Last updated:** 2026-10-17 · **Current position:** Phase 10 is done: steps 0–8 are merged (#58–#68). **In review:** #67, a fix: a re-index that fails before its index run no longer leaves the repo pending (D163).
+**Last updated:** 2026-10-17 · **Current position:** Phase 10 is done: steps 0–8 are merged (#58–#68), plus a fix (#67, D163): a re-index that fails before its index run no longer leaves the repo pending. **Next:** Phase 11 step 1, the desktop spike and its go/no-go.
 
 ---
 
