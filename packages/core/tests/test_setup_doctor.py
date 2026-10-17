@@ -266,12 +266,19 @@ def test_an_absolute_key_path_fails_because_containers_cant_read_it(tmp_path: Pa
 NOT_INSTALLED = "codelens-me works, but isn't installed on any repo yet"
 
 
-def test_the_desktop_asks_only_what_the_stack_can_answer() -> None:
+def test_the_desktop_asks_only_what_the_stack_can_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # CodeLens Desktop (Phase 11 step 5b): run in its API container, where
     # git, Docker, the GPU, ports and .env aren't the stack's to check.
+    # A key of its own, relative as the containers need it: not whatever
+    # secrets/ the machine running the tests has (CI has none).
+    monkeypatch.chdir(tmp_path)
+    Path("app.pem").write_text("key")
     s = settings(
         github_app_id=5,
         github_webhook_secret="w",
+        github_app_private_key_path=Path("app.pem"),
         github_allowed_accounts="me:1",
         embed_provider="fake",
     )
