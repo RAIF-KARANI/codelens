@@ -15,6 +15,7 @@ import {
   LOCAL_IMAGES,
   parseEnv,
   pinnedImages,
+  parseMemory,
   PROJECT,
 } from "../src/stack.js";
 
@@ -97,9 +98,13 @@ describe("pinnedImages", () => {
     expect(() => pinnedImages(value)).toThrow(/images\.json/);
   });
 
-  it("refuses the committed placeholder with a way forward", async () => {
-    const placeholder = JSON.parse(await readFile(join(APP_DIR, "images.json"), "utf8"));
-    expect(() => pinnedImages(placeholder)).toThrow(/--local/);
+  it("finds every committed image pinned", async () => {
+    const committed = JSON.parse(await readFile(join(APP_DIR, "images.json"), "utf8"));
+    expect(Object.keys(pinnedImages(committed))).toEqual(["api", "worker", "web"]);
+  });
+
+  it("says how to go on while none is published", () => {
+    expect(() => pinnedImages({ api: "", worker: "", web: "" })).toThrow(/--local/);
   });
 });
 
@@ -130,6 +135,12 @@ describe("compose", () => {
     expect(stopping).not.toHaveProperty("CODELENS_WEB_PORT");
   });
 
+  it("finds compose.yaml where the installed app keeps it", () => {
+    const args = composeArgs({ ...stack, configDir: "R" }, "ps");
+    expect(args).toContain(join("R", "compose.yaml"));
+    expect(args).not.toContain(join(APP_DIR, "compose.yaml"));
+  });
+
   it("has local names for images built from the checkout", () => {
     expect(Object.values(LOCAL_IMAGES).every((ref) => ref.endsWith(":local"))).toBe(true);
   });
@@ -145,5 +156,20 @@ describe("freePort", () => {
       server.listen(port, "127.0.0.1", resolve);
     });
     await new Promise((resolve) => server.close(resolve));
+  });
+});
+
+describe("parseMemory", () => {
+  it.each([
+    ["155.3MiB / 7.568GiB", 155.3],
+    ["1.5GiB / 7.568GiB", 1536],
+    ["512KiB / 7.568GiB", 0.5],
+    ["0B / 0B", 0],
+  ])("reads %s", (usage, mib) => {
+    expect(parseMemory(usage)).toBeCloseTo(mib, 3);
+  });
+
+  it("refuses what isn't a size", () => {
+    expect(parseMemory("--")).toBeNull();
   });
 });

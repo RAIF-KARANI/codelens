@@ -1,19 +1,55 @@
 {
   "name": "codelens-desktop",
+  "productName": "CodeLens",
   "version": "0.1.0",
   "private": true,
   "description": "CodeLens Desktop: runs CodeLens's Compose project on this machine (planning-v2.md Phase 11)",
+  "author": "RAIF-KARANI",
   "license": "MIT",
   "type": "module",
+  "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p .",
     "test": "vitest run",
-    "stack": "node dist/cli.js"
+    "stack": "node dist/cli.js",
+    "start": "pnpm build && electron .",
+    "dist": "pnpm build && electron-builder --win nsis --x64 --publish never"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3",
     "typescript": "^5",
     "vitest": "^5.0.4"
+  },
+  "build": {
+    "appId": "io.github.raif-karani.codelens",
+    "productName": "CodeLens",
+    "artifactName": "CodeLens-Setup-${version}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*.js",
+      "!dist/cli.js",
+      "package.json"
+    ],
+    "extraResources": [
+      "compose.yaml",
+      "images.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
+    }
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron"
+    ]
   },
   "packageManager": "pnpm@9.15.0"
 }

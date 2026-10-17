@@ -2,7 +2,7 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-17: all of v1, Phases 1–9 (through the public demo, hardening, running your own CodeLens, and the security fixes), and v2's Phase 10 (the dashboard rebuilt on a design system, with its end-to-end checks). Phase 11, CodeLens Desktop, has begun: step 1a built the stack the app will run (the dashboard as a container, local mode, the desktop's own Compose project, images published by CI); the app itself comes next.
+> follows. It describes `main` as of 2026-10-17: all of v1, Phases 1–9 (through the public demo, hardening, running your own CodeLens, and the security fixes), and v2's Phase 10 (the dashboard rebuilt on a design system, with its end-to-end checks). Phase 11, CodeLens Desktop, has begun: step 1a built the stack the app runs (the dashboard as a container, local mode, the desktop's own Compose project, images published by CI), and step 1b the Electron spike that runs it, with an installer (its answer: go).
 >
 > | File | Answers |
 > |---|---|
@@ -100,6 +100,7 @@ and code and prompts never leave the machine (D20).
 | `codelens setup`: a fresh clone to a running stack with the user's own App; the webhook relay as a Compose service (D126) | ✅ Phase 8 step 2 |
 | A fresh-clone rehearsal (a review posted 37 s after a push) and `docs/run-your-own.md` | ✅ Phase 8 step 3 |
 | CodeLens Desktop's stack: the dashboard as a `web` container, local mode (no sign-in, the app's key, a loopback Host), the Compose project `codelens-desktop` and its driver, the images published to GitHub's registry by CI (§3.3, §10.4) | ✅ Phase 11 step 1a (D164–D167) |
+| CodeLens Desktop's spike: an Electron window that starts the stack, holds the launch's key and shows the dashboard; an unsigned Windows installer (§3.3) | ✅ Phase 11 step 1b (D168) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -213,7 +214,7 @@ codelens/
 
 ---
 
-### 3.3 `apps/desktop`: the stack CodeLens Desktop runs (Phase 11 step 1a)
+### 3.3 `apps/desktop`: CodeLens Desktop (Phase 11 steps 1a, 1b)
 
 | File | Responsibility |
 |---|---|
@@ -222,8 +223,11 @@ codelens/
 | `images.json` | The published images (`ghcr.io/raif-karani/codelens-{api,worker,web}`), each `name@sha256:…`; filled from the `Images` workflow's summary (D167) |
 | `src/stack.ts` | The stack as plain functions: the data folder and its secrets (`ensureHome`), image pins (`pinnedImages`), a free port and a key per launch (`newLaunch`), `docker compose up --wait / stop / ps`. Never through a shell |
 | `src/cli.ts` | `pnpm stack init / up / status / stop / env`, `--local` to build the images |
+| `src/main.ts` | The Electron main process (D168): one instance; a start-up page while `up` runs; the launch's key as a session cookie for `http://127.0.0.1:<port>` on the window's own session; the dashboard; on quit, `stop`. `CODELENS_MEASURE=1` logs the spike's numbers to `logs/desktop.log` |
+| `src/window.ts` | What the window may show: only this launch's dashboard; `https:` links go to the user's browser; the start-up and error pages |
+| `package.json` → `build` | electron-builder: `pnpm dist` makes `release/CodeLens-Setup-<version>.exe` (NSIS, per user, unsigned, D148), with `compose.yaml` and `images.json` in `resources/` |
 
-The Electron app (step 1b) will call `stack.ts` and give its window the launch's key.
+Measured (planning-v2.md, the spike report): a 106 MiB installer; the dashboard 52 s after the first launch (pulling the images), 20 s after later ones; ~750–830 MiB idle, the app's own share ~350 MiB.
 
 ## 4. Data model
 
@@ -1515,9 +1519,9 @@ checked end to end in CI (D138–D162). Phase 11 makes **CodeLens Desktop**
 for Windows: an Electron app (`apps/desktop`) that drives
 its own Docker Compose project (with the dashboard as a `web` container), learns about
 PRs by polling GitHub (`core/github/poll.py`), runs the dashboard in a no-sign-in local
-mode, and sets everything up from a first-run wizard. Step 1a built the stack, local
-mode and the published images (§3.3, §10.4); the Electron app, polling, the supervisor,
-the wizard and the installer are not built yet. Some of the gaps below close on the
+mode, and sets everything up from a first-run wizard. Steps 1a and 1b built the stack, local
+mode, the published images and the Electron spike with its installer (§3.3, §10.4);
+polling, the supervisor and tray, the wizard, updates and a release are not built yet. Some of the gaps below close on the
 way (the dashboard in Compose, a failed review saying so on the PR).
 
 **Later, as a separate upgrade:** CodeLens as a hosted service other people install on

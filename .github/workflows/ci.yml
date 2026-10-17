@@ -65,12 +65,16 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
-  # CodeLens Desktop (planning-v2.md Phase 11): the stack driver's tests.
+  # CodeLens Desktop (planning-v2.md Phase 11): the type check (the app and its
+  # stack driver) and the tests.
   desktop:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: apps/desktop
+    env:
+      # The tests and the type check need Electron's types, not its ~100 MB binary.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

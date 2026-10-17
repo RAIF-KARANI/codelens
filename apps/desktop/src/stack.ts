@@ -17,7 +17,9 @@ import { fileURLToPath } from "node:url";
 export const PROJECT = "codelens-desktop";
 
 /** The repo's apps/desktop folder, where compose.yaml and images.json are
- * (dist/stack.js is one level down). */
+ * (dist/stack.js is one level down). The installed app keeps them in its
+ * resources folder instead (Stack.configDir): docker reads compose.yaml as a
+ * plain file, which it couldn't inside the app's archive. */
 export const APP_DIR = fileURLToPath(new URL("..", import.meta.url));
 
 /** Where everything of this install lives: CODELENS_HOME if set, else
@@ -136,6 +138,8 @@ export type Stack = {
   images: Images;
   /** Use compose.build.yaml: build the images from this checkout. */
   build?: boolean;
+  /** Where compose.yaml is; APP_DIR unless set. */
+  configDir?: string;
 };
 
 /** What one launch adds: the dashboard's port and key. The key is new every
@@ -149,9 +153,13 @@ export async function newLaunch(): Promise<Launch> {
 }
 
 /** `docker` arguments for a compose command on this project. */
-export function composeArgs(stack: Pick<Stack, "home" | "build">, ...command: string[]): string[] {
-  const files = ["-f", join(APP_DIR, "compose.yaml")];
-  if (stack.build) files.push("-f", join(APP_DIR, "compose.build.yaml"));
+export function composeArgs(
+  stack: Pick<Stack, "home" | "build" | "configDir">,
+  ...command: string[]
+): string[] {
+  const dir = stack.configDir ?? APP_DIR;
+  const files = ["-f", join(dir, "compose.yaml")];
+  if (stack.build) files.push("-f", join(dir, "compose.build.yaml"));
   return [
     "compose",
     "-p",
@@ -219,6 +227,49 @@ export async function up(
  * next start reuses the containers, so it is quick. */
 export async function stop(stack: Stack, onOutput?: (chunk: string) => void): Promise<Run> {
   return docker(composeArgs(stack, "stop"), composeEnv(stack), onOutput);
+}
+
+/** Are all of CodeLens's images already on this machine? If not, `up` pulls
+ * them first: the first start after an install, or an update. */
+export async function imagesPresent(images: Images): Promise<boolean> {
+  const run = await docker(["image", "inspect", "--format", "{{.Id}}", ...Object.values(images)]);
+  return run.code === 0;
+}
+
+/** One `docker stats` memory figure ("155.3MiB / 7.568GiB", or kB, GiB) in
+ * MiB; null if it doesn't read as one. */
+export function parseMemory(usage: string): number | null {
+  const match = /^([\d.]+)\s*(B|kB|KiB|MB|MiB|GB|GiB)\b/.exec(usage.trim());
+  if (!match) return null;
+  const scale: Record<string, number> = {
+    B: 1 / 1024 ** 2,
+    kB: 1000 / 1024 ** 2,
+    KiB: 1 / 1024,
+    MB: 1000 ** 2 / 1024 ** 2,
+    MiB: 1,
+    GB: 1000 ** 3 / 1024 ** 2,
+    GiB: 1024,
+  };
+  return Number(match[1]) * (scale[match[2] ?? "MiB"] ?? 1);
+}
+
+/** Memory in use per running container of the project, in MiB. */
+export async function containerMemory(): Promise<Map<string, number>> {
+  const run = await docker([
+    "stats",
+    "--no-stream",
+    "--format",
+    "{{.Name}}\t{{.MemUsage}}",
+  ]);
+  const usage = new Map<string, number>();
+  for (const line of run.output.split(/\r?\n/)) {
+    const [name, memory] = line.split("\t");
+    const mib = memory ? parseMemory(memory) : null;
+    if (name?.startsWith(`${PROJECT}-`) && mib !== null) {
+      usage.set(name.slice(PROJECT.length + 1).replace(/-\d+$/, ""), mib);
+    }
+  }
+  return usage;
 }
 
 /** Each service's state, from `docker compose ps`. */

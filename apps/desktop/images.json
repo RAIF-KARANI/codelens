@@ -1,6 +1,6 @@
 {
-  "//": "CodeLens's own images, pinned by digest (D143, D150). Filled from the 'images' workflow's summary after it publishes from main; until then, run the stack with --local.",
-  "api": "",
-  "worker": "",
-  "web": ""
+  "//": "CodeLens's own images, pinned by digest (D143, D150), from the 'Images' workflow's publish of main at 902024f (sha-902024f). Update from a later run's summary.",
+  "api": "ghcr.io/raif-karani/codelens-api@sha256:6a240896a999b0eaa9f7387c5c17864e188c586797ac8b5112e23960e94f51d9",
+  "worker": "ghcr.io/raif-karani/codelens-worker@sha256:e693c72cb7d21de9747b74e75e1dae2aa733fc5698bcf3065ac75c8e36fb2de3",
+  "web": "ghcr.io/raif-karani/codelens-web@sha256:c3144439ee67d85d0ab7a53f352ec36ff29e4b20710edeff774f2f814ef2e5f8"
 }
