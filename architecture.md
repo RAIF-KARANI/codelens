@@ -101,6 +101,7 @@ and code and prompts never leave the machine (D20).
 | A fresh-clone rehearsal (a review posted 37 s after a push) and `docs/run-your-own.md` | ✅ Phase 8 step 3 |
 | CodeLens Desktop's stack: the dashboard as a `web` container, local mode (no sign-in, the app's key, a loopback Host), the Compose project `codelens-desktop` and its driver, the images published to GitHub's registry by CI (§3.3, §10.4) | ✅ Phase 11 step 1a (D164–D167) |
 | CodeLens Desktop's spike: an Electron window that starts the stack, holds the launch's key and shows the dashboard; an unsigned Windows installer (§3.3) | ✅ Phase 11 step 1b (D168) |
+| CodeLens Desktop's supervisor and tray: start order, services brought back, Docker and Ollama watched, logs per service, pause, start at login (§3.3) | ✅ Phase 11 step 4a (D172) |
 | GitHub polling: installations, pushes and pull requests learned by asking GitHub, through the webhook intake (§10.5) | ✅ Phase 11 step 2 (D169, D170) |
 | A failed review says so on its pull request, with a reason from a fixed list (§7 S11) | ✅ Phase 11 step 4b (D171) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
@@ -227,8 +228,11 @@ codelens/
 | `images.json` | The published images (`ghcr.io/raif-karani/codelens-{api,worker,web}`), each `name@sha256:…`; filled from the `Images` workflow's summary (D167) |
 | `src/stack.ts` | The stack as plain functions: the data folder and its secrets (`ensureHome`), image pins (`pinnedImages`), a free port and a key per launch (`newLaunch`), `docker compose up --wait / stop / ps`. Never through a shell |
 | `src/cli.ts` | `pnpm stack init / up / status / stop / env`, `--local` to build the images |
-| `src/main.ts` | The Electron main process (D168): one instance; a start-up page while `up` runs; the launch's key as a session cookie for `http://127.0.0.1:<port>` on the window's own session; the dashboard; on quit, `stop`. `CODELENS_MEASURE=1` logs the spike's numbers to `logs/desktop.log` |
-| `src/window.ts` | What the window may show: only this launch's dashboard; `https:` links go to the user's browser; the start-up and error pages |
+| `src/main.ts` | The Electron main process (D168, D172): one instance; Docker checked, then the stack, then the dashboard, with a screen for whatever is missing; the launch's key as a session cookie for `http://127.0.0.1:<port>` on the window's own session; every 10 s the supervisor; the tray (Open, Pause/Resume, Start when Windows starts, Open data folder, Quit); closing the window hides it; on quit, `stop`. `CODELENS_MEASURE=1` logs the spike's numbers to `logs/desktop.log` |
+| `src/window.ts` | What the window may show: only this launch's dashboard; `https:` links go to the user's browser; the status pages, whose buttons are `codelens://` links the window carries out |
+| `src/supervisor.ts` | The supervisor's decisions as plain functions (D172): what to start or restart from `docker compose ps`, the backoff per service, what changed worth a notice, a volume from another install |
+| `src/logs.ts`, `src/settings.ts` | Each service's log into `logs/services/<service>.log` (10 MB, one older file); the app's own choices in `desktop.json` (asked about start at login, paused) |
+| `scripts/render-icons.mjs`, `assets/` | The lens mark drawn into the window, installer and tray icons (PNG, no image library) |
 | `package.json` → `build` | electron-builder: `pnpm dist` makes `release/CodeLens-Setup-<version>.exe` (NSIS, per user, unsigned, D148), with `compose.yaml` and `images.json` in `resources/` |
 
 Measured (planning-v2.md, the spike report): a 106 MiB installer; the dashboard 52 s after the first launch (pulling the images), 20 s after later ones; ~750–830 MiB idle, the app's own share ~350 MiB.

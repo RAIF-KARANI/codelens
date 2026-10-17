@@ -4,10 +4,10 @@ CodeLens as a Windows app ([`planning-v2.md`](../../planning-v2.md), Phase 11): 
 the whole CodeLens stack on the user's machine, as a Docker Compose project of its own,
 and shows the dashboard in its window, with no sign-in.
 
-**Status: Phase 11 step 1b, the spike (its answer: go).** The app starts the stack,
-shows the dashboard, and stops the stack when it quits; `pnpm dist` builds an unsigned
-installer. The tray, restarts, the first-run wizard, updates and releases come in later
-steps. It needs Docker Desktop and Ollama already installed and running.
+**Status: Phase 11 step 4a.** The app starts the stack, shows the dashboard, keeps it
+all up (a supervisor every 10 s), lives in the tray, and stops the stack when it quits;
+`pnpm dist` builds an unsigned installer. The first-run wizard, updates and releases
+come in later steps. It needs Docker Desktop and Ollama installed.
 
 | File | What |
 |---|---|
@@ -16,7 +16,9 @@ steps. It needs Docker Desktop and Ollama already installed and running.
 | `images.json` | The published images, pinned by digest (from the `Images` workflow's summary) |
 | `src/stack.ts` | The stack as functions: the data folder and its secrets, a free port, the launch's key, `docker compose up / stop / ps`, image and memory checks |
 | `src/main.ts` | The Electron app: start the stack, give the window the launch's key, show the dashboard, stop on quit |
-| `src/window.ts` | What the window may show (this launch's dashboard only) and open (https links, in your browser) |
+| `src/window.ts` | What the window may show (this launch's dashboard only) and open (https links, in your browser); the status pages and their buttons |
+| `src/supervisor.ts` | What to start or restart, the backoff, what to tell the user |
+| `src/logs.ts`, `src/settings.ts` | Each service's log file; `desktop.json` |
 | `src/cli.ts` | `pnpm stack …`: the stack from a terminal |
 
 ## What runs where
@@ -56,6 +58,17 @@ The installer is unsigned (D148): Windows SmartScreen says "Windows protected yo
 **More info → Run anyway**. It installs for the current user only, under
 `%LOCALAPPDATA%\Programs\`, and removes itself from **Settings → Apps**; the data folder
 and the Docker volume stay until removed by hand (the uninstaller will ask, step 7).
+
+## Day to day
+
+| | |
+|---|---|
+| The tray icon | **Open CodeLens**; the status (Running, Paused, Waiting for Docker Desktop, Ollama isn't running); **Pause reviews** / **Resume reviews** (stops the workers and the poller; the dashboard stays); **Start when Windows starts**; **Open data folder**; **Quit CodeLens** |
+| Closing the window | CodeLens keeps running in the tray; Quit stops it and the stack |
+| Docker Desktop stops | A waiting screen; CodeLens starts again by itself when Docker answers |
+| A service dies | The supervisor starts it again within about 10 s (with backoff if it keeps failing) |
+| Ollama stops | A Windows notice; reviews fail, and say so on the PR, until it's back |
+| What went wrong | `logs/desktop.log` (the app), `logs/compose.log` (starting), `logs/services/<service>.log` (each service) |
 
 ## The stack from a terminal
 
