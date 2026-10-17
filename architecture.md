@@ -105,6 +105,7 @@ and code and prompts never leave the machine (D20).
 | The first-run wizard's first half: the machine's checks; Docker Desktop and Ollama found, started or installed from their publishers after a signature check (§3.3) | ✅ Phase 11 step 5a (D173) |
 | The wizard's second half: the models pulled with progress; the user's own GitHub App by the manifest flow in a `tools` container; its install page; `codelens doctor --desktop --json` (§3.3) | ✅ Phase 11 step 5b (D174) |
 | The desktop's Settings page, through the app's control API (§3.3, §10.4) | ✅ Phase 11 step 6a (D175) |
+| The desktop's System page: services, health, restarts, storage, clearing mirrors, logs (§3.3, §10.4) | ✅ Phase 11 step 6b (D176) |
 | GitHub polling: installations, pushes and pull requests learned by asking GitHub, through the webhook intake (§10.5) | ✅ Phase 11 step 2 (D169, D170) |
 | A failed review says so on its pull request, with a reason from a fixed list (§7 S11) | ✅ Phase 11 step 4b (D171) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
@@ -241,6 +242,7 @@ codelens/
 | `src/installers.ts` | The publishers' installers: download with progress, Windows' signature check against the expected organisation, running (elevated for Docker), the one-time restart entry |
 | `src/wizard.ts` | The wizard's screen: the steps, the checks, a progress bar the app moves in place, `codelens://` buttons |
 | `src/control.ts` | The app's control API (D175): `127.0.0.1` at a free port, for the dashboard's server only (its Host and the launch's key); read, change and apply settings; prepare the 16k window |
+| `src/system.ts` | What the System page shows (D176): folder sizes, the end of a log file, the services it may name |
 | `src/appsettings.ts`, `src/ollamaenv.ts` | What Settings shows and may change, checked field by field and written to `codelens.env`; the user's Ollama settings for a 16k window |
 | `src/models.ts` | The models CodeLens needs (codelens.env, else the defaults), what Ollama lacks, `POST /api/pull` with one bar across all layers |
 | `src/githubapp.ts` | The user's App (D174): `core.github register` in the `tools` container, the start link opened only if it is the flow's own, the settings merged into `codelens.env`, `secrets/` handed to the workers' user; the install link; `codelens doctor --desktop --json` |
@@ -1325,6 +1327,9 @@ CodeLens Desktop's dashboard has no sign-in (D147). In the `web` container
   container): the App's allowed accounts and hourly cap, the polling interval, the
   models and the context window. The app checks every value and applies it by
   recreating the services; a refusal shows under its field.
+- **System** (`/system`, D176): each service's state and health with a Restart, Docker
+  and Ollama, the data folder's sizes with Clear the mirrors and Open the data folder,
+  and each service's last lines of log; also through the control API, also only here.
 
 ```mermaid
 sequenceDiagram

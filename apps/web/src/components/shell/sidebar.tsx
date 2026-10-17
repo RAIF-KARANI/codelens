@@ -1,4 +1,4 @@
-import { FolderGit2Icon, GitPullRequestIcon, LayoutDashboardIcon, SettingsIcon } from "lucide-react";
+import { ActivityIcon, FolderGit2Icon, GitPullRequestIcon, LayoutDashboardIcon, SettingsIcon } from "lucide-react";
 import Link from "next/link";
 import { connection } from "next/server";
 import { cache, Suspense } from "react";
@@ -118,5 +118,10 @@ function RepoListSkeleton() {
 async function LocalNav() {
   await connection();
   if (!isLocal()) return null;
-  return <NavLink href="/settings" label="Settings" match={["/settings"]} icon={<SettingsIcon />} />;
+  return (
+    <>
+      <NavLink href="/system" label="System" match={["/system"]} icon={<ActivityIcon />} />
+      <NavLink href="/settings" label="Settings" match={["/settings"]} icon={<SettingsIcon />} />
+    </>
+  );
 }

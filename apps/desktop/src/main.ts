@@ -12,7 +12,7 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { appendFile, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, readFile, rm, statfs, writeFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { join } from "node:path";
 
@@ -49,6 +49,7 @@ import {
 import { machineChecks } from "./machine.js";
 import { missingModels, ollamaTags, pullModel, wantedModels } from "./models.js";
 import { prepareOllamaForLong, readyForLong, userEnvironment } from "./ollamaenv.js";
+import { folderBytes, type SystemView, tailFile } from "./system.js";
 import { DEFAULTS, type DesktopSettings, loadSettings, saveSettings } from "./settings.js";
 import {
   APP_DIR,
@@ -535,6 +536,73 @@ function settingsApi(home: string) {
   };
 }
 
+// --- System (the dashboard asks through the control API, D176)
+
+const WORKERS = ["worker", "worker-gpu"];
+
+async function databaseBytes(): Promise<number | null> {
+  if (!stack) return null;
+  const sql = "select pg_database_size('codelens')";
+  const run = await docker(
+    composeArgs(stack, "exec", "-T", "postgres", "psql", "-U", "codelens", "-d", "codelens", "-tAc", sql),
+    composeEnv(stack),
+  );
+  const bytes = Number(run.output.trim());
+  return run.code === 0 && Number.isFinite(bytes) ? bytes : null;
+}
+
+async function currentSystem(home: string): Promise<SystemView> {
+  const dockerNow = await dockerState().catch(() => "stopped" as const);
+  const services = dockerNow === "running" && stack ? parseServiceStates(await serviceStates(stack).catch(() => "")) : [];
+  const disk = await statfs(home).catch(() => null);
+  return {
+    docker: dockerNow,
+    ollama: await ollamaAnswers(),
+    paused: settings.paused,
+    services,
+    storage: {
+      dataFolder: home,
+      mirrorsBytes: await folderBytes(join(home, "data", "repos")),
+      logsBytes: await folderBytes(join(home, "logs")),
+      databaseBytes: dockerNow === "running" ? await databaseBytes() : null,
+      freeBytes: disk ? disk.bavail * disk.bsize : null,
+    },
+  };
+}
+
+function systemApi(home: string) {
+  return {
+    getSystem: () => currentSystem(home),
+    // The name was checked against the known services (control.ts).
+    getLogs: (service: string, lines: number) => tailFile(join(home, "logs", "services", `${service}.log`), lines),
+    restartService: async (service: string) => {
+      if (!stack || !launch) throw new Error("CodeLens isn't running yet");
+      await log(`system: restarting ${service}`);
+      const run = await restartServices(stack, [service]);
+      // A container that's gone can't be restarted: create it instead.
+      if (run.code !== 0) await upServices(stack, launch, [service]);
+    },
+    /** The repos' bare mirrors, deleted with the workers stopped; each is
+     * fetched again in full the next time it is indexed or reviewed. */
+    clearMirrors: async () => {
+      if (!stack || !launch) throw new Error("CodeLens isn't running yet");
+      await log("system: clearing the repos' mirrors");
+      applying = true;
+      try {
+        await stopServices(stack, WORKERS);
+        await rm(join(home, "data", "repos"), { recursive: true, force: true });
+        if (!settings.paused) await upServices(stack, launch, WORKERS);
+      } finally {
+        applying = false;
+      }
+      return currentSystem(home);
+    },
+    openDataFolder: async () => {
+      await shell.openPath(home);
+    },
+  };
+}
+
 // --- the spike's numbers
 
 /** The idle-memory reading: the app's own processes (Electron's working sets)
@@ -579,7 +647,7 @@ async function start(): Promise<void> {
 
   // The control API first: the dashboard's container gets its port and key.
   const controlKey = newSecret();
-  const started = await startControl(settingsApi(home), controlKey, (message) => void log(message));
+  const started = await startControl({ ...settingsApi(home), ...systemApi(home) }, controlKey, (message) => void log(message));
   control = { port: started.port, key: controlKey, close: started.close };
 
   // Docker installed after this process's PATH was set: use its own docker.exe.

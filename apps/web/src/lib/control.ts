@@ -66,6 +66,34 @@ export async function control<T>(path: string, init: RequestInit = {}): Promise<
 
 export const getSettings = () => control<SettingsView>("/settings");
 
+/** One service as `docker compose ps` reports it. */
+export type ServiceState = { service: string; state: string; health: string; exitCode: number };
+
+export type SystemView = {
+  docker: "missing" | "stopped" | "running";
+  ollama: boolean;
+  paused: boolean;
+  services: ServiceState[];
+  storage: {
+    dataFolder: string;
+    mirrorsBytes: number;
+    logsBytes: number;
+    databaseBytes: number | null;
+    freeBytes: number | null;
+  };
+};
+
+export const getSystem = () => control<SystemView>("/system");
+
+export const getLogs = (service: string, lines = 200) =>
+  control<{ service: string; lines: string[] }>(
+    `/system/logs?${new URLSearchParams({ service, lines: String(lines) })}`,
+  );
+
+/** The services whose logs the page offers, in the order a reader looks for
+ * them (the app checks the name again). */
+export const LOG_SERVICES = ["api", "worker", "worker-gpu", "poller", "web", "postgres", "redis", "migrate"] as const;
+
 /** A list of accounts as people type it: commas, spaces or new lines. */
 export function parseAccounts(text: string): string[] {
   return text
