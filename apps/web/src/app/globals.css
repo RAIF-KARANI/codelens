@@ -188,6 +188,14 @@
   color: var(--d, inherit);
 }
 
+/* The graph's minimap (reviews/[id]/graph): node colours from the tokens. */
+.react-flow__minimap-node.mm-added { fill: var(--added); }
+.react-flow__minimap-node.mm-modified { fill: var(--warning); }
+.react-flow__minimap-node.mm-deleted { fill: var(--deleted); }
+.react-flow__minimap-node.mm-shown { fill: var(--muted-foreground); }
+.react-flow__minimap-node.mm-other { fill: var(--border); }
+.react-flow__minimap-node.mm-hidden { display: none; }
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

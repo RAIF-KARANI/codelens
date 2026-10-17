@@ -40,3 +40,79 @@ export function score(item: TraceItem, name: string): number | null {
 export function tokensUsed(items: TraceItem[]): number {
   return items.reduce((sum, item) => sum + (item.included ? item.token_cost : 0), 0);
 }
+
+/** One candidate as the trace table shows it: one row per candidate, with the
+ * changed code it was retrieved for (several, when more than one seed found it). */
+export type TraceRow = {
+  item: TraceItem;
+  rank: number | null;
+  similarity: number | null;
+  outcome: Outcome;
+  forSeeds: string[];
+};
+
+export function traceRows(items: TraceItem[]): TraceRow[] {
+  return items.map((item) => ({
+    item,
+    rank: score(item, "vector_rank"),
+    similarity: score(item, "vector_similarity"),
+    outcome: outcome(item),
+    forSeeds: retrievedFor(item),
+  }));
+}
+
+export type SortKey = "rank" | "similarity" | "tokens" | "name";
+export type SortDir = "asc" | "desc";
+
+/** The direction a column sorts in when first clicked: best first. */
+export const FIRST_DIR: Record<SortKey, SortDir> = {
+  rank: "asc",
+  similarity: "desc",
+  tokens: "desc",
+  name: "asc",
+};
+
+/** Sorted by `key`; rows without a value (no rank, no similarity) always last,
+ * and ties broken by rank, so the order never jumps between renders. */
+export function sortRows(rows: TraceRow[], key: SortKey, dir: SortDir): TraceRow[] {
+  const value = (r: TraceRow): number | string | null =>
+    key === "rank"
+      ? r.rank
+      : key === "similarity"
+        ? r.similarity
+        : key === "tokens"
+          ? r.item.included
+            ? r.item.token_cost
+            : null
+          : r.item.qualified_name;
+  const sign = dir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = value(a);
+    const vb = value(b);
+    if (va === null || vb === null) {
+      if (va !== vb) return va === null ? 1 : -1;
+    } else if (va !== vb) {
+      return (typeof va === "string" ? va.localeCompare(vb as string) : va - (vb as number)) * sign;
+    }
+    return (a.rank ?? Infinity) - (b.rank ?? Infinity);
+  });
+}
+
+export type RowFilter = {
+  /** Outcomes to keep; empty keeps all. */
+  outcomes: ReadonlySet<Outcome["kind"]>;
+  /** Only candidates retrieved for this changed code. */
+  seed: string | null;
+  /** Part of the candidate's name, any case. */
+  query: string;
+};
+
+export function filterRows(rows: TraceRow[], filter: RowFilter): TraceRow[] {
+  const query = filter.query.trim().toLowerCase();
+  return rows.filter(
+    (r) =>
+      (filter.outcomes.size === 0 || filter.outcomes.has(r.outcome.kind)) &&
+      (filter.seed === null || r.forSeeds.includes(filter.seed)) &&
+      (query === "" || r.item.qualified_name.toLowerCase().includes(query)),
+  );
+}
