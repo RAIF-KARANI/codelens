@@ -12,7 +12,7 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { appendFile } from "node:fs/promises";
+import { appendFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -30,7 +30,20 @@ import {
 
 import { APP_KEY_COOKIE } from "./key.js";
 import { ServiceLogs } from "./logs.js";
-import { type DesktopSettings, loadSettings, saveSettings } from "./settings.js";
+import { firstRun } from "./firstrun.js";
+import {
+  dockerCli,
+  dockerDesktopExe,
+  download,
+  isOllamaInstalled,
+  launch as launchProgram,
+  ollamaAppExe,
+  readSignature,
+  resumeAfterRestart,
+  runInstaller,
+} from "./installers.js";
+import { machineChecks } from "./machine.js";
+import { DEFAULTS, type DesktopSettings, loadSettings, saveSettings } from "./settings.js";
 import {
   APP_DIR,
   codelensHome,
@@ -38,6 +51,7 @@ import {
   composeEnv,
   containerMemory,
   docker,
+  dockerBin,
   dockerState,
   ensureHome,
   imagesPresent,
@@ -53,6 +67,7 @@ import {
   stopServices,
   up,
   upServices,
+  useDocker,
 } from "./stack.js";
 import {
   Backoff,
@@ -64,7 +79,8 @@ import {
   repairs,
   TICK_MS,
 } from "./supervisor.js";
-import { appAction, appOrigin, isAppUrl, isExternalLink, statusPage } from "./window.js";
+import { type AppAction, appAction, appOrigin, isAppUrl, isExternalLink, statusPage } from "./window.js";
+import { progressScript, wizardPage } from "./wizard.js";
 
 const MEASURE = process.env.CODELENS_MEASURE === "1";
 /** The spike's own measuring: how long after the dashboard loads to sample
@@ -79,7 +95,9 @@ const ASSETS = join(APP_DIR, "assets");
 
 let stack: Stack | null = null;
 let launch: Launch | null = null;
-let settings: DesktopSettings = { askedStartAtLogin: false, paused: false };
+let settings: DesktopSettings = { ...DEFAULTS };
+/** The wizard waiting for one of these buttons. */
+let waiting: { actions: AppAction[]; resolve: (action: AppAction) => void } | null = null;
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 /** The stack is up and the dashboard shown; false while starting or waiting. */
@@ -166,7 +184,14 @@ async function show(page: string): Promise<void> {
 
 // --- what the status pages' buttons do
 
-async function act(action: string): Promise<void> {
+async function act(action: AppAction): Promise<void> {
+  // A button the wizard is waiting for.
+  if (waiting?.actions.includes(action)) {
+    const { resolve } = waiting;
+    waiting = null;
+    resolve(action);
+    return;
+  }
   if (action === "retry") {
     waitForUser = false;
     await bringUp();
@@ -244,6 +269,10 @@ async function bringUp(): Promise<void> {
       sameSite: "strict",
     });
     stackUp = true;
+    if (!settings.setupDone) {
+      settings = { ...settings, setupDone: true };
+      await saveSettings(stack.home, settings);
+    }
     await win?.loadURL(`${appOrigin(launch.port)}/`);
     followLogs();
     updateTray();
@@ -314,7 +343,7 @@ function followLogs(): void {
   if (!stack || logsChild) return;
   const since = new Date(Date.now() - 60_000).toISOString();
   const logs = new ServiceLogs(join(stack.home, "logs", "services"), PROJECT);
-  const child = spawn("docker", composeArgs(stack, "logs", "--follow", "--no-color", "--since", since), {
+  const child = spawn(dockerBin(), composeArgs(stack, "logs", "--follow", "--no-color", "--since", since), {
     env: { ...process.env, ...composeEnv(stack) },
     windowsHide: true,
   });
@@ -474,6 +503,45 @@ async function start(): Promise<void> {
   tray = new Tray(nativeImage.createFromPath(join(ASSETS, "tray.png")));
   tray.on("click", showWindow);
   updateTray();
+
+  // Docker installed after this process's PATH was set: use its own docker.exe.
+  const cli = dockerCli();
+  if (cli && (await dockerState()) === "missing") useDocker(cli);
+
+  if (!settings.setupDone && !MEASURE) {
+    const result = await firstRun({
+      downloadsDir: join(home, "downloads"),
+      show: async (view) => {
+        await win?.loadURL(wizardPage(view));
+      },
+      progress: async (fraction, label) => {
+        await win?.webContents.executeJavaScript(progressScript(fraction, label)).catch(() => {});
+      },
+      waitFor: (actions) =>
+        new Promise((resolve) => {
+          waiting = { actions, resolve };
+        }),
+      log,
+      machineChecks: () => machineChecks(home),
+      dockerState: () => dockerState().catch(() => "stopped" as const),
+      dockerCli,
+      useDocker,
+      ollamaAnswers,
+      isOllamaInstalled,
+      download,
+      readSignature,
+      runInstaller,
+      launch: launchProgram,
+      dockerDesktopExe,
+      ollamaAppExe,
+      resumeAfterRestart: (on) => resumeAfterRestart(app.isPackaged ? process.execPath : null, on),
+      removeFile: (path) => rm(path, { force: true }),
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      now: () => Date.now(),
+    });
+    // Docker's restart: the app opens again by itself afterwards (RunOnce).
+    if (result === "restart") return;
+  }
 
   await bringUp();
   setInterval(() => void tick(), TICK_MS);
