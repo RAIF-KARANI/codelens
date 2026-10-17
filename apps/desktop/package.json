@@ -32,6 +32,7 @@
     "files": [
       "dist/**/*.js",
       "!dist/cli.js",
+      "assets/*.png",
       "package.json"
     ],
     "extraResources": [
@@ -39,7 +40,8 @@
       "images.json"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "assets/icon.png"
     },
     "nsis": {
       "oneClick": true,

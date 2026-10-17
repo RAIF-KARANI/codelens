@@ -272,6 +272,52 @@ export async function containerMemory(): Promise<Map<string, number>> {
   return usage;
 }
 
+/** Docker as this app sees it: not installed (no `docker` command), installed
+ * but its engine not answering (Docker Desktop not started, or still
+ * starting), or running. */
+export type DockerState = "missing" | "stopped" | "running";
+
+export async function dockerState(): Promise<DockerState> {
+  try {
+    const run = await docker(["info", "--format", "{{.ServerVersion}}"]);
+    return run.code === 0 ? "running" : "stopped";
+  } catch (error) {
+    // spawn's ENOENT: there is no docker to run.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "missing";
+    throw error;
+  }
+}
+
+/** Start (or recreate) only these services, leaving the rest as they are. */
+export async function upServices(
+  stack: Stack,
+  launch: Launch,
+  services: string[],
+  onOutput?: (chunk: string) => void,
+): Promise<Run> {
+  return docker(
+    composeArgs(stack, "up", "-d", "--no-deps", ...services),
+    composeEnv(stack, launch),
+    onOutput,
+  );
+}
+
+export async function restartServices(stack: Stack, services: string[]): Promise<Run> {
+  return docker(composeArgs(stack, "restart", ...services), composeEnv(stack));
+}
+
+export async function stopServices(stack: Stack, services: string[]): Promise<Run> {
+  return docker(composeArgs(stack, "stop", ...services), composeEnv(stack));
+}
+
+/** `docker compose ps --all --format json`: one object per line (Compose
+ * 2.21+), or one array (older). */
+export async function serviceStates(stack: Stack): Promise<string> {
+  const run = await docker(composeArgs(stack, "ps", "--all", "--format", "json"), composeEnv(stack));
+  if (run.code !== 0) throw new Error(`docker compose ps failed: ${run.output.trim()}`);
+  return run.output;
+}
+
 /** Each service's state, from `docker compose ps`. */
 export async function status(stack: Stack): Promise<Run> {
   return docker(

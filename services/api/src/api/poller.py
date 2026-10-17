@@ -8,6 +8,7 @@ development stack can run either, or both (`docker compose --profile poller`).
 
 import asyncio
 import logging
+import signal
 
 from api.queue import CeleryJobQueue
 from core.config import Settings, get_settings
@@ -75,7 +76,15 @@ async def run(settings: Settings) -> None:
         await engine.dispose()
 
 
+def _stop(signum: int, frame: object) -> None:
+    raise SystemExit(0)
+
+
 def main() -> None:
+    # In a container this is process 1, which ignores SIGTERM unless it says
+    # otherwise: `docker compose stop` would wait 10 s, then kill it (exit 137,
+    # seen in step 4's tests). asyncio.run cancels the loop on the way out.
+    signal.signal(signal.SIGTERM, _stop)
     settings = get_settings()
     configure_logging(settings.log_level, settings.log_format)
     # A line per GitHub request, most of them 304s, every minute: the cycle's
