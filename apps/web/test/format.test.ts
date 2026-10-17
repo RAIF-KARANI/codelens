@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatBytes,
   dayTitle,
   formatCount,
   formatDuration,
@@ -90,5 +91,16 @@ describe("URL parameters", () => {
     expect(withQuery("/repos/3", { status: "failed", cursor: 9 })).toBe(
       "/repos/3?status=failed&cursor=9",
     );
+  });
+});
+
+describe("formatBytes", () => {
+  it("reads like a file manager", () => {
+    expect(formatBytes(0)).toBe("0 B");
+    expect(formatBytes(512 * 1024)).toBe("512 KB");
+    expect(formatBytes(37.2 * 1024 ** 2)).toBe("37.2 MB");
+    expect(formatBytes(1_584_629_376)).toBe("1.48 GB");
+    expect(formatBytes(174.1 * 1024 ** 3)).toBe("174 GB");
+    expect(formatBytes(null)).toBe("—");
   });
 });

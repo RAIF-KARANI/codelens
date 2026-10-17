@@ -24,7 +24,8 @@ updates and releases come in later steps.
 | `src/supervisor.ts` | What to start or restart, the backoff, what to tell the user |
 | `src/firstrun.ts`, `src/wizard.ts` | The first-run wizard's flow and its screen |
 | `src/machine.ts`, `src/installers.ts` | The computer's checks; downloading, checking and running Docker's and Ollama's installers |
-| `src/control.ts`, `src/appsettings.ts`, `src/ollamaenv.ts` | The control API the Settings page calls; the settings it may change; the 16k window |
+| `src/control.ts`, `src/appsettings.ts`, `src/ollamaenv.ts` | The control API the Settings and System pages call; the settings it may change; the 16k window |
+| `src/system.ts` | What the System page shows: sizes, the end of a log, the services it may name |
 | `src/models.ts`, `src/githubapp.ts` | Pulling the models; creating your GitHub App (in the `tools` container) and the stack's own checks |
 | `src/logs.ts`, `src/settings.ts` | Each service's log file; `desktop.json` |
 | `src/cli.ts` | `pnpm stack …`: the stack from a terminal |
@@ -76,7 +77,7 @@ and the Docker volume stay until removed by hand (the uninstaller will ask, step
 | Docker Desktop stops | A waiting screen; CodeLens starts again by itself when Docker answers |
 | A service dies | The supervisor starts it again within about 10 s (with backoff if it keeps failing) |
 | Ollama stops | A Windows notice; reviews fail, and say so on the PR, until it's back |
-| What went wrong | `logs/desktop.log` (the app), `logs/compose.log` (starting), `logs/services/<service>.log` (each service) |
+| What went wrong | The dashboard's **System** page (each service, its health and its log), or the files: `logs/desktop.log` (the app), `logs/compose.log` (starting), `logs/services/<service>.log` (each service) |
 
 ## The stack from a terminal
 

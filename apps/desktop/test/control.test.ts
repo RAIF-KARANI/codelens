@@ -91,6 +91,11 @@ describe("the control API", () => {
           return checked.ok ? { settings: view as SettingsView } : { errors: checked.errors };
         },
         prepareLongWindow: async () => view,
+        getSystem: async () => { throw new Error("unused"); },
+        getLogs: async () => [],
+        restartService: async () => {},
+        clearMirrors: async () => { throw new Error("unused"); },
+        openDataFolder: async () => {},
       },
       KEY,
     );

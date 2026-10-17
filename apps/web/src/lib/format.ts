@@ -35,6 +35,20 @@ export function formatCount(n: number | undefined): string {
   return n === undefined ? "—" : n.toLocaleString("en");
 }
 
+/** A size as people read it: "0 B", "512 KB", "37.2 MB", "1.48 GB" (1024s). */
+export function formatBytes(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const digits = unit === 0 || value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(digits)} ${units[unit]}`;
+}
+
 const WEEKDAY = new Intl.DateTimeFormat("en", { weekday: "short", timeZone: "UTC" });
 const DAY = new Intl.DateTimeFormat("en", {
   weekday: "short",

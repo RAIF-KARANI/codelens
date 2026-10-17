@@ -110,10 +110,13 @@ test("a review that doesn't exist says so", async ({ page }) => {
 
 // Settings belong to CodeLens Desktop's local mode (D175): the demo (and the
 // self-hosted dashboard) neither link to them nor serve them.
-test("there are no Settings outside the desktop app", async ({ page }) => {
+test("there are no Settings or System pages outside the desktop app", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Repositories" }).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Settings" })).toHaveCount(0);
-  await page.goto("/settings");
-  await expect(page.getByText("Not found", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "System" })).toHaveCount(0);
+  for (const path of ["/settings", "/system"]) {
+    await page.goto(path);
+    await expect(page.getByText("Not found", { exact: true })).toBeVisible();
+  }
 });

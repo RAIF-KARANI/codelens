@@ -14,6 +14,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import type { SettingsView } from "./appsettings.js";
+import { isService, lineCount, type SystemView } from "./system.js";
 
 /** Bodies are a few settings: anything bigger isn't the dashboard. */
 const MAX_BODY = 16 * 1024;
@@ -24,6 +25,12 @@ export type ControlHandlers = {
   saveSettings(body: unknown): Promise<{ errors: Record<string, string> } | { settings: SettingsView }>;
   /** Sets the user's Ollama up for a 16k window and restarts it (D146). */
   prepareLongWindow(): Promise<SettingsView>;
+  /** The System page (D176). */
+  getSystem(): Promise<SystemView>;
+  getLogs(service: string, lines: number): Promise<string[]>;
+  restartService(service: string): Promise<void>;
+  clearMirrors(): Promise<SystemView>;
+  openDataFolder(): Promise<void>;
 };
 
 export type Refusal = "bad_host" | "bad_key";
@@ -76,10 +83,51 @@ export async function startControl(
       send(res, 403, { error: { code: "forbidden", message: "not for you" } });
       return;
     }
+    const url = new URL(req.url ?? "/", "http://control");
+    const route = `${req.method} ${url.pathname}`;
     try {
-      if (req.method === "GET" && req.url === "/v1/settings") {
+      if (route === "GET /v1/system") {
+        send(res, 200, await handlers.getSystem());
+        return;
+      }
+      if (route === "GET /v1/system/logs") {
+        const service = url.searchParams.get("service");
+        if (!isService(service)) {
+          send(res, 404, { error: { code: "not_found", message: "no such service" } });
+          return;
+        }
+        send(res, 200, { service, lines: await handlers.getLogs(service, lineCount(url.searchParams.get("lines"))) });
+        return;
+      }
+      if (route === "POST /v1/system/restart") {
+        let body: unknown;
+        try {
+          body = await readJson(req);
+        } catch {
+          send(res, 400, { error: { code: "invalid_json", message: "not JSON" } });
+          return;
+        }
+        const service = (body as { service?: unknown } | null)?.service;
+        if (!isService(service)) {
+          send(res, 404, { error: { code: "not_found", message: "no such service" } });
+          return;
+        }
+        await handlers.restartService(service);
+        send(res, 200, { restarted: service });
+        return;
+      }
+      if (route === "POST /v1/system/clear-mirrors") {
+        send(res, 200, await handlers.clearMirrors());
+        return;
+      }
+      if (route === "POST /v1/system/open-data-folder") {
+        await handlers.openDataFolder();
+        send(res, 200, { opened: true });
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/v1/settings") {
         send(res, 200, await handlers.getSettings());
-      } else if (req.method === "PUT" && req.url === "/v1/settings") {
+      } else if (req.method === "PUT" && url.pathname === "/v1/settings") {
         let body: unknown;
         try {
           body = await readJson(req);
@@ -91,7 +139,7 @@ export async function startControl(
         const result = await handlers.saveSettings(body);
         if ("errors" in result) send(res, 422, { error: { code: "invalid", message: "some settings were refused", details: result.errors } });
         else send(res, 200, result.settings);
-      } else if (req.method === "POST" && req.url === "/v1/settings/long-window") {
+      } else if (req.method === "POST" && url.pathname === "/v1/settings/long-window") {
         send(res, 200, await handlers.prepareLongWindow());
       } else {
         send(res, 404, { error: { code: "not_found", message: "no such route" } });
