@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from core.accounts import Accounts
@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     api_jwt_secret: SecretStr = SecretStr("")
     # A public read-only instance (§15): every mutating endpoint returns 403.
     demo_mode: bool = False
+    # CodeLens Desktop (planning-v2.md D147): the machine has one owner, and
+    # every token is theirs, so every caller sees every repo. Safe only because
+    # the API is reachable from its Compose network alone (no published port)
+    # and only the local dashboard holds API_JWT_SECRET.
+    local_mode: bool = False
     # GitHub logins (comma-separated) that may see every repo, including local
     # and eval ones with no installation (D111). Everyone else sees only the
     # repos of the App installations their token lists.
@@ -137,6 +142,14 @@ class Settings(BaseSettings):
         if 0 < len(secret.get_secret_value().encode()) < 32:
             raise ValueError("API_JWT_SECRET must be at least 32 bytes")
         return secret
+
+    @model_validator(mode="after")
+    def _one_mode(self) -> "Settings":
+        # A demo is everyone's and read-only; local mode is one owner's and
+        # writable. Both at once would be neither.
+        if self.demo_mode and self.local_mode:
+            raise ValueError("DEMO_MODE and LOCAL_MODE can't both be on")
+        return self
 
 
 @lru_cache

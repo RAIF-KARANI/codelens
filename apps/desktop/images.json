@@ -1,0 +1,6 @@
+{
+  "//": "CodeLens's own images, pinned by digest (D143, D150). Filled from the 'images' workflow's summary after it publishes from main; until then, run the stack with --local.",
+  "api": "",
+  "worker": "",
+  "web": ""
+}

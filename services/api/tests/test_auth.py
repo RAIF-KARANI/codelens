@@ -122,3 +122,30 @@ def test_a_pinned_admin_needs_its_user_id_not_only_its_login() -> None:
     assert user("1001", "renamed-boss").is_admin is False  # type: ignore[attr-defined]
     assert user("999999", "BOSS").is_admin is False  # type: ignore[attr-defined]
     assert user("5", "old").is_admin  # type: ignore[attr-defined]  # unpinned: by login
+
+
+def test_local_mode_makes_every_caller_the_owner() -> None:
+    # CodeLens Desktop (D147): no sign-in, one owner; only its own dashboard
+    # holds the secret, so a valid token is the owner's, whatever it says.
+    from fastapi.security import HTTPAuthorizationCredentials
+
+    from api.auth import current_user
+
+    settings = Settings(_env_file=None, api_jwt_secret=SECRET, local_mode=True)
+    token = issue_token(SECRET, "local-owner", "local")
+    user = current_user(settings, HTTPAuthorizationCredentials(scheme="Bearer", credentials=token))
+    assert user.is_admin
+    assert user.demo is False
+
+
+def test_local_mode_still_needs_a_valid_token() -> None:
+    with client(local_mode=True) as c:
+        missing = c.get("/api/v1/repos")
+        forged = c.get("/api/v1/repos", headers=bearer(issue_token(OTHER_SECRET, "1", "x")))
+    assert missing.status_code == 401
+    assert forged.status_code == 401
+
+
+def test_demo_and_local_mode_cannot_both_be_on() -> None:
+    with pytest.raises(ValueError, match="can't both be on"):
+        Settings(_env_file=None, demo_mode=True, local_mode=True)

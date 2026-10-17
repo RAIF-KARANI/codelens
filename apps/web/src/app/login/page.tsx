@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
-import { isDemo } from "@/lib/config";
+import { hasSignIn } from "@/lib/config";
 import { first } from "@/lib/params";
 import { safeNext } from "@/lib/paths";
 
@@ -15,8 +15,8 @@ const ERRORS: Record<string, string> = {
 };
 
 export default function LoginPage({ searchParams }: PageProps<"/login">) {
-  // An open demo has no sign-in (D117).
-  if (isDemo()) redirect("/repos");
+  // An open demo (D117) and the desktop (D147) have no sign-in.
+  if (!hasSignIn()) redirect("/repos");
   return (
     <div className="mx-auto mt-16 max-w-sm text-center">
       <h1 className="text-2xl font-semibold tracking-tight">Sign in to CodeLens</h1>

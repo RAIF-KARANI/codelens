@@ -1,0 +1,28 @@
+# The fallback to published images (D143): build CodeLens's own three images
+# from this checkout instead, under the names in CODELENS_*_IMAGE.
+#
+#   docker compose -f compose.yaml -f compose.build.yaml --env-file <CODELENS_HOME>/codelens.env build
+#
+# For development, and for a machine that can't reach the registry. The
+# desktop app itself never builds: an install runs the images CI tested.
+
+services:
+  migrate:
+    build:
+      context: ../..
+      dockerfile: services/api/Dockerfile
+  api:
+    build:
+      context: ../..
+      dockerfile: services/api/Dockerfile
+  worker:
+    build:
+      context: ../..
+      dockerfile: services/worker/Dockerfile
+  worker-gpu:
+    build:
+      context: ../..
+      dockerfile: services/worker/Dockerfile
+  web:
+    build:
+      context: ../web

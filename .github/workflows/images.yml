@@ -1,0 +1,94 @@
+name: Images
+
+# CodeLens's own container images, the ones CodeLens Desktop runs
+# (planning-v2.md D143): built on pull requests that touch them, to prove the
+# Dockerfiles still build, and published to GitHub's container registry from
+# main. Each published image's digest goes in the run's summary, which is what
+# apps/desktop/images.json pins (D150).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - services/**
+      - packages/**
+      - configs/**
+      - apps/web/**
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/images.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Only used where the image is pushed (not on pull requests).
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            context: .
+            file: services/api/Dockerfile
+          - name: worker
+            context: .
+            file: services/worker/Dockerfile
+          - name: web
+            context: apps/web
+            file: apps/web/Dockerfile
+    env:
+      # Registry names are lower case; the owner's login isn't.
+      IMAGE: ghcr.io/raif-karani/codelens-${{ matrix.name }}
+      PUSH: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to the registry
+        if: env.PUSH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          # sha-<commit> for every build; `main` follows the branch. The
+          # desktop pins digests, never these tags.
+          tags: |
+            type=sha,format=short
+            type=raw,value=main,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=codelens-${{ matrix.name }}
+            org.opencontainers.image.licenses=MIT
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          platforms: linux/amd64
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+      - name: Digest
+        if: env.PUSH == 'true'
+        run: |
+          {
+            echo "### codelens-${{ matrix.name }}"
+            echo
+            echo "For apps/desktop/images.json:"
+            echo
+            echo '```'
+            echo "\"${{ matrix.name }}\": \"${IMAGE}@${{ steps.build.outputs.digest }}\""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

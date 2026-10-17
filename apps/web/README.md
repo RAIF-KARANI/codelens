@@ -14,7 +14,9 @@ cp .env.example .env.local   # then fill it in: the API's URL and secret, the Gi
 pnpm dev                     # http://localhost:3000
 ```
 
-It needs the API running. With `DEMO_MODE=true` (and the API in demo mode too) nobody
+It needs the API running. With `LOCAL_MODE=true` (CodeLens Desktop) nobody signs in
+either, but every request must come from the desktop app's window: a loopback host and
+the launch's key in a cookie (`src/proxy.ts`, `LOCAL_APP_KEY`). With `DEMO_MODE=true` (and the API in demo mode too) nobody
 signs in, every visitor sees the demo's repos read-only, and Re-index and 👍/👎 are
 hidden ([`docs/demo.md`](../../docs/demo.md)).
 
@@ -28,6 +30,15 @@ pnpm e2e     # Playwright against the demo export: e2e/README.md
 ```
 
 CI runs all four on every pull request.
+
+## As a container
+
+```bash
+docker build -t codelens-web .   # Next's standalone server (D164), run as `node`
+```
+
+CodeLens Desktop runs it in local mode (`apps/desktop/compose.yaml`); CI publishes it as
+`ghcr.io/raif-karani/codelens-web` from `main`.
 
 ## Where things are
 

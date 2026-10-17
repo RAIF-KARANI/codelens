@@ -1,0 +1,142 @@
+# CodeLens Desktop's own Compose project (planning-v2.md §4, D143, D149).
+#
+# The same services as the repo's docker-compose.yml, run from published
+# images instead of the source tree, under their own project name, data folder
+# and port, so a developer's stack on the same machine never clashes with it.
+# The desktop app starts it (src/stack.ts); by hand:
+#
+#   docker compose -f compose.yaml --env-file <CODELENS_HOME>/codelens.env up -d --wait
+#
+# with these in the environment (the app sets them; `node dist/cli.js env`
+# prints them):
+#
+#   CODELENS_HOME          the data folder: codelens.env, data/ (mirrors), secrets/
+#   CODELENS_WEB_PORT      a free loopback port for the dashboard
+#   CODELENS_APP_KEY       the key the app's window sends as a cookie, new every
+#                          launch and never written to disk (D147)
+#   CODELENS_*_IMAGE       the api, worker and web images, pinned by digest
+#
+# codelens.env (written once per install, owner-only) holds the secrets
+# generated on this machine, POSTGRES_PASSWORD and API_JWT_SECRET, and later
+# the GitHub App's settings. Nothing here is published to the network: only
+# the dashboard has a port, on loopback, behind the app's key.
+
+name: codelens-desktop
+
+x-python: &python
+  env_file:
+    - path: ${CODELENS_HOME:?}/codelens.env
+      required: true
+  environment:
+    DATABASE_URL: postgresql+asyncpg://codelens:${POSTGRES_PASSWORD:?}@postgres:5432/codelens
+    REDIS_URL: redis://redis:6379/0
+    # The user's own Ollama, on the host (D146).
+    OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    # One owner, no sign-in (D147): every token the dashboard mints is theirs.
+    LOCAL_MODE: "true"
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  restart: unless-stopped
+
+x-worker: &worker
+  <<: *python
+  image: ${CODELENS_WORKER_IMAGE:?}
+  volumes:
+    # Bare mirrors of the GitHub repos (DATA_DIR=data, relative to /app).
+    - ${CODELENS_HOME:?}/data:/app/data
+    # The GitHub App's private key, read-only.
+    - ${CODELENS_HOME:?}/secrets:/app/secrets:ro
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+    redis:
+      condition: service_healthy
+
+services:
+  postgres:
+    # Third-party images are pinned by digest too (D150): an install runs
+    # exactly what was tested. To update: docker buildx imagetools inspect <tag>.
+    image: pgvector/pgvector:pg16@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
+    environment:
+      POSTGRES_USER: codelens
+      # Generated per install, unlike the dev stack's default (D132).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: codelens
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codelens -d codelens"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # One-shot: migrations, then exit; everything else waits for it (D16).
+  migrate:
+    <<: *python
+    image: ${CODELENS_API_IMAGE:?}
+    command: alembic -c packages/core/alembic.ini upgrade head
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *python
+    image: ${CODELENS_API_IMAGE:?}
+    # No published port: only the dashboard, on this network, calls it.
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    <<: *worker
+    command: celery -A worker.celery_app worker -Q index -c 2 -n index@%h
+
+  worker-gpu:
+    <<: *worker
+    command: celery -A worker.celery_app worker -Q gpu -c 1 -n gpu@%h
+
+  web:
+    image: ${CODELENS_WEB_IMAGE:?}
+    environment:
+      LOCAL_MODE: "true"
+      # Empty when stopping or listing: the dashboard then refuses everything.
+      LOCAL_APP_KEY: ${CODELENS_APP_KEY:-}
+      API_URL: http://api:8000
+      API_JWT_SECRET: ${API_JWT_SECRET:?}
+    ports:
+      # Loopback only, IPv4: the app's window opens http://127.0.0.1:<port>.
+      - "127.0.0.1:${CODELENS_WEB_PORT:-0}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      # The gate covers /api/health too, so the check brings the key.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health',{headers:{cookie:'codelens_app_key='+process.env.LOCAL_APP_KEY}}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 10s
+      timeout: 6s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  pgdata:

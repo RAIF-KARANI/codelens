@@ -304,6 +304,24 @@ and any change to `globals.css`. The variants its components need are already th
 is `src/lib/use-theme.ts`. Use the tokens (`bg-card`, `text-muted-foreground`, `text-critical`), not
 palette classes like `zinc-500`.
 
+## CodeLens Desktop's stack
+
+`apps/desktop` holds the Compose project the desktop app runs (`codelens-desktop`: the
+same services plus the dashboard as a container, in local mode, with only the dashboard
+on a loopback port) and a CLI that drives it. See
+[`apps/desktop/README.md`](../apps/desktop/README.md):
+
+```bash
+cd apps/desktop
+pnpm install && pnpm build
+pnpm stack up --local         # build the images from this checkout, start, wait until healthy
+pnpm stack stop --local
+```
+
+It keeps its data in `%LOCALAPPDATA%\CodeLens` (or `CODELENS_HOME`) and its own database
+volume, so it runs beside the development stack without touching it. The dashboard's
+image on its own: `docker build -t codelens-web apps/web`.
+
 ## Configuration
 
 All config comes from environment variables, parsed by `core.config.Settings`

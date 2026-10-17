@@ -44,7 +44,20 @@ export function isDemo(): boolean {
   return process.env.DEMO_MODE === "true";
 }
 
-/** What calling the API needs: all a demo needs. */
+/** CodeLens Desktop's dashboard (planning-v2.md D147): no sign-in; whoever
+ * passes src/proxy.ts's gate (the app's key, a loopback host) is the machine's
+ * one owner, and the API it calls runs with LOCAL_MODE=true too. Unlike a demo,
+ * it writes: Re-index and 👍/👎 are there. */
+export function isLocal(): boolean {
+  return process.env.LOCAL_MODE === "true";
+}
+
+/** Whether anyone signs in with GitHub: not on a demo, not on the desktop. */
+export function hasSignIn(): boolean {
+  return !isDemo() && !isLocal();
+}
+
+/** What calling the API needs: all a demo or the desktop needs. */
 export function apiConfig(): Pick<Config, "apiUrl" | "apiJwtSecret"> {
   return {
     apiUrl: required("API_URL").replace(/\/$/, ""),
@@ -52,7 +65,8 @@ export function apiConfig(): Pick<Config, "apiUrl" | "apiJwtSecret"> {
   };
 }
 
-/** Everything, for signing in with GitHub (not used by a demo). */
+/** Everything, for signing in with GitHub (not used by a demo or the
+ * desktop). */
 export function config(): Config {
   return {
     appUrl: required("APP_URL").replace(/\/$/, ""),

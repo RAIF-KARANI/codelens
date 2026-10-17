@@ -95,8 +95,10 @@ def current_user(
         github_id=sub,
         login=login,
         installations=frozenset(installations),
-        # Admin is the server's decision (API_ADMIN_LOGINS), never a claim.
-        is_admin=settings.admins.allows(login, int(sub) if sub.isdigit() else None),
+        # Admin is the server's decision (API_ADMIN_LOGINS, or the desktop's
+        # LOCAL_MODE, where the one dashboard is the owner's), never a claim.
+        is_admin=settings.local_mode
+        or settings.admins.allows(login, int(sub) if sub.isdigit() else None),
         demo=settings.demo_mode,
     )
 

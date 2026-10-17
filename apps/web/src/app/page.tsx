@@ -18,7 +18,7 @@ import { StatTile } from "@/components/stat-tile";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getStats, listAllReviews, type SeverityCounts, type Stats } from "@/lib/api";
-import { isDemo } from "@/lib/config";
+import { hasSignIn, isDemo } from "@/lib/config";
 import { dayTitle, formatCount, formatMs } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -156,7 +156,9 @@ function NoRepos() {
     >
       {isDemo()
         ? "The demo has no repositories loaded yet."
-        : "Install your CodeLens GitHub App on a repository. CodeLens indexes it, then reviews every push to its pull requests. Sign in again afterwards to see it here."}
+        : "Install your CodeLens GitHub App on a repository. CodeLens indexes it, then reviews every push to its pull requests."}
+      {/* Installations are read at sign-in; the desktop has none (D147). */}
+      {hasSignIn() && " Sign in again afterwards to see it here."}
     </StateMessage>
   );
 }

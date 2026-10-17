@@ -8,7 +8,7 @@ import { TableSkeleton } from "@/components/skeleton";
 import { StateMessage } from "@/components/state-message";
 import { Button } from "@/components/ui/button";
 import { listRepos, type Repo } from "@/lib/api";
-import { isDemo } from "@/lib/config";
+import { hasSignIn, isDemo } from "@/lib/config";
 import { shortSha } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Repositories" };
@@ -45,7 +45,9 @@ async function RepoTable() {
       >
         {isDemo()
           ? "The demo has no repositories loaded yet."
-          : "Install your CodeLens GitHub App on a repository, then sign in again: CodeLens indexes it and reviews every push to its pull requests."}
+          : hasSignIn()
+            ? "Install your CodeLens GitHub App on a repository, then sign in again: CodeLens indexes it and reviews every push to its pull requests."
+            : "Install your CodeLens GitHub App on a repository: CodeLens indexes it and reviews every push to its pull requests."}
       </StateMessage>
     );
   }
