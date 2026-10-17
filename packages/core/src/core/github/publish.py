@@ -19,11 +19,15 @@ code span its own backticks can't close.
 
 import re
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from core.diff import FileDiff
+from core.diff.git import GitError
 from core.enums import FindingStatus, Severity
+from core.github.client import GitHubError
+from core.providers.base import ProviderUnavailableError, StructuredOutputError
 from core.review.pipeline import ReviewResult
 from core.review.validate import CheckedFinding
 
@@ -154,6 +158,66 @@ def _summary(
     footer = f"{reviewed} changed file(s) reviewed with `{model}`, locally"
     lines += ["", f"<sub>{'; '.join([footer, *notes])}.</sub>"]
     return _cap("\n".join(lines))
+
+
+# Why a review failed, as the pull request is told (Phase 11 step 4): a fixed
+# list, so nothing from inside (paths, hosts, stack traces) reaches GitHub.
+# The whole error stays in the dashboard and the logs.
+TOO_LONG = "it took longer than its time limit"
+NO_MODEL = "the model server didn't answer"
+UNUSABLE = "the model's answer couldn't be used"
+NO_CODE = "the pull request's code couldn't be fetched from GitHub"
+TOO_BIG = "the change is too large for the model's context window"
+NO_PART = "the model couldn't review any part of it"
+INTERNAL = "an internal error stopped it"
+
+
+def failure_reason(
+    error: BaseException | None,
+    failed_chunks: Sequence[tuple[int, str]] = (),
+    *,
+    timed_out: bool = False,
+) -> str:
+    """Which of the reasons above: from the exception that ended the review,
+    or, when the pipeline itself returned `failed` (every chunk failed), from
+    what the chunks said."""
+    if timed_out:
+        return TOO_LONG
+    if isinstance(error, ProviderUnavailableError):
+        return NO_MODEL
+    if isinstance(error, StructuredOutputError):
+        return UNUSABLE
+    if error is not None and any(
+        isinstance(e, (GitHubError, GitError)) for e in (error, error.__cause__)
+    ):
+        return NO_CODE
+    if error is None and failed_chunks:
+        if all("context window" in message for _, message in failed_chunks):
+            return TOO_BIG
+        return NO_PART
+    return INTERNAL
+
+
+def build_failure_note(head_sha: str, reason: str) -> dict[str, Any]:
+    """A `COMMENT` review that only says the push wasn't reviewed, and why.
+    No `commit_id`: the head may be one GitHub can't place (a failed fetch),
+    and the body names the commit anyway."""
+    retry = (
+        "A smaller pull request fits."
+        if reason == TOO_BIG
+        else "Push again, or close and reopen the pull request, to retry."
+    )
+    body = "\n".join(
+        [
+            f"### CodeLens couldn't review `{head_sha[:7]}`",
+            "",
+            f"{reason[0].upper()}{reason[1:]}. {retry}",
+            "",
+            "<sub>Nothing else was posted for this push. Whoever runs this CodeLens can see "
+            "the details on its dashboard.</sub>",
+        ]
+    )
+    return {"event": "COMMENT", "body": body}
 
 
 def defuse(text: str) -> str:

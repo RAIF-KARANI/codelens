@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+from celery.exceptions import SoftTimeLimitExceeded
 from redis.asyncio import Redis
 from sqlalchemy import func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -40,7 +41,7 @@ from core.github import (
     load_private_key,
 )
 from core.github.mirror import BRANCHES, clone_url, mirror_path, sync_mirror
-from core.github.publish import build_review
+from core.github.publish import build_failure_note, build_review, failure_reason
 from core.github.webhooks import Policy, rename_repository
 from core.indexing import IndexingError, IndexLocked, IndexReport, index_repository, index_revision
 from core.providers import open_providers
@@ -345,11 +346,58 @@ async def _run_review(
             await append_event(conn, review_id, "error", message=message)
             await conn.commit()
         await ring(notify, review_id)
+        if github:
+            timed_out = isinstance(exc, SoftTimeLimitExceeded)
+            reason = failure_reason(exc, timed_out=timed_out)
+            await _post_failure(settings, engine, row, review_id, reason, notify)
         raise
     summary = {"review_id": review_id, "status": result.status.value}
     if github and result.status is ReviewStatus.COMPLETED:
         summary |= await _publish(settings, engine, row, review_id, result, model, notify)
+    elif github and result.status is ReviewStatus.FAILED:
+        reason = failure_reason(None, result.failed_chunks)
+        await _post_failure(settings, engine, row, review_id, reason, notify)
     return {**summary, "posted": len(result.posted)}
+
+
+async def _post_failure(
+    settings: Settings, engine: AsyncEngine, row: Any, review_id: int, reason: str, notify: Notify
+) -> None:
+    """Tell the pull request its push wasn't reviewed, and why (closing v1's
+    silent failures). Only for an installation CodeLens still acts for, and
+    only while this is the PR's newest review: a later push is under way and
+    will say what it found. Never raises: a note that can't be posted is
+    logged, and the review's own failure stays what the task reports."""
+    try:
+        if row.github_installation_id is None or not _covered(settings, row):
+            return
+        async with engine.connect() as conn:
+            newer = await conn.scalar(
+                select(Review.id).where(
+                    Review.repo_id == row.repo_id,
+                    Review.pr_number == row.pr_number,
+                    Review.id > review_id,
+                )
+            )
+            full_name = await conn.scalar(select(Repo.full_name).where(Repo.id == row.repo_id))
+        if newer is not None:
+            return
+        async with github_client(settings) as gh:
+            token = await _installation_token(settings, gh, row.github_installation_id)
+            posted = await gh.create_review(
+                full_name, row.pr_number, build_failure_note(row.head_sha, reason), token
+            )
+        async with engine.connect() as conn:
+            await conn.execute(
+                update(Review).where(Review.id == review_id).values(github_review_id=posted["id"])
+            )
+            await append_event(
+                conn, review_id, "failure_posted", github_review_id=posted["id"], reason=reason
+            )
+            await conn.commit()
+        await ring(notify, review_id)
+    except Exception:
+        logger.warning("review %s: couldn't post its failure on the PR", review_id, exc_info=True)
 
 
 async def _end(engine: AsyncEngine, review_id: int, notify: Notify) -> None:
