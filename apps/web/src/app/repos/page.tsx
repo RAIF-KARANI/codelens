@@ -1,9 +1,12 @@
+import { FolderGit2Icon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
 import { DateTime, StatusBadge, Tag } from "@/components/badges";
 import { TableSkeleton } from "@/components/skeleton";
+import { StateMessage } from "@/components/state-message";
+import { Button } from "@/components/ui/button";
 import { listRepos, type Repo } from "@/lib/api";
 import { isDemo } from "@/lib/config";
 import { shortSha } from "@/lib/format";
@@ -28,11 +31,22 @@ async function RepoTable() {
   const repos = await listRepos();
   if (repos.length === 0) {
     return (
-      <div className="mt-8 rounded-lg border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
+      <StateMessage
+        className="mt-8"
+        icon={<FolderGit2Icon />}
+        title={isDemo() ? "No repositories loaded" : "No repositories yet"}
+        action={
+          isDemo() ? undefined : (
+            <Button asChild variant="outline">
+              <a href="https://github.com/RAIF-KARANI/codelens/blob/main/docs/run-your-own.md">How to install it</a>
+            </Button>
+          )
+        }
+      >
         {isDemo()
           ? "The demo has no repositories loaded yet."
-          : "No repositories yet. Install the CodeLens GitHub App on a repository, then sign in again."}
-      </div>
+          : "Install your CodeLens GitHub App on a repository, then sign in again: CodeLens indexes it and reviews every push to its pull requests."}
+      </StateMessage>
     );
   }
   return (

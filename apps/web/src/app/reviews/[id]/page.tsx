@@ -1,4 +1,4 @@
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, FileDiffIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -13,6 +13,7 @@ import {
   type ReviewDiff,
   type Seed,
 } from "@/lib/api";
+import { StateMessage } from "@/components/state-message";
 import { findingOrder, type Token } from "@/lib/code";
 import { type DiffFile, filePath, parseDiff } from "@/lib/diff";
 import { highlightDiff } from "@/lib/highlight";
@@ -163,10 +164,10 @@ function ReviewBody({
         <DiffView files={files} tokens={tokens} findings={review.findings} names={names} />
       ) : (
         <>
-          <p className="text-sm text-muted-foreground">
-            This review is from before diffs were stored with reviews, so its findings are listed
-            without the diff.
-          </p>
+          <StateMessage className="py-6" icon={<FileDiffIcon />} title="No diff stored">
+            This review is from before reviews stored the diff they read
+            {ordered.length > 0 ? ", so its findings are listed on their own." : "."}
+          </StateMessage>
           {ordered.map((f) => (
             <FindingSlot key={f.id} id={f.id}>
               <FindingCard finding={f} names={names} />

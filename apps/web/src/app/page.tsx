@@ -13,7 +13,9 @@ import { AutoRefresh } from "@/components/auto-refresh";
 import { DailyChart } from "@/components/daily-chart";
 import { ReviewTable } from "@/components/review-table";
 import { TableSkeleton } from "@/components/skeleton";
+import { StateMessage } from "@/components/state-message";
 import { StatTile } from "@/components/stat-tile";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getStats, listAllReviews, type SeverityCounts, type Stats } from "@/lib/api";
 import { isDemo } from "@/lib/config";
@@ -140,17 +142,22 @@ function InProgress({ count }: { count: number }) {
 
 function NoRepos() {
   return (
-    <div className="mt-8 flex flex-col items-center gap-3 rounded-xl border border-dashed border-input px-6 py-12 text-center">
-      <span className="flex size-10 items-center justify-center rounded-lg bg-accent text-accent-foreground">
-        <FolderGit2Icon className="size-5" aria-hidden="true" />
-      </span>
-      <h2 className="text-base font-semibold">No repositories yet</h2>
-      <p className="max-w-md text-sm text-muted-foreground">
-        {isDemo()
-          ? "The demo has no repositories loaded yet."
-          : "Install the CodeLens GitHub App on a repository. CodeLens indexes it, then reviews every push to its pull requests. Sign in again afterwards to see it here."}
-      </p>
-    </div>
+    <StateMessage
+      className="mt-8"
+      icon={<FolderGit2Icon />}
+      title={isDemo() ? "No repositories loaded" : "No repositories yet"}
+      action={
+        isDemo() ? undefined : (
+          <Button asChild variant="outline">
+            <a href="https://github.com/RAIF-KARANI/codelens/blob/main/docs/run-your-own.md">How to install it</a>
+          </Button>
+        )
+      }
+    >
+      {isDemo()
+        ? "The demo has no repositories loaded yet."
+        : "Install your CodeLens GitHub App on a repository. CodeLens indexes it, then reviews every push to its pull requests. Sign in again afterwards to see it here."}
+    </StateMessage>
   );
 }
 
@@ -169,10 +176,10 @@ async function RecentReviews() {
         )}
       </div>
       {page.items.length === 0 ? (
-        <p className="mt-3 rounded-lg border border-dashed border-input p-6 text-center text-sm text-muted-foreground">
-          No reviews yet. CodeLens reviews every push to an open pull request in an installed
-          repository.
-        </p>
+        <StateMessage className="mt-3" icon={<GitPullRequestIcon />} title="No reviews yet">
+          CodeLens reviews every push to an open pull request in a repository its App is
+          installed on.
+        </StateMessage>
       ) : (
         <div className="mt-3">
           <ReviewTable reviews={page.items} />

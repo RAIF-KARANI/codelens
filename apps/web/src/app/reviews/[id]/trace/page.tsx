@@ -1,8 +1,10 @@
+import { ListXIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
+import { StateMessage } from "@/components/state-message";
 import { getReview, getReviewTrace } from "@/lib/api";
 import { parseId } from "@/lib/params";
 import { tokensUsed } from "@/lib/trace";
@@ -29,11 +31,16 @@ async function Trace({ params }: Pick<PageProps<"/reviews/[id]/trace">, "params"
   const [trace, review] = await Promise.all([getReviewTrace(id), getReview(id)]);
   if (trace.chunks.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
+      <StateMessage
+        icon={<ListXIcon />}
+        title={review.status === "queued" || review.status === "running" ? "Not yet" : "Nothing was retrieved"}
+      >
         {review.status === "queued" || review.status === "running"
           ? "The trace appears once the review has retrieved its context."
-          : "Nothing was retrieved for this review."}
-      </p>
+          : review.status === "failed"
+            ? "This review failed before it retrieved any context; the Diff tab's run details say where."
+            : "This review retrieved no context: it had no changed code to look around."}
+      </StateMessage>
     );
   }
   const cited = [...new Set(review.findings.flatMap((f) => f.evidence_node_ids))];

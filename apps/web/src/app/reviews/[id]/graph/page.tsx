@@ -1,8 +1,10 @@
+import { WaypointsIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
+import { StateMessage } from "@/components/state-message";
 import { getReview, getReviewDiff, getReviewGraph } from "@/lib/api";
 import { focusOf } from "@/lib/focus";
 import { first, parseId } from "@/lib/params";
@@ -35,11 +37,16 @@ async function Graph({ params, searchParams }: PageProps<"/reviews/[id]/graph">)
   ]);
   if (graph.nodes.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
+      <StateMessage
+        icon={<WaypointsIcon />}
+        title={review.status === "queued" || review.status === "running" ? "Not yet" : "No graph for this review"}
+      >
         {review.status === "queued" || review.status === "running"
           ? "The graph appears once the review has found the changed code."
-          : "No graph: this review is from before reviews stored their changed code."}
-      </p>
+          : review.status === "failed"
+            ? "This review failed before it found the changed code; the Diff tab's run details say where."
+            : "It's from before reviews stored their changed code, or it changed no code CodeLens parses, so there's nothing to draw."}
+      </StateMessage>
     );
   }
   const cited = [...new Set(review.findings.flatMap((f) => f.evidence_node_ids))];
