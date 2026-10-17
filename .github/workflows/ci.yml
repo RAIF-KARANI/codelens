@@ -64,3 +64,63 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
+
+  # The dashboard end to end (Phase 10 step 8, D162): the API in demo mode over
+  # the demo export, the dashboard built for production, Playwright clicking
+  # through it, axe checking it, and screenshots compared with the stored ones.
+  e2e:
+    runs-on: ubuntu-latest
+    # The image the stored screenshots were rendered in (apps/web/e2e/README.md):
+    # the same browser and fonts, so they compare pixel for pixel.
+    container: mcr.microsoft.com/playwright:v1.63.0-noble
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: codelens
+          POSTGRES_PASSWORD: codelens
+          POSTGRES_DB: codelens
+        options: >-
+          --health-cmd "pg_isready -U codelens" --health-interval 5s
+          --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 10
+    env:
+      # Inside a container job, services are reached by their names.
+      E2E_DATABASE_URL: postgresql+asyncpg://codelens:codelens@postgres:5432/codelens
+      REDIS_URL: redis://redis:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install (Python)
+        run: uv sync --frozen
+      - name: Load the demo export
+        run: uv run python scripts/e2e_data.py apps/web/e2e/fixtures/codelens-demo.json.gz --database-url "$E2E_DATABASE_URL"
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - name: Install (web)
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+      - name: Playwright
+        working-directory: apps/web
+        run: pnpm e2e
+      - name: Keep the report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 7

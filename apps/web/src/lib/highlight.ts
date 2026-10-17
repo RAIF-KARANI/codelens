@@ -11,13 +11,39 @@ import {
   sides,
   type Token,
 } from "@/lib/code";
+import { over, readable } from "@/lib/contrast";
 import { type DiffFile, filePath } from "@/lib/diff";
 
 /** Syntax highlighting, on the server only (Shiki with GitHub's themes): the
  * browser gets coloured spans and no highlighter. Both themes' colours ride on
  * every token as CSS variables, so the theme toggle needs no re-render. */
 
-const THEMES = { light: "github-light", dark: "github-dark" } as const;
+const THEMES = { light: "github-light-default", dark: "github-dark-default" } as const;
+
+/** Where code is shown (app/globals.css): the card, the page and muted rows,
+ * each plain or under a diff's added or deleted tint. GitHub's colours are
+ * made for a plain background, so each token colour is darkened (or, in the
+ * dark theme, lightened) just enough to keep 4.5:1 on all of them (D162). */
+function surfaces(bases: string[], added: number, deleted: number): string[] {
+  return bases.flatMap((b) => [b, over("#10b981", added, b), over("#ef4444", deleted, b)]);
+}
+const SURFACES = {
+  light: surfaces(["#ffffff", "#f8f7fc", "#f1eff7"], 0.13, 0.11),
+  dark: surfaces(["#17141f", "#0e0c14", "#1d1a27"], 0.16, 0.15),
+};
+
+const readableCache = new Map<string, string>();
+
+function readableToken(color: string | undefined, theme: keyof typeof SURFACES): string | undefined {
+  if (!color || !/^#[0-9a-f]{3,8}$/i.test(color)) return color;
+  const key = `${theme}${color}`;
+  let fixed = readableCache.get(key);
+  if (fixed === undefined) {
+    fixed = readable(color, SURFACES[theme]);
+    readableCache.set(key, fixed);
+  }
+  return fixed;
+}
 
 /** Bigger than this is shown plain: highlighting is linear, but a 1 MB diff
  * (the cap a review stores, D110) isn't worth the CPU on every page view. */
@@ -41,8 +67,8 @@ export async function highlight(code: string, lang: Lang | null): Promise<Token[
   return tokens.map((line) =>
     line.map((t) => ({
       text: t.content,
-      light: t.htmlStyle?.["--shiki-light"],
-      dark: t.htmlStyle?.["--shiki-dark"],
+      light: readableToken(t.htmlStyle?.["--shiki-light"], "light"),
+      dark: readableToken(t.htmlStyle?.["--shiki-dark"], "dark"),
     })),
   );
 }

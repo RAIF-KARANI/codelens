@@ -1413,10 +1413,12 @@ configures logging itself (`setup_logging` signal), so `--loglevel` gives way to
 | Worker | Real tasks run eagerly (`.apply()`): crash restart, lock retry, redelivery skip |
 | End to end | API → worker task → API, in-process (`services/api/tests/test_routes.py`) |
 | Dashboard | vitest on the server code: session cookies (round trip, forged, expired, `alg: none`), the API token's claims, the GitHub calls with a fake `fetch`, `state` and `next` checks |
+| Dashboard, end to end | Playwright (`apps/web/e2e`, D162) on the production build against the API in demo mode over the demo export: smoke tests of every page and its interactions, axe's WCAG 2.2 AA rules in both themes, focus and reduced motion, layout on desktop, tablet and phone, and screenshots compared with ones rendered in Playwright's Linux image |
 | Evals | Local only (GPU); CI runs none (§10.6 of `planning.md`) |
 
 CI (GitHub Actions) runs ruff, `ruff format --check` and pytest with Postgres and Redis
-services, plus the web app's lint, tests and build.
+services, plus the web app's lint, tests and build, and the end-to-end job (`e2e`) in
+Playwright's container with its own Postgres and Redis.
 
 ---
 

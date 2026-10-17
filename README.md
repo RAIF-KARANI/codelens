@@ -33,9 +33,11 @@ to the code it cites. Click to play.
 - **Runs locally.** Models run on [Ollama](https://ollama.com) (`qwen3:8b` reviews,
   `qwen3-embedding:0.6b` embeds). No code leaves your machine.
 
-| A review: the finding on its line, the timeline | The graph around the change | What retrieval found, and what the model saw |
-|---|---|---|
-| [![Review page](docs/images/review.png)](https://codelens.raifkarani.in/reviews/1384) | [![Graph view](docs/images/graph.png)](https://codelens.raifkarani.in/reviews/1386/graph?finding=1381) | [![Trace view](docs/images/trace.png)](https://codelens.raifkarani.in/reviews/1386/trace) |
+| The overview: the last 7 days of reviews | A review: its findings, each on its line |
+|---|---|
+| [![Overview page](docs/images/overview.png)](https://codelens.raifkarani.in/) | [![Review page](docs/images/review.png)](https://codelens.raifkarani.in/reviews/1384) |
+| **The graph around the change** | **What retrieval found, and what the model saw** |
+| [![Graph view](docs/images/graph.png)](https://codelens.raifkarani.in/reviews/1386/graph?finding=1381) | [![Trace view](docs/images/trace.png)](https://codelens.raifkarani.in/reviews/1386/trace) |
 
 ## How it works
 

@@ -56,7 +56,7 @@ async function Trace({ params }: Pick<PageProps<"/reviews/[id]/trace">, "params"
           <section key={chunk.index} aria-labelledby={`chunk-${chunk.index}`}>
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
               <h2 id={`chunk-${chunk.index}`} className="text-sm font-semibold">
-                {trace.chunks.length > 1 ? `Chunk ${chunk.index + 1}: ` : ""}what retrieval found
+                {trace.chunks.length > 1 ? `Chunk ${chunk.index + 1}: what retrieval found` : "What retrieval found"}
               </h2>
               <span className="text-xs text-muted-foreground">
                 {shown} of {chunk.items.length} candidates shown to the model

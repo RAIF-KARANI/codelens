@@ -50,7 +50,7 @@ async function RepoTable() {
     );
   }
   return (
-    <div className="mt-6 overflow-x-auto rounded-lg border border-border">
+    <div className="relative mt-6 overflow-x-auto rounded-lg border border-border">
       <table className="w-full whitespace-nowrap text-left text-sm">
         <thead className="bg-muted text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
