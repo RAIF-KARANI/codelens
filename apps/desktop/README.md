@@ -4,10 +4,12 @@ CodeLens as a Windows app ([`planning-v2.md`](../../planning-v2.md), Phase 11): 
 the whole CodeLens stack on the user's machine, as a Docker Compose project of its own,
 and shows the dashboard in its window, with no sign-in.
 
-**Status: Phase 11 step 4a.** The app starts the stack, shows the dashboard, keeps it
-all up (a supervisor every 10 s), lives in the tray, and stops the stack when it quits;
-`pnpm dist` builds an unsigned installer. The first-run wizard, updates and releases
-come in later steps. It needs Docker Desktop and Ollama installed.
+**Status: Phase 11 step 5a.** On its first run a wizard checks the computer and finds,
+starts or installs Docker Desktop and Ollama (from their publishers, signature checked).
+Then the app starts the stack, shows the dashboard, keeps it all up (a supervisor every
+10 s), lives in the tray, and stops the stack when it quits; `pnpm dist` builds an
+unsigned installer. The models and the GitHub App in the wizard (5b), updates and
+releases come in later steps.
 
 | File | What |
 |---|---|
@@ -18,6 +20,8 @@ come in later steps. It needs Docker Desktop and Ollama installed.
 | `src/main.ts` | The Electron app: start the stack, give the window the launch's key, show the dashboard, stop on quit |
 | `src/window.ts` | What the window may show (this launch's dashboard only) and open (https links, in your browser); the status pages and their buttons |
 | `src/supervisor.ts` | What to start or restart, the backoff, what to tell the user |
+| `src/firstrun.ts`, `src/wizard.ts` | The first-run wizard's flow and its screen |
+| `src/machine.ts`, `src/installers.ts` | The computer's checks; downloading, checking and running Docker's and Ollama's installers |
 | `src/logs.ts`, `src/settings.ts` | Each service's log file; `desktop.json` |
 | `src/cli.ts` | `pnpm stack …`: the stack from a terminal |
 

@@ -186,6 +186,19 @@ export function composeEnv(stack: Stack, launch?: Launch): Record<string, string
 
 export type Run = { code: number; output: string };
 
+/** The docker command: "docker" on the PATH, or the full path to the one
+ * Docker Desktop installs, for a process started before that install (whose
+ * PATH doesn't have it yet). */
+let dockerCommand = "docker";
+
+export function useDocker(command: string): void {
+  dockerCommand = command;
+}
+
+export function dockerBin(): string {
+  return dockerCommand;
+}
+
 /** Runs `docker` with these arguments, collecting its output (and passing it
  * on, if asked). Never through a shell: the paths can hold spaces. */
 export function docker(
@@ -194,7 +207,7 @@ export function docker(
   onOutput?: (chunk: string) => void,
 ): Promise<Run> {
   return new Promise((resolve, reject) => {
-    const child = spawn("docker", args, { env: { ...process.env, ...env }, windowsHide: true });
+    const child = spawn(dockerCommand, args, { env: { ...process.env, ...env }, windowsHide: true });
     let output = "";
     const collect = (data: Buffer) => {
       const text = data.toString();

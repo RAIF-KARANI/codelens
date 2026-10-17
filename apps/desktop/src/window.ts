@@ -30,9 +30,24 @@ export function isExternalLink(url: string): boolean {
 /** What a status page's buttons ask for. They are plain links to
  * codelens://<action>, which the window's navigation guard catches (main.ts),
  * so the page needs no script and no bridge into the app. */
-export type AppAction = "retry" | "start-docker" | "open-logs";
+export type AppAction =
+  | "retry"
+  | "start-docker"
+  | "open-logs"
+  | "continue"
+  | "check-again"
+  | "install-docker"
+  | "install-ollama";
 
-const ACTIONS: readonly AppAction[] = ["retry", "start-docker", "open-logs"];
+const ACTIONS: readonly AppAction[] = [
+  "retry",
+  "start-docker",
+  "open-logs",
+  "continue",
+  "check-again",
+  "install-docker",
+  "install-ollama",
+];
 
 export function appAction(url: string): AppAction | null {
   const match = /^codelens:\/\/([a-z-]+)\/?$/.exec(url);
@@ -42,7 +57,7 @@ export function appAction(url: string): AppAction | null {
 
 export type Button = { label: string; href: string };
 
-const escape = (text: string) =>
+export const escapeHtml = (text: string) =>
   text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c);
 
 /** The page shown while the stack starts, or when it can't: what is going on
@@ -54,7 +69,7 @@ export function statusPage(
   { buttons = [], busy = true }: { buttons?: Button[]; busy?: boolean } = {},
 ): string {
   const links = buttons
-    .map((b, i) => `<a class="${i === 0 ? "primary" : ""}" href="${escape(b.href)}">${escape(b.label)}</a>`)
+    .map((b, i) => `<a class="${i === 0 ? "primary" : ""}" href="${escapeHtml(b.href)}">${escapeHtml(b.label)}</a>`)
     .join("");
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>CodeLens</title>
 <style>
@@ -76,7 +91,7 @@ export function statusPage(
   a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   @keyframes pulse { 50% { opacity: .3; } }
   @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
-</style></head><body><main>${busy ? '<div class="dot"></div>' : ""}<h1>${escape(title)}</h1>
-<p>${escape(detail)}</p>${links ? `<div class="actions">${links}</div>` : ""}</main></body></html>`;
+</style></head><body><main>${busy ? '<div class="dot"></div>' : ""}<h1>${escapeHtml(title)}</h1>
+<p>${escapeHtml(detail)}</p>${links ? `<div class="actions">${links}</div>` : ""}</main></body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }

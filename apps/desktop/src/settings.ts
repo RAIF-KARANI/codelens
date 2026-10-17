@@ -9,9 +9,12 @@ export type DesktopSettings = {
   askedStartAtLogin: boolean;
   /** Pause stays paused across a restart, until Resume. */
   paused: boolean;
+  /** The first-run wizard got to the end once (step 5): later starts go
+   * straight to the dashboard, and what breaks later gets the status pages. */
+  setupDone: boolean;
 };
 
-export const DEFAULTS: DesktopSettings = { askedStartAtLogin: false, paused: false };
+export const DEFAULTS: DesktopSettings = { askedStartAtLogin: false, paused: false, setupDone: false };
 
 /** The settings, or the defaults for anything missing or unreadable: a broken
  * file never stops the app. */
@@ -24,6 +27,7 @@ export async function loadSettings(home: string): Promise<DesktopSettings> {
       askedStartAtLogin:
         typeof raw.askedStartAtLogin === "boolean" ? raw.askedStartAtLogin : DEFAULTS.askedStartAtLogin,
       paused: typeof raw.paused === "boolean" ? raw.paused : DEFAULTS.paused,
+      setupDone: typeof raw.setupDone === "boolean" ? raw.setupDone : DEFAULTS.setupDone,
     };
   } catch {
     return { ...DEFAULTS };
