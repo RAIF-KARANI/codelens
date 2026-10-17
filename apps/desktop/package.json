@@ -1,0 +1,19 @@
+{
+  "name": "codelens-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CodeLens Desktop: runs CodeLens's Compose project on this machine (planning-v2.md Phase 11)",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "vitest run",
+    "stack": "node dist/cli.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5",
+    "vitest": "^5.0.4"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

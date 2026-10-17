@@ -2,7 +2,7 @@
 
 > **What this file is:** how CodeLens is built *today*, module by module: the
 > components, how data flows between them, the data model, and the rules each part
-> follows. It describes `main` as of 2026-10-17: all of v1, Phases 1–9 (through the public demo, hardening, running your own CodeLens, and the security fixes), and v2's Phase 10 (the dashboard rebuilt on a design system, with its end-to-end checks). Phase 11, CodeLens Desktop, is planned, not built.
+> follows. It describes `main` as of 2026-10-17: all of v1, Phases 1–9 (through the public demo, hardening, running your own CodeLens, and the security fixes), and v2's Phase 10 (the dashboard rebuilt on a design system, with its end-to-end checks). Phase 11, CodeLens Desktop, has begun: step 1a built the stack the app will run (the dashboard as a container, local mode, the desktop's own Compose project, images published by CI); the app itself comes next.
 >
 > | File | Answers |
 > |---|---|
@@ -99,6 +99,7 @@ and code and prompts never leave the machine (D20).
 | `codelens doctor`: a machine's requirements checked, each with its fix (D125) | ✅ Phase 8 step 1 |
 | `codelens setup`: a fresh clone to a running stack with the user's own App; the webhook relay as a Compose service (D126) | ✅ Phase 8 step 2 |
 | A fresh-clone rehearsal (a review posted 37 s after a push) and `docs/run-your-own.md` | ✅ Phase 8 step 3 |
+| CodeLens Desktop's stack: the dashboard as a `web` container, local mode (no sign-in, the app's key, a loopback Host), the Compose project `codelens-desktop` and its driver, the images published to GitHub's registry by CI (§3.3, §10.4) | ✅ Phase 11 step 1a (D164–D167) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -171,8 +172,9 @@ codelens/
 ├── deploy/api/                  the demo API's Vercel root: entrypoint, pinned uv project, cron
 ├── docs/hosted-service.md       the future upgrade: CodeLens hosted for other people
 ├── scripts/                     GPU benchmarks; the demo's requirements export and publish_demo.py
-├── apps/web/                    Next.js dashboard (Phase 6; §10.3)
-└── docker-compose.yml, .env.example, .github/workflows/ci.yml
+├── apps/web/                    Next.js dashboard (Phase 6; §10.3), and its container (Dockerfile)
+├── apps/desktop/                CodeLens Desktop (Phase 11): its Compose project and the driver (§3.3)
+└── docker-compose.yml, .env.example, .github/workflows/{ci,images}.yml
 ```
 
 ### 3.1 `core`, module by module
@@ -210,6 +212,18 @@ codelens/
 | `worker/tasks.py` | `ping`, `index_repo`, `embed_repo`, `review` |
 
 ---
+
+### 3.3 `apps/desktop`: the stack CodeLens Desktop runs (Phase 11 step 1a)
+
+| File | Responsibility |
+|---|---|
+| `compose.yaml` | The Compose project `codelens-desktop` (D166): the same services as `docker-compose.yml` plus `web`, from images pinned by digest, under their own name and volume. Only `web` is published, on `127.0.0.1` at a port chosen per launch; the API, Postgres and Redis have no host ports. The data folder (`CODELENS_HOME`, by default `%LOCALAPPDATA%\CodeLens`) holds `codelens.env` (secrets generated per install), `data/` (mirrors) and `secrets/` (the App's key) |
+| `compose.build.yaml` | The developer's fallback: CodeLens's three images built from the checkout |
+| `images.json` | The published images (`ghcr.io/raif-karani/codelens-{api,worker,web}`), each `name@sha256:…`; filled from the `Images` workflow's summary (D167) |
+| `src/stack.ts` | The stack as plain functions: the data folder and its secrets (`ensureHome`), image pins (`pinnedImages`), a free port and a key per launch (`newLaunch`), `docker compose up --wait / stop / ps`. Never through a shell |
+| `src/cli.ts` | `pnpm stack init / up / status / stop / env`, `--local` to build the images |
+
+The Electron app (step 1b) will call `stack.ts` and give its window the launch's key.
 
 ## 4. Data model
 
@@ -996,6 +1010,10 @@ FastAPI (`services/api`). `/health` is public; everything under `/api/v1` needs 
     allows 15 in all), with `DATABASE_TRANSACTION_POOLER=true`: `core.db.create_engine`
     then turns off asyncpg's prepared-statement caches and names each statement
     uniquely (D118).
+- **`LOCAL_MODE=true`** (CodeLens Desktop, D147, D165): every valid token is the
+  machine's owner, an admin who sees every repo and may write. It is safe only because
+  the API has no published port there and only the local dashboard holds
+  `API_JWT_SECRET`; it refuses to start alongside `DEMO_MODE`.
 - **One error shape** for every error, including framework 404s and validation errors:
   `{"error": {"code": "not_found", "message": "...", "details": {...}}}`. Broker
   failures return `503 queue_unavailable` and never leak hostnames.
@@ -1250,8 +1268,42 @@ Graph, Trace) and one evidence drawer that every tab can open.
   the old version of the changed code, cut for the model's window) and tokens, with the
   chunk's context tokens against the budget. These are the rows the evals are scored
   from; ★ again marks cited evidence.
-- `/api/*` routes are outside the proxy's matcher: they answer 401 themselves rather
-  than redirecting.
+- `/api/*` routes are passed by the proxy with GitHub sign-in: they answer 401
+  themselves rather than redirecting. In local mode the proxy gates them too (§10.4).
+
+### 10.4 Local mode: the desktop's dashboard (Phase 11 step 1a, D165)
+
+CodeLens Desktop's dashboard has no sign-in (D147). In the `web` container
+(`apps/web/Dockerfile`, Next's standalone server, D164) with `LOCAL_MODE=true`:
+
+- **Who:** every request acts as one user, `LOCAL_OWNER` (`lib/session.ts`); the API,
+  also in local mode, treats its tokens as the owner's.
+- **The gate** (`src/proxy.ts`, `lib/app-key.ts`): every path except the build's
+  `/_next/static/` files must name a loopback host (`127.0.0.1`, `localhost`, `[::1]`)
+  and carry the cookie `codelens_app_key` equal to `LOCAL_APP_KEY`, compared in
+  constant time. Anything else is a 403 with one plain sentence; with no key (or a
+  short one) configured, everything is refused. The key is made at each launch and
+  only the app's window holds it, so a browser tab or another local program, and a
+  stranger's page reaching 127.0.0.1 by DNS rebinding, are all refused.
+- **No sign-in pages:** `/login` goes to `/repos` (the proxy redirects, since the
+  page's own check is prerendered); the user menu and Sign out are gone; empty states
+  don't say "sign in again".
+- `GET /api/health` answers `{"status": "ok"}`, for Compose's health check (which
+  brings the key too).
+
+```mermaid
+sequenceDiagram
+    participant W as the app's window
+    participant B as a browser tab, or a page<br/>at evil.example → 127.0.0.1
+    participant P as web: proxy.ts
+    participant A as api (no host port)
+    W->>P: GET 127.0.0.1:port/repos + codelens_app_key
+    P->>A: GET /api/v1/repos (Bearer, owner)
+    A-->>P: every repo (LOCAL_MODE)
+    P-->>W: the page
+    B->>P: GET /repos (no key, or Host: evil.example)
+    P-->>B: 403
+```
 
 ---
 
@@ -1267,7 +1319,7 @@ Graph, Trace) and one evidence drawer that every tab can open.
 | LLM | `LLM_MODEL` (qwen3:8b), `LLM_NUM_CTX` (8192), `LLM_TEMPERATURE` (0.1), `LLM_SEED` (42), `LLM_MAX_OUTPUT_TOKENS`, `LLM_TIMEOUT_S` (300) |
 | Embedder | `EMBED_MODEL` (qwen3-embedding:0.6b), `EMBED_BATCH_SIZE` (32), `EMBED_MAX_TOKENS` (1024), `EMBED_NUM_CTX` (2048), `EMBED_QUERY_ON_CPU` (false), `EMBED_TIMEOUT_S` |
 | Pipeline | `PIPELINE_CONFIG` (`configs/pipeline/default.yaml`) |
-| API | `API_JWT_SECRET` (empty = refuse all; else ≥ 32 bytes), `DEMO_MODE` |
+| API | `API_JWT_SECRET` (empty = refuse all; else ≥ 32 bytes), `DEMO_MODE`, `LOCAL_MODE` (the desktop: every token is the owner's, D165), `API_ADMIN_LOGINS` |
 | GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH` (`secrets/github-app.pem`), `GITHUB_WEBHOOK_SECRET` (empty = refuse every delivery), `GITHUB_ALLOWED_ACCOUNTS` (whose installations count; empty = nobody, D119), `GITHUB_REVIEWS_PER_HOUR` (per account, 10; 0 = no cap, D120), `GITHUB_API_URL`, `GITHUB_WEB_URL` (clone URLs); `SMEE_URL`, the relay's channel, read only by Compose (`smee` service) and `codelens setup`, not by the services |
 | Storage | `DATA_DIR` (`data`): bare mirrors in `DATA_DIR/repos/`. Compose mounts `./data` and `./secrets` (read-only) into the workers |
 
@@ -1358,6 +1410,7 @@ rejected: caller tags, split diffs, thinking at 8k and 16k, and a verification p
 | GitHub credentials | The App's key and webhook secret come from the manifest flow straight into gitignored `secrets/` (0600 where supported), never printed; the callback needs a random `state`; installation tokens live in memory only (D93, D96) |
 | Leaking internals | `/health` and broker errors expose only exception class names; details go to the server log |
 | Secrets | `.env` and `secrets/` are gitignored; `SecretStr` for the JWT key; pre-commit `detect-private-key` |
+| Other programs or web pages reaching the desktop's dashboard | Local mode's gate (§10.4, D165): a loopback Host and the launch's key in a cookie only the app's window holds, on every path but the build's static files; the API, Postgres and Redis have no host ports (D166) |
 | Cross-repo leakage | Every retrieval query is scoped by `repo_id`; every API route checks the caller may see the repo, and answers 404 otherwise (D111) |
 
 Mirrors (D99, D100): bare repos read as git objects, so nothing from a repo is checked
@@ -1458,11 +1511,13 @@ the guide). Not built: a desktop app, and Windows/macOS installers for the prere
 
 **v2** (`planning-v2.md`): Phase 10 is done: the dashboard is rebuilt on a design system
 (shadcn/ui) with its own brand, has an overview and a cross-repo reviews list, and is
-checked end to end in CI (D138–D162). Phase 11, not built yet, makes **CodeLens Desktop**
+checked end to end in CI (D138–D162). Phase 11 makes **CodeLens Desktop**
 for Windows: an Electron app (`apps/desktop`) that drives
 its own Docker Compose project (with the dashboard as a `web` container), learns about
 PRs by polling GitHub (`core/github/poll.py`), runs the dashboard in a no-sign-in local
-mode, and sets everything up from a first-run wizard. Some of the gaps below close on the
+mode, and sets everything up from a first-run wizard. Step 1a built the stack, local
+mode and the published images (§3.3, §10.4); the Electron app, polling, the supervisor,
+the wizard and the installer are not built yet. Some of the gaps below close on the
 way (the dashboard in Compose, a failed review saying so on the PR).
 
 **Later, as a separate upgrade:** CodeLens as a hosted service other people install on
@@ -1485,7 +1540,9 @@ a PageRank prior (U4) and anti-patterns (U5). Their schema columns (`tsv`, `cent
 - A review that runs while its repo is still embedding (D107) retrieves from a partial set
   of vectors.
 - Local-path reviews need the API and worker on the host (D92).
-- The dashboard runs with `pnpm dev` on the host; it isn't in Docker Compose yet.
+- In the development stack the dashboard still runs with `pnpm dev` on the host: the
+  `web` image exists (D164) and the desktop's project runs it, but `docker-compose.yml`
+  doesn't yet.
 - `webhook_deliveries` grows without pruning.
 - Every push re-reviews the whole PR diff (D108, by choice); topics stop repeated
   comments, but the model re-reads unchanged code, and its output varies from push to

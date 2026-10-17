@@ -4,7 +4,8 @@ reached through its repo, and a repo is visible to:
 - users whose token lists the repo's App installation (the dashboard fills
   `installations` from GitHub at login), and
 - API_ADMIN_LOGINS, who see every repo, including local and eval ones that
-  have no installation;
+  have no installation (on CodeLens Desktop, LOCAL_MODE makes every caller
+  one: the machine's owner, D147);
 - on a demo instance (DEMO_MODE), every signed-in user: its database holds
   only the public demo repos it was given (D115).
 

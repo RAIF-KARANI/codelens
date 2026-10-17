@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 
-import { config, isDemo } from "@/lib/config";
+import { config, hasSignIn } from "@/lib/config";
 import { exchangeCode, fetchInstallationIds, fetchUser } from "@/lib/github";
 import { OAUTH_COOKIE, readPending, redirectUri, sameState } from "@/lib/oauth";
 import { postLoginUrl } from "@/lib/paths";
@@ -11,8 +11,8 @@ import { startSession } from "@/lib/session";
  * GitHub who the user is and which App installations they can access, and
  * start the session. The user token is not kept (D113). */
 export async function GET(request: NextRequest) {
-  // An open demo has no sign-in (D117).
-  if (isDemo()) return NextResponse.redirect(new URL("/repos", request.url));
+  // An open demo (D117) and the desktop (D147) have no sign-in.
+  if (!hasSignIn()) return NextResponse.redirect(new URL("/repos", request.url));
   // The request first: until a handler reads it, Next.js may prerender it at
   // build time, when there are no settings.
   const params = request.nextUrl.searchParams;

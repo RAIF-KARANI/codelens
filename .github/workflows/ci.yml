@@ -65,6 +65,26 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
+  # CodeLens Desktop (planning-v2.md Phase 11): the stack driver's tests.
+  desktop:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/desktop/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+
   # The dashboard end to end (Phase 10 step 8, D162): the API in demo mode over
   # the demo export, the dashboard built for production, Playwright clicking
   # through it, axe checking it, and screenshots compared with the stored ones.
