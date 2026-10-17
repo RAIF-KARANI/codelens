@@ -102,6 +102,7 @@ and code and prompts never leave the machine (D20).
 | CodeLens Desktop's stack: the dashboard as a `web` container, local mode (no sign-in, the app's key, a loopback Host), the Compose project `codelens-desktop` and its driver, the images published to GitHub's registry by CI (§3.3, §10.4) | ✅ Phase 11 step 1a (D164–D167) |
 | CodeLens Desktop's spike: an Electron window that starts the stack, holds the launch's key and shows the dashboard; an unsigned Windows installer (§3.3) | ✅ Phase 11 step 1b (D168) |
 | GitHub polling: installations, pushes and pull requests learned by asking GitHub, through the webhook intake (§10.5) | ✅ Phase 11 step 2 (D169, D170) |
+| A failed review says so on its pull request, with a reason from a fixed list (§7 S11) | ✅ Phase 11 step 4b (D171) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -793,6 +794,11 @@ Only for GitHub reviews that completed; the worker does it after the pipeline (�
   function at the finding's first line, and that function's content hash. The finer
   fingerprint failed on a real PR: the same concern moved from line 167 to 167–168 and
   was posted twice.
+- **A failed review says so** (D171): one `COMMENT` review, "CodeLens couldn't review
+  `abc1234`", with a reason from a fixed list (`failure_reason`: too long, no model
+  server, unusable answer, code not fetched, too large, no part reviewed, internal) and
+  how to retry; the error itself stays in the dashboard. Not for an installation no
+  longer covered, nor when a newer review of the PR exists; a refused note is logged.
 - **Untrusted text:** the model's output can be steered by the code under review, so
   `@mentions` are defused with a zero-width space before posting. GitHub sanitises the
   Markdown itself.
@@ -1586,7 +1592,6 @@ a PageRank prior (U4) and anti-patterns (U5). Their schema columns (`tsv`, `cent
 - Every push re-reviews the whole PR diff (D108, by choice); topics stop repeated
   comments, but the model re-reads unchanged code, and its output varies from push to
   push.
-- A failed review posts nothing on the PR; nothing tells the author it failed.
 - A review queued while the broker is down has its row but no job, and neither a
   redelivery nor the poller sends it again (the intake sees the head queued): it waits
   for the next push.

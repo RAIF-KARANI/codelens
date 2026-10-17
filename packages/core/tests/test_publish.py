@@ -3,13 +3,18 @@ and defused @mentions. Pure functions; no database or GitHub."""
 
 import re
 from dataclasses import replace
+from typing import Any
 
 import pytest
 
 from core.diff import parse_unified_diff
+from core.diff.git import GitError
 from core.enums import FindingStatus, Severity
+from core.github import publish
+from core.github.client import GitHubError
 from core.github.publish import Publication, _code, build_review, defuse
 from core.providers import Usage
+from core.providers.base import ProviderUnavailableError, StructuredOutputError
 from core.review.changes import ChangeSet, FileChange
 from core.review.pipeline import ReviewResult
 from core.review.schemas import Category, FindingOut
@@ -195,3 +200,49 @@ def test_a_file_path_cant_close_its_code_span() -> None:
     assert "- \U0001f7e0 ``src/a` @\u200bvictim `b.py:2`` x is shadowed" in body
     assert _live_mentions(pub) == []
     assert _code("``x``") == "``` ``x`` ```"  # padded when it starts or ends with one
+
+
+# --- a failed review, said on the pull request (Phase 11 step 4)
+
+
+def _caused_by(cause: BaseException) -> Exception:
+    """A ReviewError-like wrapper, as the worker raises around a failed fetch."""
+    try:
+        raise RuntimeError("octo/shop#2: fetch failed") from cause
+    except RuntimeError as wrapped:
+        return wrapped
+
+
+@pytest.mark.parametrize(
+    ("error", "chunks", "timed_out", "reason"),
+    [
+        (RuntimeError("x"), (), True, publish.TOO_LONG),
+        (ProviderUnavailableError("http://host.docker.internal:11434 refused"), (), False,
+         publish.NO_MODEL),
+        (StructuredOutputError("bad json", raw="{"), (), False, publish.UNUSABLE),
+        (GitHubError(404, "Not Found", method="GET", path="/repositories/1"), (), False,
+         publish.NO_CODE),
+        (_caused_by(GitError("fatal: couldn't find remote ref")), (), False, publish.NO_CODE),
+        (None, [(0, "the diff alone exceeds the 8192-token context window")], False,
+         publish.TOO_BIG),
+        (None, [(0, "the diff alone exceeds the 8192-token context window"), (1, "timed out")],
+         False, publish.NO_PART),
+        (KeyError("anything else"), (), False, publish.INTERNAL),
+    ],
+    ids=["timeout", "no-model", "unusable", "github", "git", "too-big", "chunks", "other"],
+)  # fmt: skip
+def test_a_failure_gets_one_of_the_fixed_reasons(
+    error: BaseException | None, chunks: Any, timed_out: bool, reason: str
+) -> None:
+    assert publish.failure_reason(error, chunks, timed_out=timed_out) == reason
+
+
+def test_the_failure_note_says_why_and_how_to_retry_and_nothing_else() -> None:
+    note = publish.build_failure_note("abc1234" + "0" * 33, publish.NO_MODEL)
+    assert note["event"] == "COMMENT"
+    assert "commit_id" not in note  # the head may be one GitHub can't place
+    assert note["body"].startswith("### CodeLens couldn't review `abc1234`")
+    assert "The model server didn't answer. Push again, or close and reopen" in note["body"]
+    too_big = publish.build_failure_note("a" * 40, publish.TOO_BIG)["body"]
+    assert "A smaller pull request fits." in too_big
+    assert "Push again" not in too_big

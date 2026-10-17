@@ -73,6 +73,7 @@ class FakeGitHub:
     minted: list[str] = field(default_factory=list)  # installation tokens handed out
     reviews: list[dict[str, Any]] = field(default_factory=list)  # posted PR reviews
     refuse_inline: int = 0  # answer 422 to this many reviews that have comments
+    down: bool = False  # answer 502 to every review posted
     # What GitHub calls each repo id now; a rename changes it (D135).
     names: dict[int, str] = field(default_factory=lambda: {42: "octo/shop"})
 
@@ -88,8 +89,10 @@ class FakeGitHub:
             repo = {"id": github_id, "full_name": self.names[github_id], "default_branch": "main"}
             return httpx.Response(200, json=repo)
         if path.startswith("/repos/") and "/pulls/" in path and path.endswith("/reviews"):
+            if self.down:
+                return httpx.Response(502, json={"message": "Bad Gateway"})
             review = json.loads(request.content)
-            if self.refuse_inline and review["comments"]:
+            if self.refuse_inline and review.get("comments"):
                 self.refuse_inline -= 1
                 return httpx.Response(422, json={"message": "Line could not be resolved"})
             parts = path.split("/")  # /repos/{owner}/{name}/pulls/{n}/reviews

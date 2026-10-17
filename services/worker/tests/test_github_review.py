@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from core.providers.base import ProviderUnavailableError
 from worker.tasks import index_repo, review
 
 pytestmark = pytest.mark.integration
@@ -186,9 +187,17 @@ def test_a_missing_pull_request_fails_the_review(
     result = review.apply(args=(review_id, pull_request["base_sha"]))
 
     assert "#2" in str(result.result)
-    [row] = sql("SELECT status FROM reviews WHERE id = :id", id=review_id)
+    [row] = sql("SELECT status, github_review_id FROM reviews WHERE id = :id", id=review_id)
     assert row.status == "failed"
-    assert github.reviews == []
+    # The pull request is told (Phase 11 step 4), with a reason from the
+    # fixed list, not the git error itself.
+    [note] = github.reviews
+    assert note["number"] == 2
+    assert "couldn't review" in note["body"]
+    assert "The pull request's code couldn't be fetched from GitHub." in note["body"]
+    assert "fatal" not in note["body"] and "refs/pull" not in note["body"]
+    assert note.get("comments") is None
+    assert row.github_review_id == 9001
 
 
 def test_a_review_of_a_head_the_pr_has_moved_past_is_superseded(
@@ -226,3 +235,82 @@ def test_a_review_is_posted_to_the_repo_by_its_current_name(
     assert posted["repo"] == "octo/shop-renamed"
     [repo] = sql("SELECT full_name FROM repos WHERE id = :id", id=pull_request["repo_id"])
     assert repo.full_name == "octo/shop-renamed"
+
+
+# --- a failed review says so on the pull request (Phase 11 step 4)
+
+
+def fail_every_chunk(worker_on_fakes: Any) -> None:
+    def responder(messages: Any, schema: Any) -> Any:
+        raise ProviderUnavailableError("http://host.docker.internal:11434: connection refused")
+
+    worker_on_fakes.responder = responder
+
+
+def test_a_review_whose_every_chunk_failed_says_so(
+    pull_request: dict[str, Any], github: Any, worker_on_fakes: Any, sql: Sql
+) -> None:
+    fail_every_chunk(worker_on_fakes)
+    review_id = queue_review(sql, pull_request["repo_id"], pull_request["head_sha"])
+
+    summary = run(review_id, pull_request).get()
+
+    assert summary["status"] == "failed"
+    [note] = github.reviews
+    assert note["body"].startswith(f"### CodeLens couldn't review `{pull_request['head_sha'][:7]}`")
+    assert "The model couldn't review any part of it." in note["body"]
+    assert "11434" not in note["body"]  # the error stays in the dashboard
+    [row] = sql("SELECT status, github_review_id FROM reviews WHERE id = :id", id=review_id)
+    assert (row.status, row.github_review_id) == ("failed", 9001)
+    types = [e.type for e in sql(
+        "SELECT type FROM review_events WHERE review_id = :id ORDER BY seq", id=review_id
+    )]  # fmt: skip
+    assert types[-2:] == ["failure_posted", "end"]
+
+
+def test_no_note_when_a_newer_push_is_queued(
+    pull_request: dict[str, Any], github: Any, worker_on_fakes: Any, sql: Sql
+) -> None:
+    fail_every_chunk(worker_on_fakes)
+    review_id = queue_review(sql, pull_request["repo_id"], pull_request["head_sha"])
+    scripted = worker_on_fakes.responder
+
+    def push_while_generating(messages: Any, schema: Any) -> Any:
+        thread = threading.Thread(
+            target=queue_review, args=(sql, pull_request["repo_id"], "e" * 40)
+        )
+        thread.start()
+        thread.join()
+        return scripted(messages, schema)
+
+    worker_on_fakes.responder = push_while_generating
+
+    run(review_id, pull_request).get()
+
+    assert github.reviews == []  # the newer push will say what it found
+
+
+def test_no_note_for_an_account_no_longer_allowed(
+    pull_request: dict[str, Any], github: Any, worker_on_fakes: Any, sql: Sql
+) -> None:
+    review_id = queue_review(sql, pull_request["repo_id"], pull_request["head_sha"])
+    sql("UPDATE installations SET suspended_at = now()")
+
+    result = review.apply(args=(review_id, pull_request["base_sha"]))
+
+    assert "no longer allowed" in str(result.result)
+    assert github.reviews == []  # CodeLens doesn't act for it at all (D130)
+
+
+def test_a_note_github_refuses_is_only_logged(
+    pull_request: dict[str, Any], github: Any, worker_on_fakes: Any, sql: Sql
+) -> None:
+    fail_every_chunk(worker_on_fakes)
+    github.down = True
+    review_id = queue_review(sql, pull_request["repo_id"], pull_request["head_sha"])
+
+    summary = run(review_id, pull_request).get()
+
+    assert summary["status"] == "failed"
+    [row] = sql("SELECT status, github_review_id FROM reviews WHERE id = :id", id=review_id)
+    assert (row.status, row.github_review_id) == ("failed", None)
