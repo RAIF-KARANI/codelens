@@ -12,6 +12,7 @@ to watch it in. This is the run that closed Phase 5 and, with the dashboard, Pha
 | Postgres, Redis, migrations, API (:8000), `worker` (queue `index`), `worker-gpu` (queue `gpu`) | Docker | `docker compose up -d` |
 | Ollama (`qwen3:8b`, `qwen3-embedding:0.6b`) | natively on the host (GPU) | the Ollama app |
 | The webhook relay | Docker (the `smee` service), or the host | `docker compose --profile relay up -d` (with `SMEE_URL` in `.env`), or `npx smee-client …` |
+| Or, instead of the relay: the poller | Docker (the `poller` service) | `docker compose --profile poller up -d`: asks GitHub every minute; both can run at once |
 | The dashboard (:3000) | the host | `pnpm dev` in `apps/web` |
 
 Containers reach Ollama at `http://host.docker.internal:11434`. Compose mounts `./data`

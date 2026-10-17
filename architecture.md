@@ -101,6 +101,7 @@ and code and prompts never leave the machine (D20).
 | A fresh-clone rehearsal (a review posted 37 s after a push) and `docs/run-your-own.md` | ✅ Phase 8 step 3 |
 | CodeLens Desktop's stack: the dashboard as a `web` container, local mode (no sign-in, the app's key, a loopback Host), the Compose project `codelens-desktop` and its driver, the images published to GitHub's registry by CI (§3.3, §10.4) | ✅ Phase 11 step 1a (D164–D167) |
 | CodeLens Desktop's spike: an Electron window that starts the stack, holds the launch's key and shows the dashboard; an unsigned Windows installer (§3.3) | ✅ Phase 11 step 1b (D168) |
+| GitHub polling: installations, pushes and pull requests learned by asking GitHub, through the webhook intake (§10.5) | ✅ Phase 11 step 2 (D169, D170) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
 
 ---
@@ -142,6 +143,7 @@ flowchart TB
 | **migrate** | Runs Alembic once, then exits; `api` and the workers wait for it | App code never runs against an old schema (D16) |
 | **web** | The dashboard (Next.js 16), run on the host with `pnpm dev` | Signs users in with GitHub and calls the API from its server only (§10.3) |
 | **api** | Thin HTTP layer: `/health`, `/api/v1/*`, `/webhooks/github` | No heavy work in requests; enqueues jobs by name (D91) |
+| **poller** | Asks GitHub every minute instead of waiting for webhooks (`--profile poller`; always on in CodeLens Desktop) | §10.5, D169 |
 | **smee.io + `smee-client`** | Relays GitHub's webhooks to the laptop: the `smee` Compose service (`--profile relay`, channel in `SMEE_URL`), or `npx smee-client` on the host | `gh webhook forward` can't forward an App's webhook (D94); the container removes Node from the host (D126); `docs/github-app.md` |
 | **worker** | Celery, queue `index`: parse and persist | Concurrency 2 |
 | **worker-gpu** | Celery, queue `gpu`: embedding and whole reviews | Concurrency 1, so two jobs never compete for VRAM (D88) |
@@ -196,7 +198,7 @@ codelens/
 | `review/` | The review pipeline, one module per stage (§7) | `python -m core.review` |
 | `demo/` | Moving public demo repos to the hosted demo's database: `export` (only the named repos; refuses any that isn't public on GitHub; leaves out embeddings and votes), `import` (replaces those repos, keeps ids) (`docs/demo.md`) | `python -m core.demo export \| import` |
 | `setup/` | Running your own CodeLens (Phase 8): `checks.py` (each machine requirement as an ok / warn / fail `Check` with its fix), `setup.py` (the idempotent setup steps: `.env`, the smee channel, the App by the manifest flow, the models, Compose with the relay, `/health`), `envfile.py` (edit `.env` in place, comments kept). Commands, HTTP, prompts and the browser flow are injected, so tests replay any machine | `codelens doctor`, `codelens setup` |
-| `github/` | The GitHub App: REST client, App JWT and installation tokens, manifest and registration, bare mirrors (`mirror.py`), webhook signatures and events → state + jobs (`webhooks.py`), a finished review → one GitHub review (`publish.py`) (§5.5, §7 S11, §10.1) | `python -m core.github register \| check` |
+| `github/` | The GitHub App: REST client, App JWT and installation tokens, manifest and registration, bare mirrors (`mirror.py`), webhook signatures and events → state + jobs (`webhooks.py`), the poller that asks GitHub instead (`poll.py`), a finished review → one GitHub review (`publish.py`) (§5.5, §7 S11, §10.1, §10.5) | `python -m core.github register \| check` |
 
 ### 3.2 `api` and `worker`
 
@@ -205,6 +207,7 @@ codelens/
 | `api/main.py` | App factory, lifespan (engine, session factory, Redis, job queue), router registration |
 | `api/routes/{health,repos,reviews}.py` | Endpoints (§10) |
 | `api/routes/webhooks.py` | `POST /webhooks/github` (§10.1) |
+| `api/poller.py` | `python -m api.poller`: the poller service's loop, queueing through the API's job queue (§10.5) |
 | `api/auth.py`, `api/token.py` | JWT verification, `DEMO_MODE` guard; dev-token CLI |
 | `api/errors.py` | One error shape for every error |
 | `api/queue.py` | `JobQueue` protocol + `CeleryJobQueue` (producer-only, sends tasks by name) |
@@ -1309,6 +1312,38 @@ sequenceDiagram
     P-->>B: 403
 ```
 
+### 10.5 Polling GitHub instead (Phase 11 step 2, D169)
+
+A webhook needs a public URL, so a laptop needs a relay a third party can read,
+and an event sent while the machine is off is lost. The poller (`core/github/poll.py`,
+run by `python -m api.poller`) asks instead, every `GITHUB_POLL_INTERVAL_S` (60 s):
+
+| It asks (conditionally, with ETags) | What a change becomes |
+|---|---|
+| `GET /app/installations` (as the App) | `installation created` (with its repos), `suspend`/`unsuspend`, `deleted` for one gone |
+| `GET /installation/repositories` (per covered installation) | `installation_repositories` with the repos added and removed |
+| `GET /repos/{repo}/commits/{default branch}` (the sha only) | `push` to the default branch, when the head isn't the indexed one, no index is under way, and none was queued for that head |
+| `GET /repos/{repo}/pulls?state=open` | `pull_request opened`, `synchronize`, `ready_for_review` or `reopened`, when a PR's head or draft state changed |
+
+Each goes through `apply_event`, the webhook intake itself, with GitHub's REST objects
+as the payload, then its jobs are queued after the commit, as a webhook's are (D98).
+So the allowlist, the cap, superseding and dedupe are one piece of code, and a webhook
+and the poller seeing one push queue one review: the intake also locks per pull request
+while it decides (D170).
+
+- **Memory:** each open PR's head and the branch heads it queued an index for, in the
+  process only. "Still open at the same commit" is no event, so a failed review isn't
+  retried every minute (the next push or a reopen retries it, as with webhooks).
+- **Catch-up:** the first look after a start sees everything as new; the intake's
+  dedupe skips heads already queued or reviewed. A PR open before CodeLens first saw its
+  repo, and never reviewed, is a baseline until its next push, which is what a webhook
+  setup does too.
+- **Cost:** one request per installation plus two per repo a look; a 304 costs nothing
+  (measured, Q22), so an idle poller is almost free. The interval stretches if an
+  installation's repos would cost over 2,500 requests an hour with every list changed.
+- **Not covered:** installations by accounts outside `GITHUB_ALLOWED_ACCOUNTS` are never
+  asked about; a suspended one gets no token.
+
 ---
 
 ## 11. Configuration
@@ -1324,7 +1359,7 @@ sequenceDiagram
 | Embedder | `EMBED_MODEL` (qwen3-embedding:0.6b), `EMBED_BATCH_SIZE` (32), `EMBED_MAX_TOKENS` (1024), `EMBED_NUM_CTX` (2048), `EMBED_QUERY_ON_CPU` (false), `EMBED_TIMEOUT_S` |
 | Pipeline | `PIPELINE_CONFIG` (`configs/pipeline/default.yaml`) |
 | API | `API_JWT_SECRET` (empty = refuse all; else ≥ 32 bytes), `DEMO_MODE`, `LOCAL_MODE` (the desktop: every token is the owner's, D165), `API_ADMIN_LOGINS` |
-| GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH` (`secrets/github-app.pem`), `GITHUB_WEBHOOK_SECRET` (empty = refuse every delivery), `GITHUB_ALLOWED_ACCOUNTS` (whose installations count; empty = nobody, D119), `GITHUB_REVIEWS_PER_HOUR` (per account, 10; 0 = no cap, D120), `GITHUB_API_URL`, `GITHUB_WEB_URL` (clone URLs); `SMEE_URL`, the relay's channel, read only by Compose (`smee` service) and `codelens setup`, not by the services |
+| GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH` (`secrets/github-app.pem`), `GITHUB_WEBHOOK_SECRET` (empty = refuse every delivery), `GITHUB_ALLOWED_ACCOUNTS` (whose installations count; empty = nobody, D119), `GITHUB_REVIEWS_PER_HOUR` (per account, 10; 0 = no cap, D120), `GITHUB_POLL_INTERVAL_S` (the poller, 60, D169), `GITHUB_API_URL`, `GITHUB_WEB_URL` (clone URLs); `SMEE_URL`, the relay's channel, read only by Compose (`smee` service) and `codelens setup`, not by the services |
 | Storage | `DATA_DIR` (`data`): bare mirrors in `DATA_DIR/repos/`. Compose mounts `./data` and `./secrets` (read-only) into the workers |
 
 Empty values count as unset (`env_ignore_empty`), so lines copied empty from
@@ -1552,5 +1587,8 @@ a PageRank prior (U4) and anti-patterns (U5). Their schema columns (`tsv`, `cent
   comments, but the model re-reads unchanged code, and its output varies from push to
   push.
 - A failed review posts nothing on the PR; nothing tells the author it failed.
+- A review queued while the broker is down has its row but no job, and neither a
+  redelivery nor the poller sends it again (the intake sees the head queued): it waits
+  for the next push.
 - Out-of-order `installation` events (e.g. `deleted` arriving before `created` on a quick
   reinstall) aren't reconciled.

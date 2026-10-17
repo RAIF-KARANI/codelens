@@ -45,6 +45,7 @@ This starts:
 | `worker`   | n/a                     | Celery, `index` queue (2 at a time) |
 | `worker-gpu` | n/a                   | Celery, `gpu` queue: embedding and reviews, one at a time; `docker compose restart worker worker-gpu` after edits |
 | `smee`     | n/a                     | Opt-in (`docker compose --profile relay up -d`): relays GitHub's webhooks from `SMEE_URL` to the API |
+| `poller`   | n/a                     | Opt-in (`docker compose --profile poller up -d`): asks GitHub every minute instead of waiting for webhooks; no relay needed (planning-v2.md D169) |
 
 Check it:
 

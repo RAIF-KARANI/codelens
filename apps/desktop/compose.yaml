@@ -107,6 +107,21 @@ services:
       retries: 3
       start_period: 10s
 
+  # How the desktop learns about pull requests and pushes: it asks GitHub
+  # (D145). No relay, nothing reaching in, and a catch-up after every start.
+  poller:
+    <<: *python
+    image: ${CODELENS_API_IMAGE:?}
+    command: python -m api.poller
+    volumes:
+      # The GitHub App's private key, read-only.
+      - ${CODELENS_HOME:?}/secrets:/app/secrets:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
   worker:
     <<: *worker
     command: celery -A worker.celery_app worker -Q index -c 2 -n index@%h

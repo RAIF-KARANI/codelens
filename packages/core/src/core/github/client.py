@@ -27,6 +27,19 @@ class InstallationToken:
     expires_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class Conditional:
+    """One conditional GET's answer (the poller's, D145). With the ETag of an
+    earlier answer, GitHub replies 304 Not Modified, with no body, when
+    nothing changed."""
+
+    not_modified: bool
+    data: Any  # the parsed body; None when not modified
+    etag: str | None
+    next_url: str | None  # the next page (the Link header), if any
+    rate_remaining: int | None  # X-RateLimit-Remaining, to see what polling costs
+
+
 class GitHubClient:
     def __init__(
         self,
@@ -97,6 +110,38 @@ class GitHubClient:
         """Post a pull request review (body + inline comments) in one call."""
         return await self._request(
             "POST", f"/repos/{full_name}/pulls/{number}/reviews", token=token, json=review
+        )
+
+    async def get_conditional(
+        self,
+        path: str,
+        token: str,
+        *,
+        etag: str | None = None,
+        accept: str | None = None,
+    ) -> Conditional:
+        """GET `path` (or a full URL from a Link header), sending `etag` as
+        If-None-Match. `accept` asks for another representation, e.g.
+        `application/vnd.github.sha` for a bare commit sha as text."""
+        headers = {"Authorization": f"Bearer {token}"}
+        if etag:
+            headers["If-None-Match"] = etag
+        if accept:
+            headers["Accept"] = accept
+        response = await self._http.get(path, headers=headers)
+        remaining = response.headers.get("X-RateLimit-Remaining")
+        rate = int(remaining) if remaining and remaining.isdigit() else None
+        if response.status_code == 304:
+            return Conditional(True, None, etag, None, rate)
+        if response.is_error:
+            raise GitHubError(response.status_code, _message(response), method="GET", path=path)
+        is_json = "json" in response.headers.get("Content-Type", "")
+        return Conditional(
+            False,
+            response.json() if is_json else response.text.strip(),
+            response.headers.get("ETag"),
+            response.links.get("next", {}).get("url"),
+            rate,
         )
 
     # --- unauthenticated

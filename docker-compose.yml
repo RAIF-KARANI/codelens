@@ -128,6 +128,28 @@ services:
     <<: *worker
     command: celery -A worker.celery_app worker -Q gpu -c 1 -n gpu@%h --loglevel=INFO
 
+  # The poller (Phase 11, D145): asks GitHub about installations, pushes and
+  # pull requests every GITHUB_POLL_INTERVAL_S seconds instead of waiting for
+  # webhooks, so it needs no relay and catches up after the machine sleeps.
+  # Opt-in here (`docker compose --profile poller up -d`); CodeLens Desktop
+  # always runs it. Running it beside the relay is safe: both feed one intake.
+  poller:
+    <<: *python-env
+    build: *api-build
+    profiles: ["poller"]
+    command: python -m api.poller
+    volumes:
+      - ./services/api/src:/app/services/api/src
+      - ./packages/core/src:/app/packages/core/src
+      # The GitHub App's private key, read-only.
+      - ./secrets:/app/secrets:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   # The webhook relay (Phase 8): forwards GitHub's events from your smee.io
   # channel (SMEE_URL in .env) to the API, so no Node is needed on the host.
   # Opt-in, because a relay is only one way in: `codelens setup` starts it with
