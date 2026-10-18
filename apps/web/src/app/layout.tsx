@@ -1,5 +1,6 @@
 import { InfoIcon } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { PaletteProvider } from "@/components/shell/command-palette";
@@ -80,7 +81,11 @@ function DemoNotice() {
         <a href="https://github.com/RAIF-KARANI/codelens" className="underline underline-offset-4">
           github.com/RAIF-KARANI/codelens
         </a>
-        .
+        . To run it on your own repositories,{" "}
+        <Link href="/download" className="font-medium underline underline-offset-4">
+          download CodeLens Desktop
+        </Link>{" "}
+        for Windows.
       </p>
     </div>
   );

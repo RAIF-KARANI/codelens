@@ -142,7 +142,8 @@ Every run, with its setup and caveats: [`evals/RESULTS.md`](evals/RESULTS.md).
 
 ## Download for Windows
 
-**[CodeLens Desktop, the latest release](https://github.com/RAIF-KARANI/codelens/releases/latest)**
+**[codelens.raifkarani.in/download](https://codelens.raifkarani.in/download)**, or straight from
+**[the latest release](https://github.com/RAIF-KARANI/codelens/releases/latest)**
 (`CodeLens-Setup-<version>.exe`, Windows 10 22H2 or 11, 64-bit). The first release,
 **0.1.0**, came out on 2026-10-18; it has been run on the developer's machine, and its
 run on a machine that has never seen CodeLens is next. Once installed, CodeLens offers
