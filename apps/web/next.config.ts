@@ -7,6 +7,11 @@ const nextConfig: NextConfig = {
   output: process.env.NEXT_OUTPUT === "standalone" ? "standalone" : undefined,
   cacheComponents: true,
   partialPrefetching: true,
+  // The download page became the demo site's landing page (D180): links to
+  // the old address keep working.
+  async redirects() {
+    return [{ source: "/download", destination: "/", permanent: false }];
+  },
   images: {
     // GitHub avatars, in the header.
     remotePatterns: [{ protocol: "https", hostname: "avatars.githubusercontent.com" }],

@@ -6,7 +6,8 @@ import { expect, test } from "@playwright/test";
  * makes sense, focus order), which the smoke tests and a person cover. */
 
 const PAGES = [
-  ["overview", "/"],
+  ["landing", "/"],
+  ["overview", "/overview"],
   ["reviews", "/reviews"],
   ["repos", "/repos"],
   ["repo", "/repos/19"],
@@ -16,7 +17,6 @@ const PAGES = [
   ["trace", "/reviews/1386/trace"],
   ["empty state", "/reviews?status=failed"],
   ["not found", "/reviews/999999"],
-  ["download", "/download"],
 ] as const;
 
 for (const theme of ["light", "dark"] as const) {
@@ -64,7 +64,7 @@ test.describe("with reduced motion", () => {
   test.use({ reducedMotion: "reduce" });
 
   test("nothing keeps moving", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/overview");
     // A pulse, as a running review's badge has (the demo has none running).
     const duration = await page.evaluate(() => {
       const el = document.createElement("span");

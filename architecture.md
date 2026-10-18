@@ -108,7 +108,7 @@ and code and prompts never leave the machine (D20).
 | The desktop's System page: services, health, restarts, storage, clearing mirrors, logs (§3.3, §10.4) | ✅ Phase 11 step 6b (D176) |
 | Releases on a version tag (the installer, `latest.yml`, a checksum, notes) and an uninstaller that removes the stack, and the data only if asked, both or neither (§3.3) | ✅ Phase 11 step 7a (D177) |
 | Updates on the user's word, from the tray or the Settings page, with a database backup before new migrations (§3.3) | ✅ Phase 11 step 7b (D178) |
-| A download page on the demo site: the latest release, what happens after, the checksum (§10.3) | ✅ Phase 11 (D179) |
+| The demo site's landing page: the download, the launch video, the demo, self-hosting (§10.3) | ✅ Phase 11 (D179, D180) |
 | GitHub polling: installations, pushes and pull requests learned by asking GitHub, through the webhook intake (§10.5) | ✅ Phase 11 step 2 (D169, D170) |
 | A failed review says so on its pull request, with a reason from a fixed list (§7 S11) | ✅ Phase 11 step 4b (D171) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
@@ -1308,12 +1308,20 @@ Graph, Trace) and one evidence drawer that every tab can open.
   from; ★ again marks cited evidence.
 - `/api/*` routes are passed by the proxy with GitHub sign-in: they answer 401
   themselves rather than redirecting. In local mode the proxy gates them too (§10.4).
-- **The download page** (`/download`, D179): CodeLens Desktop's latest release from
-  GitHub's API (`lib/release.ts`, `use cache` for an hour; the installer's asset checked
-  to be this repository's, for this tag), with the steps after the download, what the PC
-  needs and the SHA-256 from the release's `SHA256SUMS.txt`. No data of CodeLens's own,
-  so the proxy lets it through without sign-in; the demo links it from its sidebar and
-  its notice.
+- **Two layouts** (D180): `(dashboard)/` holds every dashboard page with the sidebar
+  shell, its error boundary and the not-found a missing review or repo shows;
+  `(landing)/` holds the demo site's front page with a plain header. The root layout
+  has only the fonts, the theme script, tooltips and toasts. The Overview is
+  `/overview`.
+- **The landing page** (`/`, demo only, D180): what CodeLens is, the launch video
+  (`public/media/`, with captions describing what's on screen, since its sound is music),
+  three buttons (the latest release's installer, the live demo at `/overview`,
+  self-hosting's guide), the steps after the download, what the PC needs, and the
+  SHA-256. The release comes from GitHub's API (`lib/release.ts`, `use cache` for an
+  hour; the installer's asset checked to be this repository's, for this tag). Anywhere
+  else `/` is the dashboard: the proxy forwards it to `/overview` (in local mode by the
+  Host header, like `/login`), and the page itself redirects as a fallback. `/download`
+  (D179) forwards to `/` (`next.config.ts`).
 
 ### 10.4 Local mode: the desktop's dashboard (Phase 11 step 1a, D165)
 

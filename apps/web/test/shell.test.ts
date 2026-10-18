@@ -44,7 +44,7 @@ function review(id: number, created_at: string, extra: Partial<ReviewSummary> = 
 
 describe("isActive", () => {
   const repos = { match: ["/repos"] };
-  const overview = { match: ["/"] };
+  const overview = { match: ["/overview"] };
 
   it("owns its prefixes and everything under them", () => {
     expect(isActive("/repos", repos)).toBe(true);
@@ -52,8 +52,9 @@ describe("isActive", () => {
     expect(isActive("/reviews/1386/graph", { match: ["/reviews"] })).toBe(true);
   });
 
-  it("lets the overview own only the home page", () => {
-    expect(isActive("/", overview)).toBe(true);
+  it("lets the overview own only its own page", () => {
+    expect(isActive("/overview", overview)).toBe(true);
+    expect(isActive("/", overview)).toBe(false);
     expect(isActive("/repos", overview)).toBe(false);
     expect(isActive("/reviews/3", overview)).toBe(false);
   });

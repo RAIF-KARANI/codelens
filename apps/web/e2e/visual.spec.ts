@@ -17,7 +17,7 @@ async function settle(page: Page) {
 }
 
 const SHOTS = [
-  ["overview", "/"],
+  ["overview", "/overview"],
   ["review", "/reviews/1386"],
   ["graph", "/reviews/1386/graph?finding=1381"],
   ["trace", "/reviews/1386/trace"],

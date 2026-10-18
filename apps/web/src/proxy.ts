@@ -28,6 +28,11 @@ export async function proxy(request: NextRequest) {
         const host = request.headers.get("host");
         return NextResponse.redirect(new URL("/repos", `${request.nextUrl.protocol}//${host}`));
       }
+      // "/" is the demo site's landing page (D180); here, the dashboard.
+      if (request.nextUrl.pathname === "/") {
+        const host = request.headers.get("host");
+        return NextResponse.redirect(new URL("/overview", `${request.nextUrl.protocol}//${host}`));
+      }
       return NextResponse.next();
     }
     // The same answer for every refusal: which part failed is for the log.
@@ -44,10 +49,9 @@ export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   // Not the login page, nor /api, whose handlers check the session themselves
   // and answer 401, not a redirect; nor images and icons, which the login
-  // page shows too; nor the download page, which shows no data (D179).
+  // page shows too.
   if (
     pathname.startsWith("/login") ||
-    pathname === "/download" ||
     pathname.startsWith("/api/") ||
     pathname.startsWith("/_next/") ||
     pathname === "/favicon.ico" ||
@@ -58,6 +62,8 @@ export async function proxy(request: NextRequest) {
   const secret = process.env.SESSION_SECRET ?? "";
   const user = await openSession(request.cookies.get(SESSION_COOKIE)?.value, secret);
   if (user) {
+    // "/" is the demo site's landing page (D180); signed in, the dashboard.
+    if (pathname === "/") return NextResponse.redirect(new URL("/overview", request.url));
     return NextResponse.next();
   }
   const login = new URL("/login", request.url);

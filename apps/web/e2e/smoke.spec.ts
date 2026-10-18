@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
  * The ids are the demo export's (e2e/fixtures): repo 19, reviews 1384–1386. */
 
 test("the overview shows the last 7 days and the latest reviews", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/overview");
   await expect(page.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();
   await expect(page.getByText("Findings posted")).toBeVisible();
   await expect(page.getByRole("link", { name: "Cleanup pass across the library" })).toBeVisible();
@@ -79,7 +79,7 @@ test("the trace lists what was retrieved, sortable", async ({ page }) => {
 });
 
 test("the command palette goes to a review", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/overview");
   await page.keyboard.press("Control+k");
   const palette = page.getByRole("dialog");
   await expect(palette).toBeVisible();
@@ -91,7 +91,7 @@ test("the command palette goes to a review", async ({ page }) => {
 });
 
 test("the theme choice applies at once and survives a reload", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/overview");
   await page.getByRole("button", { name: "Theme" }).first().click();
   await page.getByRole("menuitemradio", { name: "Dark" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
@@ -108,26 +108,34 @@ test("a review that doesn't exist says so", async ({ page }) => {
   await expect(page.getByText("isn't part of the demo")).toBeVisible();
 });
 
-// The download page (D179): reached from the demo's sidebar and its notice.
-// The button goes to the latest release's installer on GitHub, or, if GitHub
-// didn't answer when the page was built, to the Releases page.
-test("the demo leads to the download, and the download to GitHub", async ({ page }) => {
+// The demo site's landing page (D180): three ways in, the launch video, and
+// the old /download address forwarding here. The download button goes to the
+// latest release's installer on GitHub, or, if GitHub didn't answer when the
+// page was built, to the Releases page.
+test("the landing page offers the download, the demo and self-hosting", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("link", { name: "download CodeLens Desktop" }).click();
-  await expect(page).toHaveURL(/\/download$/);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("on your own PC");
-  const download = page.getByRole("link", { name: /^Download (CodeLens \d+\.\d+\.\d+|from GitHub)$/ });
-  await expect(download).toHaveAttribute(
+  await expect(page.getByRole("link", { name: /^Download CodeLens( \d+\.\d+\.\d+)? for Windows$/ })).toHaveAttribute(
     "href",
     /^https:\/\/github\.com\/RAIF-KARANI\/codelens\/releases\/(download\/v[\d.]+\/CodeLens-Setup-[\d.]+\.exe|latest)$/,
   );
-  await expect(page.getByRole("link", { name: "Download", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Self-host (any OS)" })).toHaveAttribute("href", /docs\/run-your-own\.md$/);
+  await expect(page.locator("video track[kind=captions]")).toHaveAttribute("src", "/media/codelens-launch.vtt");
+  await page.getByRole("link", { name: "See the live demo" }).click();
+  await expect(page).toHaveURL(/\/overview$/);
+  await expect(page.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();
+  // And back: the sidebar's Home, and the demo notice's link.
+  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
+  await page.getByRole("link", { name: "download CodeLens Desktop" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await page.goto("/download");
+  await expect(page).toHaveURL(/\/$/);
 });
 
 // Settings belong to CodeLens Desktop's local mode (D175): the demo (and the
 // self-hosted dashboard) neither link to them nor serve them.
 test("there are no Settings or System pages outside the desktop app", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/overview");
   await expect(page.getByRole("link", { name: "Repositories" }).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Settings" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "System" })).toHaveCount(0);

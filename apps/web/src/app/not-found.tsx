@@ -4,27 +4,26 @@ import Link from "next/link";
 
 import { StateMessage } from "@/components/state-message";
 import { Button } from "@/components/ui/button";
-import { isDemo } from "@/lib/config";
 
 export const metadata: Metadata = { title: "Not found" };
 
-/** Also what a repo or review you can't access looks like (D111): the same
- * page, so a private repo's existence doesn't leak. */
+/** An address that matches no page at all, outside the dashboard's shell
+ * (its own not-found, in `(dashboard)/`, answers for a missing review or
+ * repo). "/" is the demo's landing page, or forwards to the dashboard. */
 export default function NotFound() {
   return (
-    <StateMessage
-      className="mt-10"
-      icon={<SearchXIcon />}
-      title="Not found"
-      action={
-        <Button asChild variant="outline">
-          <Link href="/">Back to the overview</Link>
-        </Button>
-      }
-    >
-      {isDemo()
-        ? "It doesn't exist, or it isn't part of the demo."
-        : "It doesn't exist, or you don't have access to it. If it's a repository you just installed CodeLens on, sign in again: access is read at sign-in."}
-    </StateMessage>
+    <main className="mx-auto flex min-h-svh max-w-xl items-center px-4">
+      <StateMessage
+        icon={<SearchXIcon />}
+        title="Not found"
+        action={
+          <Button asChild variant="outline">
+            <Link href="/">Back to CodeLens</Link>
+          </Button>
+        }
+      >
+        There&apos;s no page at this address.
+      </StateMessage>
+    </main>
   );
 }

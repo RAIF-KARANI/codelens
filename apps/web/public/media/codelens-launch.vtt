@@ -1,0 +1,18 @@
+WEBVTT
+
+NOTE The launch video (brag-output/brag-plan.md): music only, no speech. These captions say what's on screen.
+
+00:00.000 --> 00:04.000
+[Upbeat music] A diff in sqlite_utils/db.py: one changed line puts self.name straight into a SQL query. "One line changed."
+
+00:04.000 --> 00:09.500
+The review in CodeLens: qwen3:8b, took 15 s. Found 1 changed definition, validated 1 finding, posted it on GitHub. "Reviewed by a local model."
+
+00:09.500 --> 00:15.000
+Under the changed line: critical, security, "Potential SQL injection vulnerability", with the two functions it cites as evidence.
+
+00:15.000 --> 00:19.500
+The code graph lights the path from the cited caller to the changed function. "Every finding shows its receipts."
+
+00:19.500 --> 00:24.000
+CodeLens: an AI code reviewer for GitHub pull requests that runs on your own GPU. codelens.raifkarani.in [Music fades]

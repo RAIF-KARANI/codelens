@@ -6,8 +6,8 @@ and the code around the change, and posts inline comments, usually within a minu
 Every review can be explained: what the model was shown, why, and why each finding
 survived. And every design choice was measured on an evaluation set before it shipped.
 
-**Live demo: [codelens.raifkarani.in](https://codelens.raifkarani.in)** (read-only, no
-sign-in). It shows real reviews of three pull requests on
+**[codelens.raifkarani.in](https://codelens.raifkarani.in)**: the download, the launch video,
+and the **[live demo](https://codelens.raifkarani.in/overview)** (read-only, no sign-in). It shows real reviews of three pull requests on
 [`RAIF-KARANI/codelens-demo`](https://github.com/RAIF-KARANI/codelens-demo/pulls), a copy
 of [sqlite-utils](https://github.com/simonw/sqlite-utils) with planted bugs.
 
@@ -35,7 +35,7 @@ to the code it cites. Click to play.
 
 | The overview: the last 7 days of reviews | A review: its findings, each on its line |
 |---|---|
-| [![Overview page](docs/images/overview.png)](https://codelens.raifkarani.in/) | [![Review page](docs/images/review.png)](https://codelens.raifkarani.in/reviews/1384) |
+| [![Overview page](docs/images/overview.png)](https://codelens.raifkarani.in/overview) | [![Review page](docs/images/review.png)](https://codelens.raifkarani.in/reviews/1384) |
 | **The graph around the change** | **What retrieval found, and what the model saw** |
 | [![Graph view](docs/images/graph.png)](https://codelens.raifkarani.in/reviews/1386/graph?finding=1381) | [![Trace view](docs/images/trace.png)](https://codelens.raifkarani.in/reviews/1386/trace) |
 
@@ -142,7 +142,7 @@ Every run, with its setup and caveats: [`evals/RESULTS.md`](evals/RESULTS.md).
 
 ## Download for Windows
 
-**[codelens.raifkarani.in/download](https://codelens.raifkarani.in/download)**, or straight from
+**[codelens.raifkarani.in](https://codelens.raifkarani.in)**, or straight from
 **[the latest release](https://github.com/RAIF-KARANI/codelens/releases/latest)**
 (`CodeLens-Setup-<version>.exe`, Windows 10 22H2 or 11, 64-bit). The first release,
 **0.1.0**, came out on 2026-10-18; it has been run on the developer's machine, and its
