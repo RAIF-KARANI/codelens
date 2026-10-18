@@ -38,7 +38,6 @@
     "files": [
       "dist/**/*.js",
       "!dist/cli.js",
-      "!dist/releasenotes.js",
       "assets/*.png",
       "package.json"
     ],
@@ -61,5 +60,8 @@
       "electron"
     ]
   },
-  "packageManager": "pnpm@9.15.0"
+  "packageManager": "pnpm@9.15.0",
+  "dependencies": {
+    "electron-updater": "6.8.9"
+  }
 }

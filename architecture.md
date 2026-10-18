@@ -107,6 +107,7 @@ and code and prompts never leave the machine (D20).
 | The desktop's Settings page, through the app's control API (§3.3, §10.4) | ✅ Phase 11 step 6a (D175) |
 | The desktop's System page: services, health, restarts, storage, clearing mirrors, logs (§3.3, §10.4) | ✅ Phase 11 step 6b (D176) |
 | Releases on a version tag (the installer, `latest.yml`, a checksum, notes) and an uninstaller that removes the stack, and the data only if asked, both or neither (§3.3) | ✅ Phase 11 step 7a (D177) |
+| Updates on the user's word, from the tray or the Settings page, with a database backup before new migrations (§3.3) | ✅ Phase 11 step 7b (D178) |
 | GitHub polling: installations, pushes and pull requests learned by asking GitHub, through the webhook intake (§10.5) | ✅ Phase 11 step 2 (D169, D170) |
 | A failed review says so on its pull request, with a reason from a fixed list (§7 S11) | ✅ Phase 11 step 4b (D171) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
@@ -247,6 +248,8 @@ codelens/
 | `src/appsettings.ts`, `src/ollamaenv.ts` | What Settings shows and may change, checked field by field and written to `codelens.env`; the user's Ollama settings for a 16k window |
 | `src/models.ts` | The models CodeLens needs (codelens.env, else the defaults), what Ollama lacks, `POST /api/pull` with one bar across all layers |
 | `src/githubapp.ts` | The user's App (D174): `core.github register` in the `tools` container, the start link opened only if it is the flow's own, the settings merged into `codelens.env`, `secrets/` handed to the workers' user; the install link; `codelens doctor --desktop --json` |
+| `src/updates.ts` | Updates (D178): electron-updater on the user's word only, the stack stopped before the installer runs; the tray's and the Settings page's view |
+| `src/backup.ts` | Before a new version's migrations (D178): its `alembic current`, a `pg_dump` to `backups/` (3 kept); removing older versions' images |
 | `src/uninstall.ts`, `installer/uninstall.nsh` | Uninstalling (D177): the NSIS uninstaller runs `CodeLens.exe --uninstall`; start at login off, the containers removed, and after a question the volume, the folder and the images, both or neither; exit code 10 tells NSIS to delete the Electron folder too |
 | `src/releasenotes.ts`, `scripts/release-notes.mjs` | Each release's notes and `SHA256SUMS.txt`, for `.github/workflows/release.yml` |
 | `scripts/render-icons.mjs`, `assets/` | The lens mark drawn into the window, installer and tray icons (PNG, no image library) |
@@ -1592,7 +1595,7 @@ its own Docker Compose project (with the dashboard as a `web` container), learns
 PRs by polling GitHub (`core/github/poll.py`), runs the dashboard in a no-sign-in local
 mode, and sets everything up from a first-run wizard. Steps 1a and 1b built the stack, local
 mode, the published images and the Electron spike with its installer (§3.3, §10.4);
-since then polling, the supervisor and tray, the wizard, Settings and System, releases and the uninstaller; updates are not built yet (step 7b). Some of the gaps below close on the
+since then polling, the supervisor and tray, the wizard, Settings and System, releases, the uninstaller and updates (steps 2-7). Next: the first release, then a fresh machine (step 8). Some of the gaps below close on the
 way (the dashboard in Compose, a failed review saying so on the PR).
 
 **Later, as a separate upgrade:** CodeLens as a hosted service other people install on

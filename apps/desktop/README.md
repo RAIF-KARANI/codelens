@@ -4,15 +4,15 @@ CodeLens as a Windows app ([`planning-v2.md`](../../planning-v2.md), Phase 11): 
 the whole CodeLens stack on the user's machine, as a Docker Compose project of its own,
 and shows the dashboard in its window, with no sign-in.
 
-**Status: Phase 11 step 7a.** On its first run a wizard checks the computer; finds,
+**Status: Phase 11 step 7b.** On its first run a wizard checks the computer; finds,
 starts or installs Docker Desktop and Ollama (from their publishers, signature checked);
 pulls the models; creates your own GitHub App in your browser and opens its install page;
 and checks it all with `codelens doctor --desktop --json`. Then the app starts the stack
 (and its control API, for the dashboard's Settings page),
 shows the dashboard, keeps it all up (a supervisor every 10 s), lives in the tray, and
 stops the stack when it quits; the dashboard has Settings and System pages. A version
-tag publishes the installer to GitHub Releases; uninstalling asks about the data.
-Updates come in step 7b.
+tag publishes the installer to GitHub Releases; the app looks for a newer one and
+installs it when you say so; uninstalling asks about the data.
 
 | File | What |
 |---|---|
@@ -29,8 +29,9 @@ Updates come in step 7b.
 | `src/system.ts` | What the System page shows: sizes, the end of a log, the services it may name |
 | `src/models.ts`, `src/githubapp.ts` | Pulling the models; creating your GitHub App (in the `tools` container) and the stack's own checks |
 | `src/logs.ts`, `src/settings.ts` | Each service's log file; `desktop.json` |
+| `src/updates.ts`, `src/backup.ts` | Updates, and the database backup before a new version's migrations |
 | `src/uninstall.ts`, `installer/uninstall.nsh` | What uninstalling does besides removing the files |
-| `src/releasenotes.ts`, `scripts/release-notes.mjs` | A release's notes and checksum (not in the app) |
+| `src/releasenotes.ts`, `scripts/release-notes.mjs` | A release's notes and checksum |
 | `src/cli.ts` | `pnpm stack …`: the stack from a terminal |
 
 ## What runs where
@@ -91,11 +92,31 @@ and that every image in `images.json` is published; builds the installer on Wind
 and publishes it with `latest.yml`, `SHA256SUMS.txt` and notes (`src/releasenotes.ts`:
 the download, SmartScreen, the checksum, what the computer needs, the images).
 
+## Updates
+
+On start and every day (unless switched off in the tray or on the Settings page),
+CodeLens asks GitHub for the latest release's `latest.yml`. A newer one is offered, never
+taken: **Update** downloads it (checked against its SHA-512), then **Restart now** stops
+the stack and installs it; the new version starts by itself.
+
+Its first start checks whether its migrations change the database. If they do, the
+database is copied first to `backups/codelens-<old version>-<time>.dump` (the last three
+are kept), and nothing migrates without that copy. To go back: install the older version
+from Releases, then, with CodeLens running,
+
+```bash
+docker exec -i codelens-desktop-postgres-1 pg_restore -U codelens -d codelens --clean --if-exists < codelens-0.1.0-20261018T120000Z.dump
+```
+
+To try an update without a release: build two versions with `publish` set to
+`{ "provider": "generic", "url": "http://127.0.0.1:8765/" }` (and
+`extraMetadata.version`), serve the newer one's folder on that port, and install the older.
+
 ## Day to day
 
 | | |
 |---|---|
-| The tray icon | **Open CodeLens**; the status (Running, Paused, Waiting for Docker Desktop, Ollama isn't running); **Pause reviews** / **Resume reviews** (stops the workers and the poller; the dashboard stays); **Start when Windows starts**; **Open data folder**; **Quit CodeLens** |
+| The tray icon | **Open CodeLens**; the status (Running, Paused, Waiting for Docker Desktop, Ollama isn't running); **Pause reviews** / **Resume reviews** (stops the workers and the poller; the dashboard stays); **Start when Windows starts**; **Open data folder**; **Update to …** when there is one; **Check for updates now**; **Check for updates automatically**; **Quit CodeLens** |
 | Closing the window | CodeLens keeps running in the tray; Quit stops it and the stack |
 | Docker Desktop stops | A waiting screen; CodeLens starts again by itself when Docker answers |
 | A service dies | The supervisor starts it again within about 10 s (with backoff if it keeps failing) |

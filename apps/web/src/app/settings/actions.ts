@@ -3,7 +3,7 @@
 import { refresh } from "next/cache";
 
 import { isLocal } from "@/lib/config";
-import { control, ControlError, parseAccounts, type SettingsView } from "@/lib/control";
+import { control, ControlError, parseAccounts, type SettingsView, type UpdateView } from "@/lib/control";
 
 export type SaveState = {
   ok: boolean;
@@ -64,6 +64,38 @@ export async function saveEvents(_: SaveState, form: FormData): Promise<SaveStat
   return save({ pollIntervalS: number(form, "pollIntervalS") }, "Saved. The poller restarted with it.", {
     pollIntervalS: text(form, "pollIntervalS"),
   });
+}
+
+/** The switch for looking for updates by itself: desktop.json's, so nothing
+ * restarts. */
+export async function saveUpdates(_: SaveState, form: FormData): Promise<SaveState> {
+  const on = form.get("checkForUpdates") === "on";
+  return save({ checkForUpdates: on }, on ? "CodeLens looks for updates on start and daily." : "CodeLens won't look for updates by itself.", {
+    checkForUpdates: on ? "on" : "off",
+  });
+}
+
+/** Look now, or download the version found: the app does it, and asks in
+ * its own window before it restarts (D151). */
+export async function updateNow(_: SaveState, form: FormData): Promise<SaveState> {
+  if (!isLocal()) return { ok: false, message: "Updates exist only in the CodeLens app." };
+  const install = form.get("do") === "install";
+  let view: UpdateView;
+  try {
+    view = await control<UpdateView>(install ? "/updates/install" : "/updates/check", { method: "POST" });
+  } catch (error) {
+    if (error instanceof ControlError) return { ok: false, message: error.message };
+    throw error;
+  }
+  refresh();
+  if (install) return { ok: true, message: "Downloading the update. CodeLens asks before it restarts." };
+  if (view.status === "error") return { ok: false, message: view.error ?? "The look failed." };
+  // No answer: a development run of the app, which has no release to look at.
+  if (view.status === "idle") return { ok: false, message: "This build of CodeLens doesn't look for updates." };
+  return {
+    ok: true,
+    message: view.status === "available" ? `CodeLens ${view.available} is available.` : `You have the latest release (${view.current}).`,
+  };
 }
 
 /** The context window: back to 8k is an ordinary setting; 16k first sets the

@@ -18,7 +18,14 @@ describe("desktop settings", () => {
   });
 
   it("round-trips", async () => {
-    const all = { askedStartAtLogin: true, paused: true, setupDone: true, installUrl: "https://github.com/apps/x/installations/new" };
+    const all = {
+      askedStartAtLogin: true,
+      paused: true,
+      setupDone: true,
+      installUrl: "https://github.com/apps/x/installations/new",
+      checkForUpdates: false,
+      lastVersion: "0.1.0",
+    };
     await saveSettings(home, all);
     expect(await loadSettings(home)).toEqual(all);
   });

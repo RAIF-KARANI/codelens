@@ -17,6 +17,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
+import type { UpdateView } from "@/lib/control";
+
 import type { SaveState } from "./actions";
 
 type Action = (state: SaveState, form: FormData) => Promise<SaveState>;
@@ -187,6 +189,81 @@ export function WindowForm({ action, contextWindow, ollamaReady }: { action: Act
           </DialogContent>
         </Dialog>
       )}
+    </div>
+  );
+}
+
+const WHAT_THE_LOOK_FOUND: Record<UpdateView["status"], (u: UpdateView) => string> = {
+  idle: () => "Not looked yet since CodeLens started.",
+  checking: () => "Looking on GitHub…",
+  "up-to-date": () => "This is the latest release.",
+  available: (u) => `CodeLens ${u.available} is available.`,
+  downloading: (u) => `Downloading ${u.available}: ${u.progress ?? 0}%.`,
+  ready: (u) => `${u.available} is downloaded. CodeLens asks in its window before it restarts.`,
+  error: (u) => `The last look didn't work: ${u.error}.`,
+};
+
+/** This version, what the last look found with its one next step, and the
+ * switch for looking by itself (also in the tray). Nothing installs without
+ * the user's yes, asked again by the app before it restarts. */
+export function UpdatesForm({
+  update,
+  save,
+  updates,
+  releaseUrl,
+}: {
+  update: Action;
+  save: Action;
+  updates: UpdateView;
+  releaseUrl: string | null;
+}) {
+  const now = useSaved(update);
+  const saved = useSaved(save);
+  const checked = saved.state?.values?.checkForUpdates
+    ? saved.state.values.checkForUpdates === "on"
+    : updates.checkForUpdates;
+  const busy = now.pending || updates.status === "checking" || updates.status === "downloading";
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-sm" role="status">
+        {WHAT_THE_LOOK_FOUND[updates.status](updates)}
+        {updates.lastChecked && updates.status === "up-to-date" && (
+          <span className="text-muted-foreground"> Looked at {new Date(updates.lastChecked).toLocaleString()}.</span>
+        )}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <form action={now.formAction}>
+          <input type="hidden" name="do" value={updates.status === "available" || updates.status === "ready" ? "install" : "check"} />
+          <Button type="submit" size="sm" variant={updates.status === "available" ? "default" : "outline"} disabled={busy}>
+            {updates.status === "available"
+              ? `Update to ${updates.available}`
+              : updates.status === "ready"
+                ? "Restart to update…"
+                : now.pending
+                  ? "Looking…"
+                  : "Check for updates now"}
+          </Button>
+        </form>
+        {releaseUrl && (
+          <Button asChild variant="outline" size="sm">
+            <a href={releaseUrl}>What&apos;s new</a>
+          </Button>
+        )}
+      </div>
+      <form key={formKey(saved.state)} action={saved.formAction} className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="checkForUpdates"
+            defaultChecked={checked}
+            className="size-4 accent-primary"
+          />
+          Look for updates by itself, on start and daily
+        </label>
+        <Button type="submit" variant="outline" size="sm" disabled={saved.pending}>
+          {saved.pending ? "Saving…" : "Save"}
+        </Button>
+      </form>
     </div>
   );
 }

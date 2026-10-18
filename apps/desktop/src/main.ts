@@ -10,6 +10,10 @@
  * CODELENS_MEASURE=1 logs the spike's numbers (time to a running stack,
  * memory) to logs/desktop.log, then quits after a minute idle (step 1b).
  *
+ * Updates (step 7b): looked for on start and daily, installed only after the
+ * user's yes, with the database backed up first if the new version migrates
+ * it (updates.ts, backup.ts).
+ *
  * `--uninstall` is the uninstaller's last call on the app (uninstall.ts,
  * build/installer.nsh): it removes the stack's containers, and the data if
  * the user says so, then exits; no window, no tray. */
@@ -20,6 +24,7 @@ import { appendFile, readFile, rm, statfs, writeFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { join } from "node:path";
 
+import electronUpdater from "electron-updater";
 import {
   app,
   BrowserWindow,
@@ -35,8 +40,10 @@ import {
 
 import { APP_KEY_COOKIE } from "./key.js";
 import { uninstall } from "./uninstall.js";
+import { backupBeforeMigrating, removeStaleImages } from "./backup.js";
+import { CHECK_EVERY_MS, Updates } from "./updates.js";
 import { ServiceLogs } from "./logs.js";
-import { applyChanges, checkChanges, manageUrl, readSettings, type SettingsView, WINDOWS } from "./appsettings.js";
+import { applyChanges, checkChanges, envChanges, manageUrl, readSettings, type SettingsView, WINDOWS } from "./appsettings.js";
 import { startControl } from "./control.js";
 import { firstRun } from "./firstrun.js";
 import { appName, createApp, hasApp, runDoctor } from "./githubapp.js";
@@ -134,6 +141,8 @@ let applying = false;
 /** The control API's port and key (D175), for the dashboard's server. */
 let control: { port: number; key: string; close(): Promise<void> } | null = null;
 let health: Health | null = null;
+/** Looking for, downloading and installing updates (step 7b). */
+let updates: Updates | null = null;
 let logsChild: ChildProcess | null = null;
 const backoff = new Backoff();
 const launchedAt = performance.now();
@@ -277,9 +286,35 @@ async function bringUp(): Promise<void> {
       launch.controlKey = control.key;
     }
     const started = performance.now();
-    await log(`starting the stack on port ${launch.port} (images ${cached ? "cached" : "to pull"})`);
     const home = stack.home;
-    const run = await up(stack, launch, (chunk) => void appendFile(join(home, "logs", "compose.log"), chunk));
+    const toCompose = (chunk: string) => void appendFile(join(home, "logs", "compose.log"), chunk);
+    // The first start of a new version: keep a copy of the database if its
+    // migrations are about to change it (D151).
+    const version = app.getVersion();
+    const updated = settings.setupDone && settings.lastVersion !== version;
+    if (updated) {
+      await show(statusPage("Updating CodeLens…", "Checking whether this version changes the database, and backing it up first if it does."));
+      const backup = await backupBeforeMigrating(stack, launch, settings.lastVersion ?? "unknown", new Date(), toCompose);
+      if (backup.kind === "failed") {
+        await log(`update to ${version}: no backup (${backup.why}), so the migrations don't run`);
+        waitForUser = true;
+        await show(
+          statusPage(
+            "CodeLens couldn't back up its database",
+            `This version changes the database, and CodeLens doesn't do that without a copy to go back to: ${backup.why}.`,
+            { buttons: [{ label: "Try again", href: "codelens://retry" }, { label: "Open the logs", href: "codelens://open-logs" }], busy: false },
+          ),
+        );
+        return;
+      }
+      await log(
+        backup.kind === "done"
+          ? `update to ${version}: database backed up to ${backup.file} (${backup.bytes} bytes) before migrating`
+          : `update to ${version}: no new migrations (database at ${backup.revision?.revision ?? "nothing yet"}), no backup needed`,
+      );
+    }
+    await log(`starting the stack on port ${launch.port} (images ${cached ? "cached" : "to pull"})`);
+    const run = await up(stack, launch, toCompose);
     const took = performance.now() - started;
     if (run.code !== 0) {
       await log(`docker compose up failed (exit ${run.code}) after ${seconds(took)}`);
@@ -297,9 +332,15 @@ async function bringUp(): Promise<void> {
       sameSite: "strict",
     });
     stackUp = true;
-    if (!settings.setupDone) {
-      settings = { ...settings, setupDone: true };
+    if (!settings.setupDone || settings.lastVersion !== version) {
+      settings = { ...settings, setupDone: true, lastVersion: version };
       await saveSettings(stack.home, settings);
+    }
+    // Only with published images: a developer's local build pins none of
+    // them, so every published one would look stale.
+    if (updated && !stack.build) {
+      const removed = await removeStaleImages(stack.images).catch(() => []);
+      if (removed.length) await log(`update to ${version}: removed ${removed.length} older CodeLens images`);
     }
     await win?.loadURL(`${appOrigin(launch.port)}/`);
     followLogs();
@@ -309,7 +350,10 @@ async function bringUp(): Promise<void> {
         `${seconds(performance.now() - launchedAt)} from launch; page title "${win?.getTitle()}"`,
     );
     if (MEASURE) setTimeout(() => void measure(), IDLE_MS);
-    else void askStartAtLogin();
+    else {
+      await askStartAtLogin();
+      void updates?.checkAutomatically();
+    }
   } finally {
     starting = false;
   }
@@ -454,6 +498,8 @@ async function setPaused(paused: boolean): Promise<void> {
 }
 
 function status(): string {
+  const u = updates?.state;
+  if (u?.status === "downloading") return `Downloading ${u.available} (${u.progress ?? 0}%)`;
   if (!health || starting) return "Starting…";
   if (health.docker !== "running") return "Waiting for Docker Desktop";
   if (!stackUp) return "Not running";
@@ -485,8 +531,91 @@ function updateTray(): void {
       },
       { label: "Open data folder", click: () => stack && void shell.openPath(stack.home) },
       { type: "separator" },
+      ...updateItems(),
+      { type: "separator" },
       { label: "Quit CodeLens", click: () => app.quit() },
     ]),
+  );
+}
+
+/** The tray's update items: the one thing to do now, if any; looking now;
+ * and the switch for looking by itself (also on the Settings page). */
+function updateItems(): Electron.MenuItemConstructorOptions[] {
+  const u = updates?.state;
+  if (!u) return [];
+  const items: Electron.MenuItemConstructorOptions[] = [];
+  if (u.status === "available") items.push({ label: `Update to ${u.available}…`, click: () => void updates?.install() });
+  if (u.status === "ready") items.push({ label: `Restart to update to ${u.available}…`, click: () => void updates?.install() });
+  items.push(
+    {
+      label: u.status === "checking" ? "Checking for updates…" : "Check for updates now",
+      enabled: !["checking", "downloading"].includes(u.status),
+      click: () => void updates?.checkNow(),
+    },
+    {
+      label: "Check for updates automatically",
+      type: "checkbox",
+      checked: u.checkForUpdates,
+      click: (item) => void setCheckForUpdates(item.checked),
+    },
+  );
+  return items;
+}
+
+async function setCheckForUpdates(on: boolean): Promise<void> {
+  if (!stack) return;
+  settings = { ...settings, checkForUpdates: on };
+  await saveSettings(stack.home, settings);
+  updates?.setCheckForUpdates(on);
+  await log(on ? "updates: looking daily again" : "updates: no longer looking by itself");
+}
+
+/** electron-updater, set so it only ever acts on the user's word, with the
+ * flow around it (updates.ts). */
+function createUpdates(): Updates {
+  const { autoUpdater } = electronUpdater;
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.allowPrerelease = false;
+  autoUpdater.disableWebInstaller = true;
+  autoUpdater.logger = {
+    info: (m: unknown) => void log(`updater: ${String(m)}`),
+    warn: (m: unknown) => void log(`updater: ${String(m)}`),
+    error: (m: unknown) => void log(`updater: ${String(m)}`),
+    debug: () => {},
+  };
+  return new Updates(
+    {
+      updater: autoUpdater,
+      current: app.getVersion(),
+      ask: async (message, detail, buttons) => {
+        if (win) showWindow();
+        const options = { type: "info" as const, title: "CodeLens", message, detail, buttons, defaultId: 0, cancelId: buttons.length > 1 ? 1 : 0, noLink: true };
+        const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
+        return response;
+      },
+      openExternal: (url) => void shell.openExternal(url),
+      // The installer kills whatever runs from the install folder: stop the
+      // stack first, as Quit does, so no container is left without an app.
+      beforeInstall: async () => {
+        quitting = true;
+        stopped = true;
+        logsChild?.kill();
+        await control?.close();
+        if (stack) {
+          await show(statusPage("Updating CodeLens…", "Stopping its services, then installing the update. CodeLens starts again by itself."));
+          const run = await stop(stack);
+          await log(`stack stopped for the update (exit ${run.code})`);
+        }
+      },
+      onChange: (view) => {
+        win?.setProgressBar(view.status === "downloading" ? (view.progress ?? 0) / 100 : -1);
+        updateTray();
+      },
+      log: (message) => void log(message),
+      now: () => new Date(),
+    },
+    settings.checkForUpdates,
   );
 }
 
@@ -506,6 +635,15 @@ async function currentSettings(home: string): Promise<SettingsView> {
     pulled,
     ollamaReadyForLong: readyForLong(await userEnvironment()),
     installUrl: settings.installUrl,
+    updates: updates?.state ?? {
+      current: app.getVersion(),
+      checkForUpdates: settings.checkForUpdates,
+      status: "idle",
+      available: null,
+      progress: null,
+      lastChecked: null,
+      error: null,
+    },
   });
 }
 
@@ -532,7 +670,9 @@ function settingsApi(home: string) {
       const checked = checkChanges(body);
       if (!checked.ok) return { errors: checked.errors };
       await log(`settings: ${Object.keys(checked.changes).join(", ")} changed`);
-      await applySettings(home, (text) => applyChanges(text, checked.changes));
+      if (checked.changes.checkForUpdates !== undefined) await setCheckForUpdates(checked.changes.checkForUpdates);
+      const env = envChanges(checked.changes);
+      if (Object.keys(env).length > 0) await applySettings(home, (text) => applyChanges(text, env));
       return { settings: await currentSettings(home) };
     },
     prepareLongWindow: async () => {
@@ -708,7 +848,22 @@ async function start(): Promise<void> {
 
   // The control API first: the dashboard's container gets its port and key.
   const controlKey = newSecret();
-  const started = await startControl({ ...settingsApi(home), ...systemApi(home) }, controlKey, (message) => void log(message));
+  updates = createUpdates();
+  setInterval(() => void updates?.checkAutomatically(), CHECK_EVERY_MS);
+  const updateApi = {
+    checkForUpdates: async () => {
+      if (!updates) throw new Error("CodeLens isn't running yet");
+      await updates.checkNow();
+      return updates.state;
+    },
+    // The download takes a while: answered at once, the page shows its progress.
+    installUpdate: async () => {
+      if (!updates) throw new Error("CodeLens isn't running yet");
+      void updates.install();
+      return updates.state;
+    },
+  };
+  const started = await startControl({ ...settingsApi(home), ...systemApi(home), ...updateApi }, controlKey, (message) => void log(message));
   control = { port: started.port, key: controlKey, close: started.close };
 
   // Docker installed after this process's PATH was set: use its own docker.exe.
