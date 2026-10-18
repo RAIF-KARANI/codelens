@@ -1,6 +1,6 @@
 {
-  "//": "CodeLens's own images, pinned by digest (D143, D150), from the 'Images' workflow's publish of main at 76e632a (sha-76e632a). Update from a later run's summary.",
-  "api": "ghcr.io/raif-karani/codelens-api@sha256:70c8bd563403a9d4a6aa5efa35c5f26895d5762633d7e840925de390b1be93e9",
-  "worker": "ghcr.io/raif-karani/codelens-worker@sha256:1e03de77befc3254115cc53acb35e8b44f769534f76bf6e0bb3e071f2dc9c02e",
-  "web": "ghcr.io/raif-karani/codelens-web@sha256:84486edd2d9c459f95009754fc9e15f959dc8c88fa49b3aef67793b86c067c46"
+  "//": "CodeLens's own images, pinned by digest (D143, D150), from the 'Images' workflow's publish of main at e301a21 (sha-e301a21). Update from a later run's summary.",
+  "api": "ghcr.io/raif-karani/codelens-api@sha256:9247dd69b4e9de3b8d5a8dcf8eaa9e6c5dc5bb845aa93c65a2a2ae31254c8be7",
+  "worker": "ghcr.io/raif-karani/codelens-worker@sha256:4eb71f376563b92cf2bebe68447bc2d110c13b73ca9ec0886134f25aa35ed50a",
+  "web": "ghcr.io/raif-karani/codelens-web@sha256:e4114c62d4ce1b903acccd93d8d5cde96cd61a2539896ce3af20ae940c645782"
 }
