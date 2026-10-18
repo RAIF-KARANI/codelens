@@ -325,6 +325,13 @@ It keeps its data in `%LOCALAPPDATA%\CodeLens` (or `CODELENS_HOME`) and its own 
 volume, so it runs beside the development stack without touching it. The dashboard's
 image on its own: `docker build -t codelens-web apps/web`.
 
+Releases come from a version tag: set `version` in `apps/desktop/package.json`, merge,
+then push `v<version>`; `.github/workflows/release.yml` checks, builds and publishes
+the installer ([`apps/desktop/README.md`](../apps/desktop/README.md#releasing)).
+Uninstalling an installed build runs `CodeLens.exe --uninstall`; to try it without
+installing, run `release/win-unpacked/CodeLens.exe --uninstall --silent` with
+`CODELENS_HOME` set to a scratch folder (it keeps the data when silent).
+
 ## Configuration
 
 All config comes from environment variables, parsed by `core.config.Settings`

@@ -204,12 +204,13 @@ improves each:
 - **On the web (done):** the dashboard is rebuilt on a design system with its own brand,
   with an overview, reviews across repos, a review page that puts the findings first,
   and accessibility and layout checks in CI. The live demo runs it.
-- **As software (next):** **CodeLens Desktop**, a Windows installer. A first-run wizard sets up
+- **As software (nearly there):** **CodeLens Desktop**, a Windows installer. A first-run wizard sets up
   Docker Desktop, Ollama, the models and your own GitHub App, with no terminal. It depends
   on nothing of this project's owner: your App, your machine, your data. It learns about
   pull requests by polling GitHub, so no webhook relay is needed.
 
-Until the desktop app ships, the clone-and-run setup above is the way to run your own.
+The desktop app is built up to its installer and uninstaller; updates come next, then
+its first release. Until then, the clone-and-run setup above is the way to run your own.
 
 ## Tech stack
 

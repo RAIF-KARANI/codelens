@@ -8,9 +8,9 @@ CodeLens is used in two ways:
   **their own** GitHub App, on their own machine. Nothing they do touches the owner's laptop,
   App or demo.
 
-Both sides run the same review engine, described first. v2 adds a third way, planned and
-not built yet: **CodeLens Desktop**, a downloadable app for the second side (see
-[the end of this page](#coming-in-v2-codelens-desktop)).
+Both sides run the same review engine, described first. v2 adds a third way, almost
+built and not released yet: **CodeLens Desktop**, a downloadable app for the second side
+(see [the end of this page](#coming-in-v2-codelens-desktop)).
 
 ## The engine: from a push to a review
 
@@ -226,7 +226,9 @@ Details and troubleshooting: [`run-your-own.md`](run-your-own.md).
 
 ## Coming in v2: CodeLens Desktop
 
-Planned in [`planning-v2.md`](../planning-v2.md) (Phase 11), not built yet. Side 2 becomes a
+Being built in [`planning-v2.md`](../planning-v2.md) (Phase 11): everything below is
+done ([`apps/desktop`](../apps/desktop/README.md)), apart from updates and the first
+release. Side 2 becomes a
 download instead of a clone, and stays just as independent of the owner: the user's own App,
 machine, data and models, and nothing of the owner's in between.
 
