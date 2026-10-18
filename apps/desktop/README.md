@@ -4,14 +4,15 @@ CodeLens as a Windows app ([`planning-v2.md`](../../planning-v2.md), Phase 11): 
 the whole CodeLens stack on the user's machine, as a Docker Compose project of its own,
 and shows the dashboard in its window, with no sign-in.
 
-**Status: Phase 11 step 5b.** On its first run a wizard checks the computer; finds,
+**Status: Phase 11 step 7a.** On its first run a wizard checks the computer; finds,
 starts or installs Docker Desktop and Ollama (from their publishers, signature checked);
 pulls the models; creates your own GitHub App in your browser and opens its install page;
 and checks it all with `codelens doctor --desktop --json`. Then the app starts the stack
 (and its control API, for the dashboard's Settings page),
 shows the dashboard, keeps it all up (a supervisor every 10 s), lives in the tray, and
-stops the stack when it quits; `pnpm dist` builds an unsigned installer. Settings,
-updates and releases come in later steps.
+stops the stack when it quits; the dashboard has Settings and System pages. A version
+tag publishes the installer to GitHub Releases; uninstalling asks about the data.
+Updates come in step 7b.
 
 | File | What |
 |---|---|
@@ -28,6 +29,8 @@ updates and releases come in later steps.
 | `src/system.ts` | What the System page shows: sizes, the end of a log, the services it may name |
 | `src/models.ts`, `src/githubapp.ts` | Pulling the models; creating your GitHub App (in the `tools` container) and the stack's own checks |
 | `src/logs.ts`, `src/settings.ts` | Each service's log file; `desktop.json` |
+| `src/uninstall.ts`, `installer/uninstall.nsh` | What uninstalling does besides removing the files |
+| `src/releasenotes.ts`, `scripts/release-notes.mjs` | A release's notes and checksum (not in the app) |
 | `src/cli.ts` | `pnpm stack …`: the stack from a terminal |
 
 ## What runs where
@@ -65,8 +68,28 @@ stack, idle memory a minute later) and quits.
 
 The installer is unsigned (D148): Windows SmartScreen says "Windows protected your PC";
 **More info → Run anyway**. It installs for the current user only, under
-`%LOCALAPPDATA%\Programs\`, and removes itself from **Settings → Apps**; the data folder
-and the Docker volume stay until removed by hand (the uninstaller will ask, step 7).
+`%LOCALAPPDATA%\Programs\`, and removes itself from **Settings → Apps**.
+
+**Uninstalling** first runs the app once more (`CodeLens.exe --uninstall`,
+`src/uninstall.ts`): start at login off and the stack's containers removed; then it
+asks whether to keep the data. **Delete everything** removes the database volume, then
+the data folder, then this version's images, both or neither (Postgres keeps its first
+password, so a volume left behind locks out the next install), and offers your GitHub
+App's page to delete it there. A silent uninstall (`/S`) keeps the data.
+
+## Releasing
+
+Set `version` in `package.json`, merge, then tag `main`:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+`.github/workflows/release.yml` checks the tag matches the version and is on `main`,
+and that every image in `images.json` is published; builds the installer on Windows;
+and publishes it with `latest.yml`, `SHA256SUMS.txt` and notes (`src/releasenotes.ts`:
+the download, SmartScreen, the checksum, what the computer needs, the images).
 
 ## Day to day
 
@@ -99,5 +122,5 @@ from `pnpm stack env` set), then delete the data folder.
 ## Tests
 
 ```bash
-pnpm test    # vitest: the data folder, secrets, image pins, compose arguments, ports, the window's guard
+pnpm test    # vitest: the data folder, secrets, image pins, compose arguments, ports, the window's guard, the wizard, Settings, System, uninstalling, release notes
 ```

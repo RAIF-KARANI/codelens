@@ -140,7 +140,25 @@ Every run, with its setup and caveats: [`evals/RESULTS.md`](evals/RESULTS.md).
   accessibility with axe in both themes, phone and tablet layouts, screenshots), run in
   CI on every pull request.
 
-## Run it on your own repos
+## Download for Windows
+
+**[CodeLens Desktop, the latest release](https://github.com/RAIF-KARANI/codelens/releases/latest)**
+(`CodeLens-Setup-<version>.exe`, Windows 10 22H2 or 11, 64-bit). No release yet: the first
+one comes once updates are built (Phase 11 step 7b).
+
+Run it and follow the setup in its window: it checks the computer, installs Docker Desktop
+and Ollama if they're missing (from their publishers, signatures checked), downloads the
+models (about 6 GB), and creates your own GitHub App. No terminal, and nothing of anyone
+else's: the reviews run on your machine.
+
+**"Windows protected your PC":** the installer isn't code-signed yet, so SmartScreen doesn't
+recognise it. Choose **More info**, then **Run anyway**. Each release's notes give the
+file's SHA-256 to check it against (`Get-FileHash` in PowerShell).
+
+To remove it: **Settings → Apps → CodeLens → Uninstall**, which asks whether to keep your
+data.
+
+## Run it from source
 
 **For a friend, step by step: [`docs/run-your-own.md`](docs/run-your-own.md)** (what to
 install, the two commands, what you'll see, privacy, removing it). In short:

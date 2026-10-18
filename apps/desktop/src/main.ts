@@ -8,7 +8,11 @@
  * stack.
  *
  * CODELENS_MEASURE=1 logs the spike's numbers (time to a running stack,
- * memory) to logs/desktop.log, then quits after a minute idle (step 1b). */
+ * memory) to logs/desktop.log, then quits after a minute idle (step 1b).
+ *
+ * `--uninstall` is the uninstaller's last call on the app (uninstall.ts,
+ * build/installer.nsh): it removes the stack's containers, and the data if
+ * the user says so, then exits; no window, no tray. */
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -30,8 +34,9 @@ import {
 } from "electron";
 
 import { APP_KEY_COOKIE } from "./key.js";
+import { uninstall } from "./uninstall.js";
 import { ServiceLogs } from "./logs.js";
-import { applyChanges, checkChanges, readSettings, type SettingsView, WINDOWS } from "./appsettings.js";
+import { applyChanges, checkChanges, manageUrl, readSettings, type SettingsView, WINDOWS } from "./appsettings.js";
 import { startControl } from "./control.js";
 import { firstRun } from "./firstrun.js";
 import { appName, createApp, hasApp, runDoctor } from "./githubapp.js";
@@ -60,6 +65,7 @@ import {
   docker,
   dockerBin,
   dockerState,
+  downProject,
   ensureHome,
   imagesPresent,
   type Launch,
@@ -96,6 +102,11 @@ const MEASURE = process.env.CODELENS_MEASURE === "1";
 const IDLE_MS = 60_000;
 /** Started by Windows at sign-in (start at login): straight to the tray. */
 const HIDDEN = process.argv.includes("--hidden");
+/** Run by the uninstaller (step 7); `--silent` with it for `/S`. */
+const UNINSTALL = process.argv.includes("--uninstall");
+/** The exit code that tells the uninstaller the data was deleted, so it
+ * removes the app's own Electron folder (%APPDATA%\CodeLens) too. */
+const DATA_DELETED = 10;
 /** The user's own Ollama, on this machine (D146). */
 const OLLAMA_URL = "http://127.0.0.1:11434/api/version";
 const DOCKER_DOWNLOAD = "https://www.docker.com/products/docker-desktop/";
@@ -619,6 +630,56 @@ async function measure(): Promise<void> {
   app.quit();
 }
 
+// --- uninstalling (the uninstaller runs `CodeLens.exe --uninstall`)
+
+async function runUninstall(): Promise<void> {
+  const home = codelensHome();
+  const configDir = app.isPackaged ? process.resourcesPath : APP_DIR;
+  // For the log only: nothing here may make the data folder again.
+  stack = { home, images: { api: "", worker: "", web: "" }, configDir };
+  const images = await readImages(join(configDir, "images.json")).catch(() => null);
+  const saved = await loadSettings(home);
+  const cli = dockerCli();
+  if (cli && (await dockerState().catch(() => "stopped")) === "missing") useDocker(cli);
+  await log(`uninstall: started (version ${app.getVersion()})`);
+  const result = await uninstall({
+    silent: process.argv.includes("--silent"),
+    ask: async (q) => {
+      const { response } = await dialog.showMessageBox({
+        type: "question",
+        title: "Uninstall CodeLens",
+        message: q.message,
+        detail: q.detail,
+        buttons: q.buttons,
+        defaultId: 0,
+        cancelId: q.cancel,
+        noLink: true,
+      });
+      return response;
+    },
+    dockerState: () => dockerState().catch(() => "stopped" as const),
+    down: (removeVolume) => downProject(removeVolume),
+    removeImages: async () => {
+      if (images) await docker(["image", "rm", ...Object.values(images)]);
+    },
+    // Docker can take a moment to let go of the folder's bind mounts.
+    removeDataFolder: () => rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }),
+    forgetStartup: async () => {
+      app.setLoginItemSettings({ openAtLogin: false, args: ["--hidden"] });
+      await resumeAfterRestart(process.execPath, false);
+    },
+    startDocker: () => {
+      if (existsSync(dockerDesktopExe())) launchProgram(dockerDesktopExe());
+    },
+    openExternal: (url) => void shell.openExternal(url),
+    appSettingsUrl: manageUrl(saved.installUrl),
+    dataFolder: home,
+    log,
+  });
+  await log(`uninstall: done, data ${result}`);
+  app.exit(result === "deleted" ? DATA_DELETED : 0);
+}
+
 // --- the app
 
 async function start(): Promise<void> {
@@ -705,8 +766,11 @@ async function start(): Promise<void> {
   setInterval(() => void tick(), TICK_MS);
 }
 
-// One app at a time: a second launch shows the first one's window.
-if (!app.requestSingleInstanceLock()) {
+if (UNINSTALL) {
+  // The uninstaller has closed the running app already; this run is alone.
+  app.whenReady().then(runUninstall, () => app.exit(1));
+} else if (!app.requestSingleInstanceLock()) {
+  // One app at a time: a second launch shows the first one's window.
   app.quit();
 } else {
   app.setAppUserModelId("io.github.raif-karani.codelens"); // Windows notifications

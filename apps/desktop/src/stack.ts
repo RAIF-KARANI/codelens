@@ -324,6 +324,30 @@ export async function upServices(
   );
 }
 
+/** `docker compose down` for this project by its name alone: Compose finds
+ * the containers, network and (with `-v`) the database volume by their
+ * labels, so it needs no compose.yaml and no codelens.env. The uninstaller
+ * relies on that: the data folder may already be gone (step 7). */
+export function downArgs(removeVolume: boolean): string[] {
+  return ["compose", "-p", PROJECT, "down", "--remove-orphans", ...(removeVolume ? ["--volumes"] : [])];
+}
+
+/** The project's one-off containers (`compose run`), which `down` leaves
+ * alone, with the network they hold: the wizard's `tools` run waiting on
+ * GitHub's page, if the app was closed before the user finished there (found
+ * by uninstalling at that step). */
+export function oneOffArgs(): string[] {
+  return ["ps", "-aq", "--filter", `label=com.docker.compose.project=${PROJECT}`, "--filter", "label=com.docker.compose.oneoff=True"];
+}
+
+/** Everything of the project in Docker: one-off containers first, then
+ * `down` (and the database volume with `removeVolume`). */
+export async function downProject(removeVolume: boolean): Promise<Run> {
+  const ids = (await docker(oneOffArgs())).output.split(/\s+/).filter(Boolean);
+  if (ids.length > 0) await docker(["rm", "-f", ...ids]);
+  return docker(downArgs(removeVolume));
+}
+
 export async function restartServices(stack: Stack, services: string[]): Promise<Run> {
   return docker(composeArgs(stack, "restart", ...services), composeEnv(stack));
 }

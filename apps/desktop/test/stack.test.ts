@@ -18,6 +18,7 @@ import {
   parseMemory,
   PROJECT,
 } from "../src/stack.js";
+import { releaseNotes } from "../src/releasenotes.js";
 
 const DIGEST = "a".repeat(64);
 const IMAGES = {
@@ -171,5 +172,21 @@ describe("parseMemory", () => {
 
   it("refuses what isn't a size", () => {
     expect(parseMemory("--")).toBeNull();
+  });
+});
+
+describe("releaseNotes", () => {
+  const images = { api: "ghcr.io/x/api@sha256:" + "a".repeat(64), worker: "ghcr.io/x/worker@sha256:" + "b".repeat(64), web: "ghcr.io/x/web@sha256:" + "c".repeat(64) };
+  const notes = releaseNotes("0.2.0", "ab".repeat(32), images);
+
+  it("links this version's installer and says how to get past SmartScreen", () => {
+    expect(notes).toContain("https://github.com/RAIF-KARANI/codelens/releases/download/v0.2.0/CodeLens-Setup-0.2.0.exe");
+    expect(notes).toContain("**More info**, then **Run anyway**");
+    expect(notes).toContain("Get-FileHash .\\CodeLens-Setup-0.2.0.exe");
+  });
+
+  it("gives the checksum as Get-FileHash prints it, and the pinned images", () => {
+    expect(notes).toContain("AB".repeat(32));
+    for (const ref of Object.values(images)) expect(notes).toContain(ref);
   });
 });
