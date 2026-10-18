@@ -5,7 +5,7 @@ import type { Repo, RepoStatus } from "@/lib/api";
 export type NavItem = { href: string; label: string; match: readonly string[] };
 
 export const NAV_ITEMS: readonly NavItem[] = [
-  { href: "/", label: "Overview", match: ["/"] },
+  { href: "/overview", label: "Overview", match: ["/overview"] },
   { href: "/reviews", label: "Reviews", match: ["/reviews"] },
   { href: "/repos", label: "Repositories", match: ["/repos"] },
 ];

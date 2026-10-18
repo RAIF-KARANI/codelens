@@ -1,8 +1,8 @@
 import {
   ActivityIcon,
-  DownloadIcon,
   FolderGit2Icon,
   GitPullRequestIcon,
+  HomeIcon,
   LayoutDashboardIcon,
   SettingsIcon,
 } from "lucide-react";
@@ -24,7 +24,7 @@ import { requestUser } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
 const NAV_ICONS: Record<string, React.ReactNode> = {
-  "/": <LayoutDashboardIcon />,
+  "/overview": <LayoutDashboardIcon />,
   "/reviews": <GitPullRequestIcon />,
   "/repos": <FolderGit2Icon />,
 };
@@ -63,8 +63,8 @@ export function SidebarContent() {
         <Suspense fallback={null}>
           <LocalNav />
         </Suspense>
-        {/* The demo is where people find CodeLens: the download is one click away (D179). */}
-        {isDemo() && <NavLink href="/download" label="Download" match={["/download"]} icon={<DownloadIcon />} />}
+        {/* The demo's landing page, with the download (D180). */}
+        {isDemo() && <NavLink href="/" label="Home" match={["/"]} icon={<HomeIcon />} />}
       </nav>
       <Suspense fallback={<RepoListSkeleton />}>
         <SidebarRepos />

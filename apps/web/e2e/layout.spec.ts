@@ -7,6 +7,7 @@ import { expect, test } from "@playwright/test";
 
 const PAGES = [
   "/",
+  "/overview",
   "/reviews",
   "/repos",
   "/repos/19",
@@ -15,7 +16,6 @@ const PAGES = [
   "/reviews/1386/graph",
   "/reviews/1386/trace",
   "/reviews/999999",
-  "/download",
 ];
 
 for (const path of PAGES) {
@@ -30,7 +30,7 @@ for (const path of PAGES) {
 }
 
 test("the navigation is reachable on every screen size", async ({ page, isMobile }) => {
-  await page.goto("/");
+  await page.goto("/overview");
   const viewport = page.viewportSize();
   if (isMobile || (viewport && viewport.width < 768)) {
     // A phone gets a top bar whose menu opens the sidebar in a sheet.
@@ -41,7 +41,7 @@ test("the navigation is reachable on every screen size", async ({ page, isMobile
   }
 });
 
-for (const path of ["/", "/reviews/1386", "/reviews/1386/trace"]) {
+for (const path of ["/", "/overview", "/reviews/1386", "/reviews/1386/trace"]) {
   test(`${path}: buttons and links are big enough to tap`, async ({ page, hasTouch }) => {
     test.skip(!hasTouch, "a touch screen's concern");
     await page.goto(path);

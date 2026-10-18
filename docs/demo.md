@@ -171,8 +171,9 @@ calls `/health`, which keeps the free Supabase project from pausing after a week
 
 ### Check it
 
-- `https://codelens.raifkarani.in` opens the repos without a sign-in, with the demo
-  banner, and `RAIF-KARANI/codelens-demo` is the only repo.
+- `https://codelens.raifkarani.in` is the landing page (the download, the video, the
+  demo); `/overview` opens the dashboard without a sign-in, with the demo banner, and
+  `RAIF-KARANI/codelens-demo` is the only repo.
 - A review's page, graph and trace work; the timeline replays.
 - `https://codelens-api-beta.vercel.app/health` is ok with `"redis": null` and
   `"ollama": null` (a demo uses neither);

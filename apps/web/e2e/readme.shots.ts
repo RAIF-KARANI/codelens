@@ -21,7 +21,7 @@ async function shoot(page: Page, url: string, name: string) {
 }
 
 test("overview", async ({ page }) => {
-  await shoot(page, "/", "overview");
+  await shoot(page, "/overview", "overview");
 });
 
 test("review", async ({ page }) => {

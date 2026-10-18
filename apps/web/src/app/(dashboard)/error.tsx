@@ -29,7 +29,7 @@ export default function Error({
             Try again
           </Button>
           <Button asChild variant="outline">
-            <Link href="/">Back to the overview</Link>
+            <Link href="/overview">Back to the overview</Link>
           </Button>
         </div>
       }
