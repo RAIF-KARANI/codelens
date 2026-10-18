@@ -80,9 +80,14 @@ test("the trace lists what was retrieved, sortable", async ({ page }) => {
 
 test("the command palette goes to a review", async ({ page }) => {
   await page.goto("/overview");
-  await page.keyboard.press("Control+k");
   const palette = page.getByRole("dialog");
-  await expect(palette).toBeVisible();
+  // The shortcut listens once the page has hydrated, which a slow runner can
+  // be still doing after the load (failed on main's CI after #92): press until
+  // it answers, only while closed, since Ctrl+K also closes it.
+  await expect(async () => {
+    if (!(await palette.isVisible())) await page.keyboard.press("Control+k");
+    await expect(palette).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 10_000 });
   await palette.getByRole("combobox").fill("Cleanup pass");
   // Its list loads the first time it opens.
   await expect(palette.getByRole("option", { name: /Cleanup pass/ }).first()).toBeVisible();
