@@ -29,9 +29,16 @@
     "directories": {
       "output": "release"
     },
+    "publish": {
+      "provider": "github",
+      "owner": "RAIF-KARANI",
+      "repo": "codelens",
+      "releaseType": "release"
+    },
     "files": [
       "dist/**/*.js",
       "!dist/cli.js",
+      "!dist/releasenotes.js",
       "assets/*.png",
       "package.json"
     ],
@@ -45,7 +52,8 @@
     },
     "nsis": {
       "oneClick": true,
-      "perMachine": false
+      "perMachine": false,
+      "include": "installer/uninstall.nsh"
     }
   },
   "pnpm": {

@@ -1,0 +1,103 @@
+name: Release
+
+# CodeLens Desktop's installer, published to GitHub Releases when a version
+# tag is pushed (planning-v2.md Phase 11 step 7): `git tag v0.2.0 && git push
+# origin v0.2.0`, once apps/desktop/package.json says 0.2.0. Unsigned (D148):
+# the release's notes say how to get past SmartScreen, and give the file's
+# SHA-256. latest.yml is what the app's update check reads (step 7b).
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+
+jobs:
+  # Before anything is built: the tag names package.json's version, it's on
+  # main, and the images it pins exist where every install will pull them.
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: The tag is package.json's version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME, but apps/desktop/package.json says $version"
+            exit 1
+          fi
+      - name: The tagged commit is on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME is not on main"
+            exit 1
+          fi
+      - name: Every pinned image is published
+        run: |
+          for service in api worker web; do
+            ref=$(node -p "require('./images.json').$service")
+            docker buildx imagetools inspect "$ref" > /dev/null
+            echo "$service: $ref"
+          done
+
+  build:
+    needs: check
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/desktop/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm dist
+      - name: Notes and checksum
+        run: node scripts/release-notes.mjs "${GITHUB_REF_NAME#v}" > release/notes.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          if-no-files-found: error
+          path: |
+            apps/desktop/release/CodeLens-Setup-*.exe
+            apps/desktop/release/CodeLens-Setup-*.exe.blockmap
+            apps/desktop/release/latest.yml
+            apps/desktop/release/SHA256SUMS.txt
+            apps/desktop/release/notes.md
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "CodeLens Desktop ${GITHUB_REF_NAME#v}" \
+            --notes-file notes.md \
+            CodeLens-Setup-*.exe CodeLens-Setup-*.exe.blockmap latest.yml SHA256SUMS.txt
