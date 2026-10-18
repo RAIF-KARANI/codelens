@@ -144,7 +144,8 @@ Every run, with its setup and caveats: [`evals/RESULTS.md`](evals/RESULTS.md).
 
 **[CodeLens Desktop, the latest release](https://github.com/RAIF-KARANI/codelens/releases/latest)**
 (`CodeLens-Setup-<version>.exe`, Windows 10 22H2 or 11, 64-bit). No release yet: the first
-one comes once updates are built (Phase 11 step 7b).
+one is tagged after the step that added updates is merged. Once installed, CodeLens
+offers each new release itself, and installs it only when you say so.
 
 Run it and follow the setup in its window: it checks the computer, installs Docker Desktop
 and Ollama if they're missing (from their publishers, signatures checked), downloads the
@@ -209,8 +210,7 @@ improves each:
   on nothing of this project's owner: your App, your machine, your data. It learns about
   pull requests by polling GitHub, so no webhook relay is needed.
 
-The desktop app is built up to its installer and uninstaller; updates come next, then
-its first release. Until then, the clone-and-run setup above is the way to run your own.
+The desktop app is built, updates included; its first release comes next. Until then, the clone-and-run setup above is the way to run your own.
 
 ## Tech stack
 

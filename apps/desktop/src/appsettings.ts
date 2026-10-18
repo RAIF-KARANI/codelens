@@ -6,6 +6,7 @@
 
 import { mergeEnv } from "./githubapp.js";
 import { parseEnv } from "./stack.js";
+import type { UpdateView } from "./updates.js";
 
 /** The context windows CodeLens is measured at: 8k works with any Ollama
  * settings (D66); 16k needs flash attention and a q8_0 KV cache to fit an
@@ -36,6 +37,8 @@ export type SettingsView = {
     /** Webhooks through a relay: not offered by the app yet (D175). */
     relay: "unavailable";
   };
+  /** This version and the update check (step 7b); the switch is desktop.json's. */
+  updates: UpdateView;
 };
 
 export type SettingsChanges = {
@@ -43,7 +46,15 @@ export type SettingsChanges = {
   reviewsPerHour?: number;
   pollIntervalS?: number;
   contextWindow?: number;
+  /** desktop.json, not codelens.env: no service restarts for it. */
+  checkForUpdates?: boolean;
 };
+
+/** The changes that are codelens.env's, which need the services recreated. */
+export function envChanges(changes: SettingsChanges): SettingsChanges {
+  const { checkForUpdates: _, ...env } = changes;
+  return env;
+}
 
 const DEFAULTS = { llm: "qwen3:8b", embed: "qwen3-embedding:0.6b", reviewsPerHour: 10, pollIntervalS: 60 };
 
@@ -64,7 +75,7 @@ export function manageUrl(installUrl: string | null): string | null {
 
 export function readSettings(
   envText: string,
-  extras: { pulled: Record<string, boolean>; ollamaReadyForLong: boolean; installUrl: string | null },
+  extras: { pulled: Record<string, boolean>; ollamaReadyForLong: boolean; installUrl: string | null; updates: UpdateView },
 ): SettingsView {
   const env = parseEnv(envText);
   const llm = env.get("LLM_MODEL") || DEFAULTS.llm;
@@ -90,6 +101,7 @@ export function readSettings(
       reviewsPerHour: int(env.get("GITHUB_REVIEWS_PER_HOUR"), DEFAULTS.reviewsPerHour),
     },
     events: { pollIntervalS: int(env.get("GITHUB_POLL_INTERVAL_S"), DEFAULTS.pollIntervalS), relay: "unavailable" },
+    updates: extras.updates,
   };
 }
 
@@ -102,7 +114,7 @@ export function checkChanges(raw: unknown): Checked {
   const changes: SettingsChanges = {};
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { ok: false, errors: { form: "expected an object" } };
   for (const key of Object.keys(raw)) {
-    if (!["allowedAccounts", "reviewsPerHour", "pollIntervalS", "contextWindow"].includes(key)) {
+    if (!["allowedAccounts", "reviewsPerHour", "pollIntervalS", "contextWindow", "checkForUpdates"].includes(key)) {
       errors[key] = "isn't a setting";
     }
   }
@@ -130,6 +142,10 @@ export function checkChanges(raw: unknown): Checked {
   if ("contextWindow" in r) {
     if (r.contextWindow !== WINDOWS.short && r.contextWindow !== WINDOWS.long) errors.contextWindow = "8192 or 16384";
     else changes.contextWindow = r.contextWindow;
+  }
+  if ("checkForUpdates" in r) {
+    if (typeof r.checkForUpdates !== "boolean") errors.checkForUpdates = "on or off";
+    else changes.checkForUpdates = r.checkForUpdates;
   }
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, changes };
 }

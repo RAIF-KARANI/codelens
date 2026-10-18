@@ -11,10 +11,10 @@ import { StateMessage } from "@/components/state-message";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { isLocal } from "@/lib/config";
-import { ControlError, getSettings, type SettingsView } from "@/lib/control";
+import { ControlError, getSettings, releasePage, type SettingsView } from "@/lib/control";
 
-import { saveApp, saveEvents, setWindow } from "./actions";
-import { AppForm, EventsForm, WindowForm } from "./forms";
+import { saveApp, saveEvents, saveUpdates, setWindow, updateNow } from "./actions";
+import { AppForm, EventsForm, UpdatesForm, WindowForm } from "./forms";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -50,7 +50,7 @@ async function Settings() {
       </StateMessage>
     );
   }
-  const { app, events, models } = settings;
+  const { app, events, models, updates } = settings;
   return (
     <div className="mt-6 grid gap-6 lg:grid-cols-2">
       <Card>
@@ -126,6 +126,23 @@ async function Settings() {
           <Button asChild variant="outline" size="sm">
             <a href="https://github.com/settings/installations">Choose on GitHub</a>
           </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Updates</CardTitle>
+          <CardDescription>
+            CodeLens {updates.current} on this computer. New releases come from GitHub, and install only when you say so.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <UpdatesForm
+            update={updateNow}
+            save={saveUpdates}
+            updates={updates}
+            releaseUrl={updates.available ? releasePage(updates.available) : null}
+          />
         </CardContent>
       </Card>
     </div>

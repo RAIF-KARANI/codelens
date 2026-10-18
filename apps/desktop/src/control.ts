@@ -15,6 +15,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import type { SettingsView } from "./appsettings.js";
 import { isService, lineCount, type SystemView } from "./system.js";
+import type { UpdateView } from "./updates.js";
 
 /** Bodies are a few settings: anything bigger isn't the dashboard. */
 const MAX_BODY = 16 * 1024;
@@ -31,6 +32,10 @@ export type ControlHandlers = {
   restartService(service: string): Promise<void>;
   clearMirrors(): Promise<SystemView>;
   openDataFolder(): Promise<void>;
+  /** Updates (step 7b): look now; and, with one found, download it. The app
+   * asks the user in its own window before it restarts (updates.ts). */
+  checkForUpdates(): Promise<UpdateView>;
+  installUpdate(): Promise<UpdateView>;
 };
 
 export type Refusal = "bad_host" | "bad_key";
@@ -123,6 +128,14 @@ export async function startControl(
       if (route === "POST /v1/system/open-data-folder") {
         await handlers.openDataFolder();
         send(res, 200, { opened: true });
+        return;
+      }
+      if (route === "POST /v1/updates/check") {
+        send(res, 200, await handlers.checkForUpdates());
+        return;
+      }
+      if (route === "POST /v1/updates/install") {
+        send(res, 200, await handlers.installUpdate());
         return;
       }
       if (req.method === "GET" && url.pathname === "/v1/settings") {

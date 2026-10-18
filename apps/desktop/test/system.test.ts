@@ -61,7 +61,8 @@ describe("the control API's System routes", () => {
 
   beforeEach(async () => {
     did = [];
-    const settings = readSettings("", { pulled: {}, ollamaReadyForLong: false, installUrl: null });
+    const updates = { current: "0.1.0", checkForUpdates: true, status: "idle" as const, available: null, progress: null, lastChecked: null, error: null };
+    const settings = readSettings("", { pulled: {}, ollamaReadyForLong: false, installUrl: null, updates });
     api = await startControl(
       {
         getSettings: async () => settings,
@@ -78,6 +79,8 @@ describe("the control API's System routes", () => {
           return system;
         },
         openDataFolder: async () => void did.push("open"),
+        checkForUpdates: async () => updates,
+        installUpdate: async () => updates,
       },
       KEY,
     );

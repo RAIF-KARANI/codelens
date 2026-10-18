@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { applyChanges, checkChanges, manageUrl, readSettings, type SettingsView } from "../src/appsettings.js";
+import { applyChanges, checkChanges, envChanges, manageUrl, readSettings, type SettingsView } from "../src/appsettings.js";
 import { checkRequest, startControl } from "../src/control.js";
 import { parseRegQuery, readyForLong } from "../src/ollamaenv.js";
 
 const ENV = "POSTGRES_PASSWORD=p\nGITHUB_APP_ID=5\nGITHUB_ALLOWED_ACCOUNTS=RAIF-KARANI:1,friend\nGITHUB_REVIEWS_PER_HOUR=7\n";
-const EXTRAS = { pulled: { "qwen3:8b": true }, ollamaReadyForLong: false, installUrl: "https://github.com/apps/codelens-me/installations/new" };
+const UPDATES = { current: "0.1.0", checkForUpdates: true, status: "idle" as const, available: null, progress: null, lastChecked: null, error: null };
+const EXTRAS = { pulled: { "qwen3:8b": true }, ollamaReadyForLong: false, installUrl: "https://github.com/apps/codelens-me/installations/new", updates: UPDATES };
 
 describe("readSettings", () => {
   it("reads codelens.env, with CodeLens's defaults for what it doesn't set", () => {
@@ -19,6 +20,7 @@ describe("readSettings", () => {
       reviewsPerHour: 7,
     });
     expect(view.events).toEqual({ pollIntervalS: 60, relay: "unavailable" });
+    expect(view.updates).toEqual(UPDATES);
     expect(view.models).toMatchObject({ llm: "qwen3:8b", contextWindow: 8192, pulled: { "qwen3:8b": true, "qwen3-embedding:0.6b": false } });
   });
 
@@ -35,6 +37,14 @@ describe("checkChanges", () => {
       changes: { allowedAccounts: ["RAIF-KARANI:1", "friend"], reviewsPerHour: 0, pollIntervalS: 30 },
     });
     expect(checkChanges({ allowedAccounts: [] })).toEqual({ ok: true, changes: { allowedAccounts: [] } });
+  });
+
+  it("takes the update switch, which isn't codelens.env's", () => {
+    const checked = checkChanges({ checkForUpdates: false, reviewsPerHour: 3 });
+    expect(checked).toEqual({ ok: true, changes: { checkForUpdates: false, reviewsPerHour: 3 } });
+    expect(checked.ok && envChanges(checked.changes)).toEqual({ reviewsPerHour: 3 });
+    expect(checked.ok && applyChanges(ENV, checked.changes)).not.toContain("checkForUpdates");
+    expect(checkChanges({ checkForUpdates: "yes" }).ok).toBe(false);
   });
 
   it.each([
@@ -96,6 +106,8 @@ describe("the control API", () => {
         restartService: async () => {},
         clearMirrors: async () => { throw new Error("unused"); },
         openDataFolder: async () => {},
+        checkForUpdates: async () => ({ ...UPDATES, status: "up-to-date" }),
+        installUpdate: async () => UPDATES,
       },
       KEY,
     );
@@ -135,6 +147,13 @@ describe("the control API", () => {
     expect(refused.status).toBe(422);
     expect(await refused.json()).toMatchObject({ error: { code: "invalid", details: { reviewsPerHour: expect.any(String) } } });
     expect(saved).toEqual([{ reviewsPerHour: 3 }, { reviewsPerHour: -3 }]);
+  });
+
+  it("looks for updates on the page's word", async () => {
+    const response = await call("/v1/updates/check", { method: "POST" });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "up-to-date", current: "0.1.0" });
+    expect((await call("/v1/updates/install", { method: "POST", key: null })).status).toBe(403);
   });
 
   it("refuses bodies that aren't a few settings, and unknown routes", async () => {

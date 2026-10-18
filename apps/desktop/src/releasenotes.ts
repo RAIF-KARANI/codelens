@@ -3,7 +3,7 @@
  * unsigned, D148), how to check the file, what the computer needs, and the
  * images this version runs. The release workflow writes them
  * (scripts/release-notes.mjs); the README's download section says the same,
- * shorter. Not part of the app (package.json leaves it out). */
+ * shorter. The app uses REPO and the release page's address (updates.ts). */
 
 import type { Images } from "./stack.js";
 

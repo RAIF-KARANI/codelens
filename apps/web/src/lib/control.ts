@@ -6,6 +6,18 @@ import "server-only";
  * request, with the launch's key the app put in this container's environment
  * (CODELENS_CONTROL_URL, CODELENS_CONTROL_KEY). The browser never sees it. */
 
+/** The app's updates (Phase 11 step 7b, D178): this version, the switch for
+ * looking by itself, and what the last look found. */
+export type UpdateView = {
+  current: string;
+  checkForUpdates: boolean;
+  status: "idle" | "checking" | "up-to-date" | "available" | "downloading" | "ready" | "error";
+  available: string | null;
+  progress: number | null;
+  lastChecked: string | null;
+  error: string | null;
+};
+
 export type SettingsView = {
   models: {
     llm: string;
@@ -23,7 +35,11 @@ export type SettingsView = {
     reviewsPerHour: number;
   };
   events: { pollIntervalS: number; relay: "unavailable" };
+  updates: UpdateView;
 };
+
+/** The release's page on GitHub, for "What's new". */
+export const releasePage = (version: string) => `https://github.com/RAIF-KARANI/codelens/releases/tag/v${version}`;
 
 export class ControlError extends Error {
   constructor(
