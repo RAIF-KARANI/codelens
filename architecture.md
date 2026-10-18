@@ -1595,7 +1595,7 @@ its own Docker Compose project (with the dashboard as a `web` container), learns
 PRs by polling GitHub (`core/github/poll.py`), runs the dashboard in a no-sign-in local
 mode, and sets everything up from a first-run wizard. Steps 1a and 1b built the stack, local
 mode, the published images and the Electron spike with its installer (§3.3, §10.4);
-since then polling, the supervisor and tray, the wizard, Settings and System, releases, the uninstaller and updates (steps 2-7). Next: the first release, then a fresh machine (step 8). Some of the gaps below close on the
+since then polling, the supervisor and tray, the wizard, Settings and System, releases, the uninstaller and updates (steps 2-7). Released as 0.1.0 (2026-10-18). Next: a fresh machine (step 8). Some of the gaps below close on the
 way (the dashboard in Compose, a failed review saying so on the PR).
 
 **Later, as a separate upgrade:** CodeLens as a hosted service other people install on

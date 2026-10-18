@@ -143,9 +143,10 @@ Every run, with its setup and caveats: [`evals/RESULTS.md`](evals/RESULTS.md).
 ## Download for Windows
 
 **[CodeLens Desktop, the latest release](https://github.com/RAIF-KARANI/codelens/releases/latest)**
-(`CodeLens-Setup-<version>.exe`, Windows 10 22H2 or 11, 64-bit). No release yet: the first
-one is tagged after the step that added updates is merged. Once installed, CodeLens
-offers each new release itself, and installs it only when you say so.
+(`CodeLens-Setup-<version>.exe`, Windows 10 22H2 or 11, 64-bit). The first release,
+**0.1.0**, came out on 2026-10-18; it has been run on the developer's machine, and its
+run on a machine that has never seen CodeLens is next. Once installed, CodeLens offers
+each new release itself, and installs it only when you say so.
 
 Run it and follow the setup in its window: it checks the computer, installs Docker Desktop
 and Ollama if they're missing (from their publishers, signatures checked), downloads the
@@ -205,12 +206,13 @@ improves each:
 - **On the web (done):** the dashboard is rebuilt on a design system with its own brand,
   with an overview, reviews across repos, a review page that puts the findings first,
   and accessibility and layout checks in CI. The live demo runs it.
-- **As software (nearly there):** **CodeLens Desktop**, a Windows installer. A first-run wizard sets up
+- **As software (released, 0.1.0):** **CodeLens Desktop**, a Windows installer. A first-run wizard sets up
   Docker Desktop, Ollama, the models and your own GitHub App, with no terminal. It depends
   on nothing of this project's owner: your App, your machine, your data. It learns about
   pull requests by polling GitHub, so no webhook relay is needed.
 
-The desktop app is built, updates included; its first release comes next. Until then, the clone-and-run setup above is the way to run your own.
+The desktop app is [released](#download-for-windows); the clone-and-run setup above stays
+for other systems and for developers.
 
 ## Tech stack
 

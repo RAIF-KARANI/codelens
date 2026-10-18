@@ -6,10 +6,10 @@ comments are posted on your pull requests. Nothing goes to anyone else's server.
 
 This guide takes about 20 minutes, most of it downloads.
 
-> **Coming in v2:** CodeLens Desktop, a Windows installer that does all of this with a
-> wizard and no terminal ([`planning-v2.md`](../planning-v2.md), Phase 11; built, not
-> released yet). Until its first release, this guide is the way to run your own, and it
-> stays for developers afterwards.
+> **On Windows, there's an easier way:** CodeLens Desktop, an installer that does all of
+> this with a wizard and no terminal
+> ([download](https://github.com/RAIF-KARANI/codelens/releases/latest)). This guide
+> stays for other systems and for developers.
 
 ## What you need
 
