@@ -108,6 +108,22 @@ test("a review that doesn't exist says so", async ({ page }) => {
   await expect(page.getByText("isn't part of the demo")).toBeVisible();
 });
 
+// The download page (D179): reached from the demo's sidebar and its notice.
+// The button goes to the latest release's installer on GitHub, or, if GitHub
+// didn't answer when the page was built, to the Releases page.
+test("the demo leads to the download, and the download to GitHub", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: "download CodeLens Desktop" }).click();
+  await expect(page).toHaveURL(/\/download$/);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("on your own PC");
+  const download = page.getByRole("link", { name: /^Download (CodeLens \d+\.\d+\.\d+|from GitHub)$/ });
+  await expect(download).toHaveAttribute(
+    "href",
+    /^https:\/\/github\.com\/RAIF-KARANI\/codelens\/releases\/(download\/v[\d.]+\/CodeLens-Setup-[\d.]+\.exe|latest)$/,
+  );
+  await expect(page.getByRole("link", { name: "Download", exact: true })).toBeVisible();
+});
+
 // Settings belong to CodeLens Desktop's local mode (D175): the demo (and the
 // self-hosted dashboard) neither link to them nor serve them.
 test("there are no Settings or System pages outside the desktop app", async ({ page }) => {

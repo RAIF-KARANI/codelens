@@ -44,9 +44,10 @@ export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   // Not the login page, nor /api, whose handlers check the session themselves
   // and answer 401, not a redirect; nor images and icons, which the login
-  // page shows too.
+  // page shows too; nor the download page, which shows no data (D179).
   if (
     pathname.startsWith("/login") ||
+    pathname === "/download" ||
     pathname.startsWith("/api/") ||
     pathname.startsWith("/_next/") ||
     pathname === "/favicon.ico" ||

@@ -16,6 +16,7 @@ const PAGES = [
   ["trace", "/reviews/1386/trace"],
   ["empty state", "/reviews?status=failed"],
   ["not found", "/reviews/999999"],
+  ["download", "/download"],
 ] as const;
 
 for (const theme of ["light", "dark"] as const) {

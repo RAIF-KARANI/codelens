@@ -15,6 +15,7 @@ const PAGES = [
   "/reviews/1386/graph",
   "/reviews/1386/trace",
   "/reviews/999999",
+  "/download",
 ];
 
 for (const path of PAGES) {

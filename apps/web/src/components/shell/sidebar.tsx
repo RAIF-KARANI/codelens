@@ -1,4 +1,11 @@
-import { ActivityIcon, FolderGit2Icon, GitPullRequestIcon, LayoutDashboardIcon, SettingsIcon } from "lucide-react";
+import {
+  ActivityIcon,
+  DownloadIcon,
+  FolderGit2Icon,
+  GitPullRequestIcon,
+  LayoutDashboardIcon,
+  SettingsIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { connection } from "next/server";
 import { cache, Suspense } from "react";
@@ -11,7 +18,7 @@ import { SidebarToggle } from "@/components/shell/sidebar-toggle";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Skeleton } from "@/components/ui/skeleton";
 import { callApi, type Repo } from "@/lib/api";
-import { isLocal } from "@/lib/config";
+import { isDemo, isLocal } from "@/lib/config";
 import { NAV_ITEMS, REPO_DOT, sidebarRepos } from "@/lib/nav";
 import { requestUser } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -56,6 +63,8 @@ export function SidebarContent() {
         <Suspense fallback={null}>
           <LocalNav />
         </Suspense>
+        {/* The demo is where people find CodeLens: the download is one click away (D179). */}
+        {isDemo() && <NavLink href="/download" label="Download" match={["/download"]} icon={<DownloadIcon />} />}
       </nav>
       <Suspense fallback={<RepoListSkeleton />}>
         <SidebarRepos />
