@@ -17,8 +17,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  // Shared links need absolute URLs (the Open Graph image, opengraph-image.tsx):
+  // the demo site's address unless SITE_URL says otherwise.
+  metadataBase: new URL(process.env.SITE_URL ?? "https://codelens.raifkarani.in"),
   title: { default: "CodeLens", template: "%s · CodeLens" },
   description: "Graph-aware code reviews: every finding with its evidence.",
+  openGraph: { siteName: "CodeLens", type: "website" },
+  twitter: { card: "summary_large_image" },
 };
 
 /** What every page has: the fonts, the theme, tooltips and toasts. The
