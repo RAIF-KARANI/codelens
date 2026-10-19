@@ -159,7 +159,7 @@ recognise it. Choose **More info**, then **Run anyway**. Each release's notes gi
 file's SHA-256 to check it against (`Get-FileHash` in PowerShell).
 
 To remove it: **Settings → Apps → CodeLens → Uninstall**, which asks whether to keep your
-data.
+data. Everything else, from the setup to troubleshooting: **[the user's guide](docs/desktop.md)**.
 
 ## Run it from source
 
@@ -207,7 +207,8 @@ improves each:
 - **On the web (done):** the dashboard is rebuilt on a design system with its own brand,
   with an overview, reviews across repos, a review page that puts the findings first,
   and accessibility and layout checks in CI. The live demo runs it.
-- **As software (released, 0.1.0):** **CodeLens Desktop**, a Windows installer. A first-run wizard sets up
+- **As software (released):** **CodeLens Desktop**, a Windows installer, rehearsed on a
+  machine that had never seen CodeLens. A first-run wizard sets up
   Docker Desktop, Ollama, the models and your own GitHub App, with no terminal. It depends
   on nothing of this project's owner: your App, your machine, your data. It learns about
   pull requests by polling GitHub, so no webhook relay is needed.

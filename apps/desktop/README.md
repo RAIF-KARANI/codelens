@@ -1,5 +1,7 @@
 # CodeLens Desktop
 
+> Using it rather than building it? The user's guide is [`docs/desktop.md`](../../docs/desktop.md).
+
 CodeLens as a Windows app ([`planning-v2.md`](../../planning-v2.md), Phase 11): it runs
 the whole CodeLens stack on the user's machine, as a Docker Compose project of its own,
 and shows the dashboard in its window, with no sign-in.

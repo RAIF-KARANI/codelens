@@ -1,7 +1,7 @@
 {
   "name": "codelens-desktop",
   "productName": "CodeLens",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "CodeLens Desktop: runs CodeLens's Compose project on this machine (planning-v2.md Phase 11)",
   "author": "RAIF-KARANI",

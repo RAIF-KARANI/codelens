@@ -3,7 +3,7 @@
  * One `docker compose logs --follow` feeds them all; its lines start with the
  * container's name and a bar ("codelens-desktop-api-1  | ..."). */
 
-import type { ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { join } from "node:path";
 
@@ -58,4 +58,32 @@ export class ServiceLogs {
     }
     appendFileSync(file, `${text}\n`);
   }
+}
+
+/** The PowerShell that ends this project's leftover `docker compose logs
+ * --follow` processes (step 8b): the uninstaller force-closes the app, so its
+ * follower ran on, for a day in the rehearsal, holding the install folder as
+ * its working folder. Only processes of this project's logs, by their command
+ * line; nothing from outside goes into the script. */
+export function stopFollowersScript(project: string): string {
+  if (!/^[a-z0-9-]+$/.test(project)) throw new Error(`unexpected project name ${project}`);
+  return (
+    "Get-CimInstance Win32_Process -Filter \"Name='docker-compose.exe' OR Name='docker.exe'\" | " +
+    `Where-Object { $_.CommandLine -match ' -p ${project} ' -and $_.CommandLine -match ' logs --follow' } | ` +
+    "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $_.ProcessId }"
+  );
+}
+
+/** Ends them (Windows only); resolves with how many there were. Never throws. */
+export function stopLeftoverFollowers(project: string): Promise<number> {
+  if (process.platform !== "win32") return Promise.resolve(0);
+  return new Promise((resolve) => {
+    let out = "";
+    const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", stopFollowersScript(project)], {
+      windowsHide: true,
+    });
+    child.stdout.on("data", (data: Buffer) => (out += data.toString()));
+    child.on("error", () => resolve(0));
+    child.on("close", () => resolve(out.split(/\s+/).filter(Boolean).length));
+  });
 }

@@ -21,7 +21,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { appendFile, readFile, rm, statfs, writeFile } from "node:fs/promises";
-import { userInfo } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 
 import electronUpdater from "electron-updater";
@@ -42,7 +42,7 @@ import { APP_KEY_COOKIE } from "./key.js";
 import { uninstall } from "./uninstall.js";
 import { backupBeforeMigrating, removeStaleImages } from "./backup.js";
 import { CHECK_EVERY_MS, Updates } from "./updates.js";
-import { ServiceLogs } from "./logs.js";
+import { ServiceLogs, stopLeftoverFollowers } from "./logs.js";
 import { applyChanges, checkChanges, envChanges, manageUrl, readSettings, type SettingsView, WINDOWS } from "./appsettings.js";
 import { startControl } from "./control.js";
 import { firstRun } from "./firstrun.js";
@@ -782,6 +782,9 @@ async function runUninstall(): Promise<void> {
   const cli = dockerCli();
   if (cli && (await dockerState().catch(() => "stopped")) === "missing") useDocker(cli);
   await log(`uninstall: started (version ${app.getVersion()})`);
+  // The app was force-closed: its log follower may still run.
+  const followers = await stopLeftoverFollowers(PROJECT);
+  if (followers) await log(`uninstall: ended ${followers} leftover log follower(s)`);
   const result = await uninstall({
     silent: process.argv.includes("--silent"),
     ask: async (q) => {
@@ -837,6 +840,9 @@ async function start(): Promise<void> {
   };
   await ensureHome(home);
   settings = await loadSettings(home);
+  // One from a run that was force-closed would write every line twice.
+  const followers = await stopLeftoverFollowers(PROJECT);
+  if (followers) await log(`ended ${followers} leftover log follower(s) of an earlier run`);
 
   const ses = session.fromPartition("persist:codelens");
   // The dashboard asks for nothing (camera, notifications, ...): refuse all.
@@ -920,6 +926,12 @@ async function start(): Promise<void> {
   await bringUp();
   setInterval(() => void tick(), TICK_MS);
 }
+
+// Every process this app starts inherits its working folder. Started from its
+// shortcut, that is the install folder, which a leftover child then keeps the
+// uninstaller from deleting (found in the rehearsal, step 8b): the temp folder
+// instead.
+process.chdir(tmpdir());
 
 if (UNINSTALL) {
   // The uninstaller has closed the running app already; this run is alone.
