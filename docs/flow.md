@@ -9,7 +9,7 @@ CodeLens is used in two ways:
   App or demo.
 
 Both sides run the same review engine, described first. v2 adds a third way, released
-as 0.1.0: **CodeLens Desktop**, a downloadable app for the second side (see
+for Windows: **CodeLens Desktop**, a downloadable app for the second side (see
 [the end of this page](#v2-codelens-desktop)).
 
 ## The engine: from a push to a review

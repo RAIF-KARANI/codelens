@@ -1331,7 +1331,9 @@ Graph, Trace) and one evidence drawer that every tab can open.
   (D179) forwards to `/` (`next.config.ts`).
 - **Shared links** show `opengraph-image.tsx`'s picture (1200 × 630, rendered once at build,
   in Geist from the `geist` package): what CodeLens is beside the demo's SQL injection
-  finding. `metadataBase` is the demo site (`SITE_URL` to change it).
+  finding. `metadataBase` is the demo site (`SITE_URL` to change it). Link-preview crawlers
+  get the same page as browsers (`htmlLimitedBots` matches nothing, D184): Next's fully
+  rendered page for them failed on Vercel, and every tag is in the normal page's `<head>`.
 
 ### 10.4 Local mode: the desktop's dashboard (Phase 11 step 1a, D165)
 
@@ -1624,7 +1626,7 @@ its own Docker Compose project (with the dashboard as a `web` container), learns
 PRs by polling GitHub (`core/github/poll.py`), runs the dashboard in a no-sign-in local
 mode, and sets everything up from a first-run wizard. Steps 1a and 1b built the stack, local
 mode, the published images and the Electron spike with its installer (§3.3, §10.4);
-since then polling, the supervisor and tray, the wizard, Settings and System, releases, the uninstaller and updates (steps 2-7). Released as 0.1.0 (2026-10-18), then rehearsed on a friend's laptop that had never seen CodeLens (step 8, 2026-10-19), which met Phase 11's exit criterion; its fixes are 0.1.1 (D181, D182). Some of the gaps below close on the
+since then polling, the supervisor and tray, the wizard, Settings and System, releases, the uninstaller and updates (steps 2-7). Released as 0.1.0 (2026-10-18) and 0.1.1 (2026-10-19), rehearsed in between on a friend's laptop that had never seen CodeLens (step 8, 2026-10-19), which met Phase 11's exit criterion; its fixes are 0.1.1 (D181, D182). Some of the gaps below close on the
 way (the dashboard in Compose, a failed review saying so on the PR).
 
 **Later, as a separate upgrade:** CodeLens as a hosted service other people install on

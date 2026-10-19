@@ -6,7 +6,7 @@ CodeLens as a Windows app ([`planning-v2.md`](../../planning-v2.md), Phase 11): 
 the whole CodeLens stack on the user's machine, as a Docker Compose project of its own,
 and shows the dashboard in its window, with no sign-in.
 
-**Status: Phase 11 step 7b.** On its first run a wizard checks the computer; finds,
+**Status: released** (Phase 11 done; the latest is in `CHANGELOG.md`). On its first run a wizard checks the computer; finds,
 starts or installs Docker Desktop and Ollama (from their publishers, signature checked);
 pulls the models; creates your own GitHub App in your browser and opens its install page;
 and checks it all with `codelens doctor --desktop --json`. Then the app starts the stack

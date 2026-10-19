@@ -144,10 +144,10 @@ Every run, with its setup and caveats: [`evals/RESULTS.md`](evals/RESULTS.md).
 
 **[codelens.raifkarani.in](https://codelens.raifkarani.in)**, or straight from
 **[the latest release](https://github.com/RAIF-KARANI/codelens/releases/latest)**
-(`CodeLens-Setup-<version>.exe`, Windows 10 22H2 or 11, 64-bit). The first release,
-**0.1.0**, came out on 2026-10-18; it has been run on the developer's machine, and its
-run on a machine that has never seen CodeLens is next. Once installed, CodeLens offers
-each new release itself, and installs it only when you say so.
+(`CodeLens-Setup-<version>.exe`, Windows 10 22H2 or 11, 64-bit). It has been rehearsed on
+a machine that had never seen CodeLens, from the download to reviews on its owner's pull
+requests. Once installed, CodeLens offers each new release itself, with what's new, and
+installs it only when you say so.
 
 Run it and follow the setup in its window: it checks the computer, installs Docker Desktop
 and Ollama if they're missing (from their publishers, signatures checked), downloads the
