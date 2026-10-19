@@ -37,9 +37,13 @@ test("a review lists its findings, and j/k move between them", async ({ page }) 
   const findings = page.getByRole("button", { name: /^(critical|warning|suggestion): / });
   await expect(findings).toHaveCount(4);
 
-  await page.locator("body").press("j");
   const current = page.locator('button[aria-current="true"]');
-  await expect(current).toHaveCount(1);
+  // j listens once the page has hydrated (like the palette's Ctrl+K): press
+  // until a finding is current, only while none is.
+  await expect(async () => {
+    if ((await current.count()) === 0) await page.locator("body").press("j");
+    await expect(current).toHaveCount(1, { timeout: 1000 });
+  }).toPass({ timeout: 10_000 });
   const first = await current.textContent();
   await page.locator("body").press("j");
   await expect(current).not.toHaveText(first ?? "");
