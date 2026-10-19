@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { MAX_LOG_BYTES, ServiceLogs, splitLogLine } from "../src/logs.js";
+import { MAX_LOG_BYTES, ServiceLogs, splitLogLine, stopFollowersScript } from "../src/logs.js";
 
 const P = "codelens-desktop";
 
@@ -51,5 +51,18 @@ describe("ServiceLogs", () => {
     logs.write("api-1  | fresh\n");
     expect(await readFile(join(dir, "api.log"), "utf8")).toBe("fresh\n");
     expect((await stat(join(dir, "api.log.1"))).size).toBe(MAX_LOG_BYTES + 1);
+  });
+});
+
+describe("stopFollowersScript", () => {
+  it("targets this project's log followers only, by their command line", () => {
+    const script = stopFollowersScript("codelens-desktop");
+    expect(script).toContain("$_.CommandLine -match ' -p codelens-desktop '");
+    expect(script).toContain("$_.CommandLine -match ' logs --follow'");
+    expect(script).toContain("Name='docker-compose.exe' OR Name='docker.exe'");
+  });
+
+  it("refuses a project name that could change the script", () => {
+    expect(() => stopFollowersScript("x'; Remove-Item C:\ -Recurse; '")).toThrow();
   });
 });

@@ -47,6 +47,8 @@ ${sha256.toUpperCase()}
 
 **Settings → Apps → CodeLens → Uninstall.** It asks whether to keep your data (your reviews, settings and your GitHub App's key). Kept, installing CodeLens again picks up where you left off.
 
+Everything else, from the setup to troubleshooting: [the user's guide](https://github.com/${REPO}/blob/main/docs/desktop.md).
+
 ### The images this version runs
 
 Pinned by digest; each is what CI built and published from this repository.

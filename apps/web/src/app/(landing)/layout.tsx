@@ -22,6 +22,12 @@ export default function LandingLayout({ children }: LayoutProps<"/">) {
               Demo
             </Link>
             <a
+              href="https://github.com/RAIF-KARANI/codelens/blob/main/docs/desktop.md"
+              className="rounded-md px-2.5 py-1.5 text-muted-foreground hover:text-foreground"
+            >
+              Guide
+            </a>
+            <a
               href="https://github.com/RAIF-KARANI/codelens"
               className="rounded-md px-2.5 py-1.5 text-muted-foreground hover:text-foreground"
             >
