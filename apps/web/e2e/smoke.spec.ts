@@ -130,6 +130,10 @@ test("the landing page offers the download, the demo and self-hosting", async ({
   );
   await expect(page.getByRole("link", { name: "Self-host (any OS)" })).toHaveAttribute("href", /docs\/run-your-own\.md$/);
   await expect(page.locator("video track[kind=captions]")).toHaveAttribute("src", "/media/codelens-launch.vtt");
+  // A shared link shows the Open Graph image (opengraph-image.tsx): a page's
+  // own openGraph would replace the root's, image included, as it once did.
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", /\/opengraph-image/);
+  await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute("content", "summary_large_image");
   await page.getByRole("link", { name: "See the live demo" }).click();
   await expect(page).toHaveURL(/\/overview$/);
   await expect(page.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();

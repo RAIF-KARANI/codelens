@@ -12,18 +12,12 @@ import { ALL_RELEASES_URL, latestRelease, RELEASES_URL } from "@/lib/release";
 const DESCRIPTION =
   "An AI code reviewer for GitHub pull requests that runs on your own GPU. Download CodeLens Desktop for Windows, see the live demo, or self-host it.";
 
+// A shared link's title and description come from these (the root layout's
+// openGraph fills them in). No openGraph here: it would replace the root's
+// whole, and with it the image (opengraph-image.tsx), as it did at first.
 export const metadata: Metadata = {
   title: { absolute: "CodeLens: AI code reviews on your own PC" },
   description: DESCRIPTION,
-  // What a shared link says (the image is opengraph-image.tsx's).
-  openGraph: {
-    siteName: "CodeLens",
-    type: "website",
-    url: "/",
-    title: "CodeLens: AI code reviews on your own PC",
-    description: DESCRIPTION,
-  },
-  twitter: { card: "summary_large_image", title: "CodeLens: AI code reviews on your own PC", description: DESCRIPTION },
 };
 
 const SELF_HOST_URL = "https://github.com/RAIF-KARANI/codelens/blob/main/docs/run-your-own.md";
