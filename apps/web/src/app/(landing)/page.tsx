@@ -9,10 +9,21 @@ import { isDemo } from "@/lib/config";
 import { formatBytes } from "@/lib/format";
 import { ALL_RELEASES_URL, latestRelease, RELEASES_URL } from "@/lib/release";
 
+const DESCRIPTION =
+  "An AI code reviewer for GitHub pull requests that runs on your own GPU. Download CodeLens Desktop for Windows, see the live demo, or self-host it.";
+
 export const metadata: Metadata = {
   title: { absolute: "CodeLens: AI code reviews on your own PC" },
-  description:
-    "An AI code reviewer for GitHub pull requests that runs on your own GPU. Download CodeLens Desktop for Windows, see the live demo, or self-host it.",
+  description: DESCRIPTION,
+  // What a shared link says (the image is opengraph-image.tsx's).
+  openGraph: {
+    siteName: "CodeLens",
+    type: "website",
+    url: "/",
+    title: "CodeLens: AI code reviews on your own PC",
+    description: DESCRIPTION,
+  },
+  twitter: { card: "summary_large_image", title: "CodeLens: AI code reviews on your own PC", description: DESCRIPTION },
 };
 
 const SELF_HOST_URL = "https://github.com/RAIF-KARANI/codelens/blob/main/docs/run-your-own.md";

@@ -1329,6 +1329,9 @@ Graph, Trace) and one evidence drawer that every tab can open.
   else `/` is the dashboard: the proxy forwards it to `/overview` (in local mode by the
   Host header, like `/login`), and the page itself redirects as a fallback. `/download`
   (D179) forwards to `/` (`next.config.ts`).
+- **Shared links** show `opengraph-image.tsx`'s picture (1200 × 630, rendered once at build,
+  in Geist from the `geist` package): what CodeLens is beside the demo's SQL injection
+  finding. `metadataBase` is the demo site (`SITE_URL` to change it).
 
 ### 10.4 Local mode: the desktop's dashboard (Phase 11 step 1a, D165)
 
