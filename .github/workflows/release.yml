@@ -3,8 +3,8 @@ name: Release
 # CodeLens Desktop's installer, published to GitHub Releases when a version
 # tag is pushed (planning-v2.md Phase 11 step 7): `git tag v0.2.0 && git push
 # origin v0.2.0`, once apps/desktop/package.json says 0.2.0. Unsigned (D148):
-# the release's notes say how to get past SmartScreen, and give the file's
-# SHA-256. latest.yml is what the app's update check reads (step 7b).
+# the release's notes open with what's new (apps/desktop/CHANGELOG.md), say how
+# to get past SmartScreen, and give the file's SHA-256. latest.yml is what the app's update check reads (step 7b).
 
 on:
   push:
@@ -33,6 +33,13 @@ jobs:
           version=$(node -p "require('./package.json').version")
           if [ "v$version" != "$GITHUB_REF_NAME" ]; then
             echo "::error::tag $GITHUB_REF_NAME, but apps/desktop/package.json says $version"
+            exit 1
+          fi
+      - name: The version has notes in CHANGELOG.md
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if ! grep -qE "^## ${version//./\.}( |$)" CHANGELOG.md; then
+            echo "::error::apps/desktop/CHANGELOG.md has no section for $version"
             exit 1
           fi
       - name: The tagged commit is on main

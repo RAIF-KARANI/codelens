@@ -18,7 +18,7 @@ import {
   parseMemory,
   PROJECT,
 } from "../src/stack.js";
-import { releaseNotes } from "../src/releasenotes.js";
+import { changelogSection, releaseNotes } from "../src/releasenotes.js";
 
 const DIGEST = "a".repeat(64);
 const IMAGES = {
@@ -177,7 +177,11 @@ describe("parseMemory", () => {
 
 describe("releaseNotes", () => {
   const images = { api: "ghcr.io/x/api@sha256:" + "a".repeat(64), worker: "ghcr.io/x/worker@sha256:" + "b".repeat(64), web: "ghcr.io/x/web@sha256:" + "c".repeat(64) };
-  const notes = releaseNotes("0.2.0", "ab".repeat(32), images);
+  const notes = releaseNotes("0.2.0", "ab".repeat(32), images, "- Faster reviews.");
+
+  it("opens with what's new", () => {
+    expect(notes.startsWith("## What's new in 0.2.0\n\n- Faster reviews.\n\n## Download")).toBe(true);
+  });
 
   it("links this version's installer and says how to get past SmartScreen", () => {
     expect(notes).toContain("https://github.com/RAIF-KARANI/codelens/releases/download/v0.2.0/CodeLens-Setup-0.2.0.exe");
@@ -188,5 +192,25 @@ describe("releaseNotes", () => {
   it("gives the checksum as Get-FileHash prints it, and the pinned images", () => {
     expect(notes).toContain("AB".repeat(32));
     for (const ref of Object.values(images)) expect(notes).toContain(ref);
+  });
+});
+
+describe("changelogSection", () => {
+  const changelog = "# What's new\n\nIntro.\n\n## 0.2.0 (2026-11-01)\n\n- Faster.\n- Smaller.\n\n## 0.1.0\n\n- First.\n";
+
+  it("takes a version's lines, with or without a date after its heading", () => {
+    expect(changelogSection(changelog, "0.2.0")).toBe("- Faster.\n- Smaller.");
+    expect(changelogSection(changelog, "0.1.0")).toBe("- First.");
+  });
+
+  it("finds nothing for a version it doesn't have, or only a prefix of one", () => {
+    expect(changelogSection(changelog, "0.3.0")).toBeNull();
+    expect(changelogSection(changelog, "0.2")).toBeNull();
+  });
+
+  it("has notes for the version package.json says, or the release refuses the tag", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const version = JSON.parse(await readFile(join(APP_DIR, "package.json"), "utf8")).version as string;
+    expect(changelogSection(await readFile(join(APP_DIR, "CHANGELOG.md"), "utf8"), version)).not.toBeNull();
   });
 });
