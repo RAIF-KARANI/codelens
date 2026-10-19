@@ -1322,7 +1322,8 @@ Graph, Trace) and one evidence drawer that every tab can open.
 - **The landing page** (`/`, demo only, D180): what CodeLens is, the launch video
   (`public/media/`, with captions describing what's on screen, since its sound is music),
   three buttons (the latest release's installer, the live demo at `/overview`,
-  self-hosting's guide), the steps after the download, what the PC needs, and the
+  self-hosting's guide), what's new in the latest release (its notes' "What's new",
+  from `apps/desktop/CHANGELOG.md`, D183), the steps after the download, what the PC needs, and the
   SHA-256. The release comes from GitHub's API (`lib/release.ts`, `use cache` for an
   hour; the installer's asset checked to be this repository's, for this tag). Anywhere
   else `/` is the dashboard: the proxy forwards it to `/overview` (in local mode by the

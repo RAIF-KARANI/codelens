@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { isDemo } from "@/lib/config";
 import { formatBytes } from "@/lib/format";
-import { latestRelease, RELEASES_URL } from "@/lib/release";
+import { ALL_RELEASES_URL, latestRelease, RELEASES_URL } from "@/lib/release";
 
 export const metadata: Metadata = {
   title: { absolute: "CodeLens: AI code reviews on your own PC" },
@@ -89,6 +89,33 @@ export default async function LandingPage() {
         </figure>
       </section>
 
+      {release && release.whatsNew.length > 0 && (
+        <section aria-labelledby="whats-new-title" className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 id="whats-new-title" className="text-lg font-semibold tracking-tight">
+              What&apos;s new in {release.version}
+            </h2>
+            <a href={ALL_RELEASES_URL} className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">
+              Every release
+            </a>
+          </div>
+          <Card>
+            <CardContent>
+              <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm">
+                {release.whatsNew.map((item) => (
+                  <li key={item}>
+                    <Inline text={item} />
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-sm text-muted-foreground">
+                Already installed? CodeLens offers each new release itself: Settings → Updates, or the tray.
+              </p>
+            </CardContent>
+          </Card>
+        </section>
+      )}
+
       <section aria-labelledby="steps-title" className="flex flex-col gap-4">
         <h2 id="steps-title" className="text-lg font-semibold tracking-tight">
           After the download
@@ -151,5 +178,25 @@ export default async function LandingPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+/** The release notes' **bold** and `code`, as elements: nothing from the
+ * notes is ever HTML. */
+function Inline({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(\*\*[^*]+\*\*|`[^`]+`)/).map((part, i) =>
+        part.startsWith("**") && part.endsWith("**") && part.length > 4 ? (
+          <b key={i}>{part.slice(2, -2)}</b>
+        ) : part.startsWith("`") && part.endsWith("`") && part.length > 2 ? (
+          <code key={i} className="font-mono text-[0.85em]">
+            {part.slice(1, -1)}
+          </code>
+        ) : (
+          part
+        ),
+      )}
+    </>
   );
 }

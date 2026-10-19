@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pickRelease, RELEASES_URL } from "@/lib/release";
+import { pickRelease, RELEASES_URL, whatsNew } from "@/lib/release";
 
 // As GitHub's API returned v0.1.0 (2026-10-18), trimmed.
 const BASE = "https://github.com/RAIF-KARANI/codelens/releases/download/v0.1.0/";
@@ -24,6 +24,7 @@ describe("pickRelease", () => {
       publishedAt: "2026-10-18T07:49:51Z",
       pageUrl: RELEASE.html_url,
       sha256: "45918D86298914A19E16FC9BFA1148EB549C8F50EB5BCF2F68F64416B031BD5A",
+      whatsNew: [],
     });
   });
 
@@ -45,5 +46,36 @@ describe("pickRelease", () => {
 
   it("links the Releases page if the release's own page looks wrong", () => {
     expect(pickRelease({ ...RELEASE, html_url: "https://evil.example/" }, SUMS)?.pageUrl).toBe(RELEASES_URL);
+  });
+});
+
+describe("whatsNew", () => {
+  // As release-notes.mjs writes them (apps/desktop/CHANGELOG.md first).
+  const NOTES = [
+    "## What's new in 0.1.1",
+    "",
+    "- Reviews no longer fail when Ollama starts after CodeLens, as it often does when Windows",
+    "  starts: a review waits for it.",
+    "- A failed review's page has **Review again**.",
+    "",
+    "## Download",
+    "",
+    "- not one of them",
+  ].join("\r\n");
+
+  it("takes the items under What's new, joining wrapped lines", () => {
+    expect(whatsNew(NOTES)).toEqual([
+      "Reviews no longer fail when Ollama starts after CodeLens, as it often does when Windows starts: a review waits for it.",
+      "A failed review's page has **Review again**.",
+    ]);
+  });
+
+  it("is empty for notes without the section, as 0.1.0's were", () => {
+    expect(whatsNew("## Download\n\n- the installer")).toEqual([]);
+    expect(whatsNew("")).toEqual([]);
+  });
+
+  it("reaches the release, from GitHub's body", () => {
+    expect(pickRelease({ ...RELEASE, body: NOTES }, SUMS)?.whatsNew).toHaveLength(2);
   });
 });

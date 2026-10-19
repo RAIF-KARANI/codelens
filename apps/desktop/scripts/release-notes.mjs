@@ -4,7 +4,7 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 
-import { installerName, releaseNotes } from "../dist/releasenotes.js";
+import { changelogSection, installerName, releaseNotes } from "../dist/releasenotes.js";
 import { readImages } from "../dist/stack.js";
 
 const [version, dir = "release"] = process.argv.slice(2);
@@ -13,4 +13,7 @@ if (!version) throw new Error("usage: node scripts/release-notes.mjs <version> [
 const exe = installerName(version);
 const sha256 = createHash("sha256").update(await readFile(`${dir}/${exe}`)).digest("hex");
 await writeFile(`${dir}/SHA256SUMS.txt`, `${sha256}  ${exe}\n`);
-process.stdout.write(releaseNotes(version, sha256, await readImages("images.json")));
+// What's new comes first: a version without notes in CHANGELOG.md isn't released.
+const whatsNew = changelogSection(await readFile("CHANGELOG.md", "utf8"), version);
+if (!whatsNew) throw new Error(`CHANGELOG.md has no section for ${version}`);
+process.stdout.write(releaseNotes(version, sha256, await readImages("images.json"), whatsNew));

@@ -1,7 +1,7 @@
 /** Each release's notes on GitHub (planning-v2.md Phase 11 step 7): the
  * download, what to do about SmartScreen's warning (the installer is
  * unsigned, D148), how to check the file, what the computer needs, and the
- * images this version runs. The release workflow writes them
+ * images this version runs, after what's new (CHANGELOG.md). The release workflow writes them
  * (scripts/release-notes.mjs); the README's download section says the same,
  * shorter. The app uses REPO and the release page's address (updates.ts). */
 
@@ -13,10 +13,25 @@ export function installerName(version: string): string {
   return `CodeLens-Setup-${version}.exe`;
 }
 
-export function releaseNotes(version: string, sha256: string, images: Images): string {
+/** A version's section of CHANGELOG.md: the lines under `## <version>` (a date
+ * may follow it), up to the next `## `; null if there is none. */
+export function changelogSection(changelog: string, version: string): string | null {
+  const lines = changelog.split(/\r?\n/);
+  const start = lines.findIndex((line) => line === `## ${version}` || line.startsWith(`## ${version} `));
+  if (start < 0) return null;
+  const end = lines.findIndex((line, i) => i > start && line.startsWith("## "));
+  const body = lines.slice(start + 1, end < 0 ? undefined : end).join("\n").trim();
+  return body || null;
+}
+
+export function releaseNotes(version: string, sha256: string, images: Images, whatsNew: string): string {
   const exe = installerName(version);
   const url = `https://github.com/${REPO}/releases/download/v${version}/${exe}`;
-  return `## Download
+  return `## What's new in ${version}
+
+${whatsNew}
+
+## Download
 
 **[${exe}](${url})**: Windows 10 (22H2) or 11, 64-bit.
 

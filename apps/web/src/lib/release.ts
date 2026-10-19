@@ -10,6 +10,7 @@ import { cacheLife } from "next/cache";
 
 export const REPO = "RAIF-KARANI/codelens";
 export const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
+export const ALL_RELEASES_URL = `https://github.com/${REPO}/releases`;
 
 export type Release = {
   version: string;
@@ -21,9 +22,13 @@ export type Release = {
   pageUrl: string;
   /** From the release's SHA256SUMS.txt, upper case as Get-FileHash prints it. */
   sha256: string | null;
+  /** The release notes' "What's new" items (apps/desktop/CHANGELOG.md), as
+   * Markdown text: one entry per change. */
+  whatsNew: string[];
 };
 
 type GitHubRelease = {
+  body?: unknown;
   tag_name?: unknown;
   html_url?: unknown;
   published_at?: unknown;
@@ -51,7 +56,26 @@ export function pickRelease(json: unknown, sums: string | null): Release | null 
     publishedAt: typeof r.published_at === "string" ? r.published_at : "",
     pageUrl: typeof r.html_url === "string" && r.html_url.startsWith(`https://github.com/${REPO}/`) ? r.html_url : RELEASES_URL,
     sha256: sha ? sha.toUpperCase() : null,
+    whatsNew: whatsNew(typeof r.body === "string" ? r.body : ""),
   };
+}
+
+/** The items under the notes' `## What's new` heading, up to the next `## `:
+ * each `- ` starts one, and indented lines continue it. At most 10. */
+export function whatsNew(notes: string): string[] {
+  const items: string[] = [];
+  let inside = false;
+  for (const line of notes.split(/\r?\n/)) {
+    if (line.startsWith("## ")) {
+      if (inside) break;
+      inside = line.startsWith("## What's new");
+      continue;
+    }
+    if (!inside) continue;
+    if (line.startsWith("- ")) items.push(line.slice(2).trim());
+    else if (line.trim() && /^\s/.test(line) && items.length) items[items.length - 1] += ` ${line.trim()}`;
+  }
+  return items.slice(0, 10);
 }
 
 async function get(url: string, accept: string): Promise<Response | null> {

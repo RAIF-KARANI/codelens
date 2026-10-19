@@ -82,7 +82,8 @@ App's page to delete it there. A silent uninstall (`/S`) keeps the data.
 
 ## Releasing
 
-Set `version` in `package.json`, merge, then tag `main`:
+Set `version` in `package.json` and add its section to `CHANGELOG.md` (what's new, for
+users; the release refuses a version without one), merge, then tag `main`:
 
 ```bash
 git tag v0.2.0
