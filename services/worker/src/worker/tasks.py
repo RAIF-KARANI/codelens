@@ -11,9 +11,11 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+from celery import signals
 from celery.exceptions import SoftTimeLimitExceeded
 from redis.asyncio import Redis
 from sqlalchemy import func, insert, select, update
@@ -45,6 +47,8 @@ from core.github.publish import build_failure_note, build_review, failure_reason
 from core.github.webhooks import Policy, rename_repository
 from core.indexing import IndexingError, IndexLocked, IndexReport, index_repository, index_revision
 from core.providers import open_providers
+from core.providers.base import ProviderUnavailableError
+from core.providers.ollama import OllamaClient
 from core.review.config import PipelineConfig
 from core.review.events import END, channel
 from core.review.pipeline import ReviewError, ReviewResult, run_review
@@ -57,6 +61,28 @@ logger = logging.getLogger(__name__)
 # retry every 30 s, for up to 30 minutes, before giving up.
 LOCK_RETRY_SECONDS = 30
 LOCK_MAX_RETRIES = 60
+
+# Before a review starts, Ollama must answer (D181): after Windows starts,
+# Docker brings the stack back before the user's Ollama is up, and the poller
+# catches up at once. Waiting 30 s at a time, for up to 10 minutes, covers a
+# start; the last try runs anyway, and fails with the usual note on the PR.
+MODEL_WAIT_SECONDS = 30
+MODEL_WAIT_TRIES = 20
+
+
+# Unfinished reviews older than this aren't sent again when a worker starts:
+# a push from last week has likely moved on.
+UNFINISHED_WINDOW = timedelta(days=1)
+
+
+class ModelNotAnswering(Exception):
+    """Ollama didn't answer the check before a review: try again later."""
+
+
+class PullRequestClosed(ReviewError):
+    """A review tried again (D181) of a pull request closed since: nothing to
+    review, and no note to leave on it."""
+
 
 # Nodes per embed_repo run: ~20 s of GPU at the measured ~25 nodes/s, so a
 # review never waits behind more than that (D107).
@@ -106,12 +132,78 @@ def requeue_embedding(repo_id: int) -> None:
     embed_repo.apply_async(args=(repo_id,))
 
 
-@celery_app.task(name=jobs.REVIEW)
-def review(review_id: int, base: str, title: str | None = None) -> dict[str, Any]:
+@celery_app.task(name=jobs.REVIEW, bind=True, max_retries=MODEL_WAIT_TRIES)
+def review(self: Any, review_id: int, base: str, title: str | None = None) -> dict[str, Any]:
     """Run a queued review: the head is the row's head_sha, compared with its
-    merge-base with `base`. A pull request's review is then posted on GitHub
-    (queue: gpu)."""
-    return asyncio.run(_review(get_settings(), review_id, base, title))
+    merge-base with `base` (empty: the PR's base on GitHub now, for a review
+    tried again, core.github.retry). A pull request's review is then posted on
+    GitHub (queue: gpu). While Ollama doesn't answer, it waits, queued."""
+    last_try = self.request.retries >= MODEL_WAIT_TRIES
+    try:
+        return asyncio.run(
+            _review(
+                get_settings(),
+                review_id,
+                base,
+                title,
+                wait_for_model=not last_try,
+                first_wait=self.request.retries == 0,
+            )
+        )
+    except ModelNotAnswering as exc:
+        raise self.retry(exc=exc, countdown=MODEL_WAIT_SECONDS) from exc
+
+
+@signals.worker_ready.connect
+def _requeue_on_start(sender: Any, **_: Any) -> None:
+    """A worker that takes reviews (the gpu queue) sends their jobs again
+    when it starts (D181): Redis keeps nothing on disk, so a Windows restart
+    loses the jobs of reviews queued, or waiting for Ollama, when Docker
+    stopped, and their rows would wait for ever. A job sent twice is harmless:
+    reviews run one at a time, and a finished one skips its second message."""
+    consumed = getattr(sender.app.amqp.queues, "consume_from", None) or {}
+    if jobs.GPU_QUEUE not in consumed:
+        return
+    try:
+        ids = asyncio.run(_unfinished_reviews(get_settings()))
+    except Exception:
+        logger.warning("couldn't look for reviews to queue again", exc_info=True)
+        return
+    for review_id in ids:
+        review.apply_async(args=(review_id, ""))
+    if ids:
+        logger.info("queued %d unfinished reviews again: %s", len(ids), ids)
+
+
+async def _unfinished_reviews(settings: Settings) -> list[int]:
+    """Pull request reviews queued or running in the last day: their base
+    comes from GitHub again (an empty base), so only theirs can be re-sent."""
+    engine = create_engine(settings.database_url, pooled=False)
+    try:
+        async with engine.connect() as conn:
+            rows = await conn.scalars(
+                select(Review.id)
+                .where(
+                    Review.source == ReviewSource.GITHUB,
+                    Review.pr_number.is_not(None),
+                    Review.status.in_([ReviewStatus.QUEUED, ReviewStatus.RUNNING]),
+                    Review.created_at > func.now() - UNFINISHED_WINDOW,
+                )
+                .order_by(Review.id)
+            )
+            return list(rows)
+    finally:
+        await engine.dispose()
+
+
+async def _model_answers(settings: Settings) -> bool:
+    """One quick look, no retries: is the user's Ollama up?"""
+    try:
+        async with OllamaClient(settings.ollama_base_url, timeout_s=5, max_retries=0) as client:
+            await client.version()
+    except ProviderUnavailableError:
+        return False
+    return True
 
 
 async def _index(settings: Settings, repo_id: int) -> dict[str, Any]:
@@ -273,7 +365,13 @@ _FINISHED = (ReviewStatus.COMPLETED, ReviewStatus.FAILED, ReviewStatus.SUPERSEDE
 
 
 async def _review(
-    settings: Settings, review_id: int, base: str, title: str | None
+    settings: Settings,
+    review_id: int,
+    base: str,
+    title: str | None,
+    *,
+    wait_for_model: bool = False,
+    first_wait: bool = True,
 ) -> dict[str, Any]:
     engine = create_engine(settings.database_url, pooled=False)
     try:
@@ -284,6 +382,17 @@ async def _review(
             # stream already ended.
             logger.info("review %s already %s; skipping", review_id, row.status)
             return {"review_id": review_id, "status": str(row.status), "skipped": True}
+        if wait_for_model and not await _model_answers(settings):
+            logger.info(
+                "review %s: Ollama isn't answering; trying again in %d s",
+                review_id,
+                MODEL_WAIT_SECONDS,
+            )
+            if first_wait:
+                async with engine.connect() as conn:
+                    await append_event(conn, review_id, "waiting_for_model")
+                    await conn.commit()
+            raise ModelNotAnswering(f"review {review_id}: Ollama isn't answering")
         async with doorbell(settings) as notify:
             try:
                 return await _run_review(settings, engine, row, review_id, base, title, notify)
@@ -311,7 +420,14 @@ async def _run_review(
         if github and not _covered(settings, row):
             raise ReviewError(f"{row.full_name}: {NOT_COVERED}")
         if github:
-            repo_path, repo_name = await _fetch_pull_request(settings, engine, row)
+            try:
+                repo_path, repo_name, pr_base = await _fetch_pull_request(
+                    settings, engine, row, need_base=not base
+                )
+            except PullRequestClosed as closed:
+                await _stand_down(engine, review_id, str(closed), notify)
+                return {"review_id": review_id, "status": "superseded", "skipped": True}
+            base = base or pr_base or ""
             if await _superseded_on_github(engine, repo_path, row, review_id, notify):
                 return {"review_id": review_id, "status": "superseded", "skipped": True}
         elif row.local_path:
@@ -340,7 +456,9 @@ async def _run_review(
         # The pipeline records its own failures; this also catches the ones
         # before it started (bad revision, missing config), and tells a
         # streamer why.
-        message = str(exc) or repr(exc)
+        # An Ollama outage is recorded as the pipeline records it, repr(exc),
+        # which is what the poller looks for to try again (core.github.retry).
+        message = repr(exc) if isinstance(exc, ProviderUnavailableError) else str(exc) or repr(exc)
         async with engine.connect() as conn:
             await fail_unfinished(conn, review_id, message)
             await append_event(conn, review_id, "error", message=message)
@@ -451,6 +569,18 @@ async def _load_review(engine: AsyncEngine, review_id: int) -> Any:
     return row
 
 
+async def _stand_down(engine: AsyncEngine, review_id: int, why: str, notify: Notify) -> None:
+    """Not reviewed, and not a failure: marked superseded, with why."""
+    async with engine.begin() as conn:
+        await conn.execute(
+            update(Review)
+            .where(Review.id == review_id)
+            .values(status=ReviewStatus.SUPERSEDED, finished_at=func.now(), error=why)
+        )
+        await append_event(conn, review_id, "superseded", why=why)
+    await ring(notify, review_id)
+
+
 async def _supersede_if_stale(
     engine: AsyncEngine, row: Any, review_id: int, when: str, notify: Notify
 ) -> bool:
@@ -508,11 +638,12 @@ async def _superseded_on_github(
 
 
 async def _fetch_pull_request(
-    settings: Settings, engine: AsyncEngine, row: Any
-) -> tuple[Path, str]:
+    settings: Settings, engine: AsyncEngine, row: Any, *, need_base: bool = False
+) -> tuple[Path, str, str | None]:
     """Bring the PR's head (refs/pull/N/head, which also covers PRs from
-    forks) and the branches into the repo's mirror; returns the mirror, and
-    the repo's name as GitHub has it now."""
+    forks) and the branches into the repo's mirror; returns the mirror, the
+    repo's name as GitHub has it now, and, if asked, the PR's base now (read
+    before the fetch, so the mirror has it)."""
     if row.github_installation_id is None:
         raise ReviewError(f"{row.full_name} is not covered by any installation of the App")
     mirror = mirror_path(settings.data_dir, row.repo_id)
@@ -521,11 +652,19 @@ async def _fetch_pull_request(
         async with github_client(settings) as gh:
             token = await _installation_token(settings, gh, row.github_installation_id)
             current = await _current_repo(engine, gh, token, row.repo_id, row.github_id)
+            base: str | None = None
+            if need_base:
+                pr = await gh.get_pull_request(current["full_name"], row.pr_number, token)
+                if pr.get("state") != "open":
+                    raise PullRequestClosed(
+                        f"{current['full_name']}#{row.pr_number} is {pr.get('state')}"
+                    )
+                base = pr["base"]["sha"]
         url = clone_url(settings.github_web_url, current["full_name"])
         await asyncio.to_thread(sync_mirror, mirror, url, token, (BRANCHES, pull))
     except (GitHubError, GitError) as exc:
         raise ReviewError(f"{row.full_name}#{row.pr_number}: {exc}") from exc
-    return mirror, current["full_name"]
+    return mirror, current["full_name"], base
 
 
 async def _publish(

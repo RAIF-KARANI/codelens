@@ -120,7 +120,7 @@ To try an update without a release: build two versions with `publish` set to
 | Closing the window | CodeLens keeps running in the tray; Quit stops it and the stack |
 | Docker Desktop stops | A waiting screen; CodeLens starts again by itself when Docker answers |
 | A service dies | The supervisor starts it again within about 10 s (with backoff if it keeps failing) |
-| Ollama stops | A Windows notice; reviews fail, and say so on the PR, until it's back |
+| Ollama stops | A Windows notice. A review waits for it, queued, up to 10 minutes; after that it fails and says so on the PR, and it's reviewed again by itself once Ollama answers. A failed review's page also has **Review again** |
 | What went wrong | The dashboard's **System** page (each service, its health and its log), or the files: `logs/desktop.log` (the app), `logs/compose.log` (starting), `logs/services/<service>.log` (each service) |
 
 ## The stack from a terminal

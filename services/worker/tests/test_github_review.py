@@ -314,3 +314,163 @@ def test_a_note_github_refuses_is_only_logged(
     assert summary["status"] == "failed"
     [row] = sql("SELECT status, github_review_id FROM reviews WHERE id = :id", id=review_id)
     assert (row.status, row.github_review_id) == ("failed", None)
+
+
+# --- Ollama not answering (D181)
+
+
+def test_a_review_waits_for_ollama_then_runs(
+    pull_request: dict[str, Any], github: Any, worker_on_fakes: Any, sql: Sql
+) -> None:
+    worker_on_fakes.answers = [False, False]  # down for two checks, then up
+    review_id = queue_review(sql, pull_request["repo_id"], pull_request["head_sha"])
+
+    summary = run(review_id, pull_request).get()
+
+    assert summary["published"] is True
+    assert worker_on_fakes.answers == []  # both checks were made
+
+
+def test_a_waiting_review_says_so_and_stays_queued(
+    pull_request: dict[str, Any], github: Any, worker_on_fakes: Any, sql: Sql
+) -> None:
+    import asyncio
+
+    import worker.tasks
+
+    worker_on_fakes.answers = [False]
+    review_id = queue_review(sql, pull_request["repo_id"], pull_request["head_sha"])
+
+    with pytest.raises(worker.tasks.ModelNotAnswering):
+        asyncio.run(
+            worker.tasks._review(
+                worker.tasks.get_settings(),
+                review_id,
+                pull_request["base_sha"],
+                TITLE,
+                wait_for_model=True,
+            )
+        )
+
+    [row] = sql("SELECT status FROM reviews WHERE id = :id", id=review_id)
+    assert row.status == "queued"
+    # The timeline says so while it waits (the run clears it when it starts).
+    [event] = sql("SELECT type FROM review_events WHERE review_id = :id", id=review_id)
+    assert event.type == "waiting_for_model"
+
+
+def test_a_review_still_runs_once_the_wait_is_over(
+    pull_request: dict[str, Any], github: Any, worker_on_fakes: Any, sql: Sql
+) -> None:
+    from worker.tasks import MODEL_WAIT_TRIES
+
+    worker_on_fakes.answers = [False] * (MODEL_WAIT_TRIES + 5)  # never up in time
+    review_id = queue_review(sql, pull_request["repo_id"], pull_request["head_sha"])
+
+    run(review_id, pull_request).get()
+
+    # The last try ran without asking: the fake models answered it.
+    assert worker_on_fakes.calls
+    assert len(worker_on_fakes.answers) == 5
+
+
+def test_an_ollama_outage_is_recorded_for_the_poller_to_retry(
+    pull_request: dict[str, Any],
+    github: Any,
+    worker_on_fakes: Any,
+    sql: Sql,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import contextlib
+
+    import worker.tasks
+
+    @contextlib.asynccontextmanager
+    async def unreachable(settings: Any) -> Any:
+        raise ProviderUnavailableError("cannot reach Ollama at http://host.docker.internal:11434")
+        yield
+
+    monkeypatch.setattr(worker.tasks, "open_providers", unreachable)
+    review_id = queue_review(sql, pull_request["repo_id"], pull_request["head_sha"])
+
+    with pytest.raises(ProviderUnavailableError):
+        run(review_id, pull_request).get()
+
+    [row] = sql("SELECT status, error FROM reviews WHERE id = :id", id=review_id)
+    assert row.status == "failed"
+    assert row.error.startswith("ProviderUnavailableError(")  # core.github.retry.MODEL_OUTAGE
+    [note] = github.reviews
+    assert "The model server didn't answer." in note["body"]
+
+
+def test_a_review_tried_again_finds_the_pull_requests_base(
+    pull_request: dict[str, Any], github: Any, worker_on_fakes: Any, sql: Sql
+) -> None:
+    github.pulls[1] = {
+        "state": "open",
+        "base": {"sha": pull_request["base_sha"]},
+        "head": {"sha": pull_request["head_sha"]},
+    }
+    review_id = queue_review(sql, pull_request["repo_id"], pull_request["head_sha"])
+
+    # An empty base: core.github.retry queues a failed review again without one.
+    summary = review.apply(args=(review_id, ""), kwargs={"title": TITLE}).get()
+
+    assert summary["published"] is True
+    [posted] = github.reviews
+    assert len(posted["comments"]) == 1  # the same diff as the first time
+
+
+def test_a_retry_of_a_closed_pull_request_stands_down(
+    pull_request: dict[str, Any], github: Any, worker_on_fakes: Any, sql: Sql
+) -> None:
+    github.pulls[1] = {"state": "closed", "base": {"sha": pull_request["base_sha"]}}
+    review_id = queue_review(sql, pull_request["repo_id"], pull_request["head_sha"])
+
+    summary = review.apply(args=(review_id, "")).get()
+
+    assert summary["status"] == "superseded"
+    [row] = sql("SELECT status, error FROM reviews WHERE id = :id", id=review_id)
+    assert (row.status, row.error) == ("superseded", "octo/shop#1 is closed")
+    assert github.reviews == []  # no note on a closed pull request
+
+
+# --- A worker starting after a restart (D181)
+
+
+def test_a_starting_worker_sends_unfinished_reviews_again(
+    pull_request: dict[str, Any], worker_on_fakes: Any, sql: Sql, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    import worker.tasks
+
+    repo = pull_request["repo_id"]
+    queued = queue_review(sql, repo, pull_request["head_sha"])
+    [running] = sql(
+        "INSERT INTO reviews (repo_id, source, pr_number, head_sha, status)"
+        " VALUES (:repo, 'github', 2, :head, 'running') RETURNING id",
+        repo=repo,
+        head="b" * 40,
+    )
+    sql(  # left alone: finished, a week old, or not a pull request's
+        "INSERT INTO reviews (repo_id, source, pr_number, head_sha, status, created_at) VALUES"
+        " (:repo, 'github', 3, :head, 'completed', now()),"
+        " (:repo, 'github', 4, :head, 'queued', now() - interval '7 days'),"
+        " (:repo, 'cli', NULL, :head, 'queued', now())",
+        repo=repo,
+        head="c" * 40,
+    )
+    sent: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(worker.tasks.review, "apply_async", lambda args: sent.append(args))
+
+    def worker_taking(*queues: str) -> Any:
+        return SimpleNamespace(app=SimpleNamespace(amqp=SimpleNamespace(
+            queues=SimpleNamespace(consume_from={q: object() for q in queues})
+        )))  # fmt: skip
+
+    worker.tasks._requeue_on_start(worker_taking("index"))
+    assert sent == []  # the indexing worker doesn't run reviews
+
+    worker.tasks._requeue_on_start(worker_taking("gpu"))
+    assert sent == [(queued, ""), (running.id, "")]

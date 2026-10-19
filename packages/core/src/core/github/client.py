@@ -104,6 +104,10 @@ class GitHubClient:
         its current `full_name`, default branch, ..."""
         return await self._request("GET", f"/repositories/{github_id}", token=token)
 
+    async def get_pull_request(self, full_name: str, number: int, token: str) -> dict[str, Any]:
+        """A pull request as it is now: its state, head and base."""
+        return await self._request("GET", f"/repos/{full_name}/pulls/{number}", token=token)
+
     async def create_review(
         self, full_name: str, number: int, review: dict[str, Any], token: str
     ) -> dict[str, Any]:

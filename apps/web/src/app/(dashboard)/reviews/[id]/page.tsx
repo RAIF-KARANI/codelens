@@ -14,15 +14,18 @@ import {
   type Seed,
 } from "@/lib/api";
 import { StateMessage } from "@/components/state-message";
+import { isDemo } from "@/lib/config";
 import { findingOrder, type Token } from "@/lib/code";
 import { type DiffFile, filePath, parseDiff } from "@/lib/diff";
 import { highlightDiff } from "@/lib/highlight";
 import { first, parseId, withQuery } from "@/lib/params";
 
+import { reviewAgain } from "./actions";
 import { DiffView } from "./diff-view";
 import { FindingCard } from "./finding-card";
 import { LiveTimeline } from "./live-timeline";
 import { ProgressStepper } from "./progress-stepper";
+import { ReviewAgainButton } from "./review-again-button";
 import { ReviewEventsProvider } from "./review-events";
 import { FindingSlot, ReviewNav } from "./review-nav";
 
@@ -116,6 +119,11 @@ async function Review({ params, searchParams }: PageProps<"/reviews/[id]">) {
             <p className="rounded-md border border-critical/30 bg-critical-soft px-3 py-2 text-sm text-critical">
               {review.error}
             </p>
+          )}
+          {/* A failed pull request review can be queued again (D181); the
+              demo is read-only. */}
+          {review.status === "failed" && review.source === "github" && review.pr_number !== null && !isDemo() && (
+            <ReviewAgainButton action={reviewAgain.bind(null, review.id)} />
           )}
           <ReviewBody
             review={review}
