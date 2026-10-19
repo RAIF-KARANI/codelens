@@ -6,6 +6,7 @@ export type ReviewEvent = { id: string | null; type: string; data: Record<string
 /** Every event name the API sends. An EventSource only delivers named events
  * it listens for, so the timeline subscribes to each. */
 export const EVENT_TYPES = [
+  "waiting_for_model",
   "stage",
   "chunk_done",
   "chunk_failed",
@@ -73,7 +74,12 @@ export function describe(event: ReviewEvent): { text: string; tone: Tone } {
         tone: "good",
       };
     case "superseded":
-      return { text: `Superseded by review #${num(d.by_review)}, not posted`, tone: "info" };
+      // By a newer review, or (a retry, D181) for a reason in words.
+      return typeof d.why === "string"
+        ? { text: `Not reviewed: ${d.why}`, tone: "info" }
+        : { text: `Superseded by review #${num(d.by_review)}, not posted`, tone: "info" };
+    case "waiting_for_model":
+      return { text: "Waiting for Ollama to answer; trying again every 30 s", tone: "info" };
     case "error":
       return { text: `Failed: ${String(d.message ?? "")}`, tone: "bad" };
     case "end":

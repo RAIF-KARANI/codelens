@@ -109,6 +109,7 @@ and code and prompts never leave the machine (D20).
 | Releases on a version tag (the installer, `latest.yml`, a checksum, notes) and an uninstaller that removes the stack, and the data only if asked, both or neither (§3.3) | ✅ Phase 11 step 7a (D177) |
 | Updates on the user's word, from the tray or the Settings page, with a database backup before new migrations (§3.3) | ✅ Phase 11 step 7b (D178) |
 | The demo site's landing page: the download, the launch video, the demo, self-hosting (§10.3) | ✅ Phase 11 (D179, D180) |
+| Reviews that wait for Ollama, are queued again after an outage or a restart, and Review again (§9.2, §10.5) | ✅ Phase 11 step 8a (D181) |
 | GitHub polling: installations, pushes and pull requests learned by asking GitHub, through the webhook intake (§10.5) | ✅ Phase 11 step 2 (D169, D170) |
 | A failed review says so on its pull request, with a reason from a fixed list (§7 S11) | ✅ Phase 11 step 4b (D171) |
 | FTS, graph expansion, reranker, PageRank, anti-patterns (U1–U5) | Deferred (D87); schema columns exist, nothing writes them |
@@ -909,6 +910,7 @@ stateDiagram-v2
     [*] --> running: CLI / eval runner<br/>(row inserted directly)
     queued --> running: worker claims the row
     queued --> failed: enqueue failed (503), or an error<br/>before the pipeline starts (fail_unfinished)
+    queued --> queued: Ollama doesn't answer the worker's check<br/>(retried every 30 s, 20 times, D181)
     running --> completed: at least one chunk reviewed
     running --> failed: every chunk failed, or an exception
     running --> running: redelivered after a crash<br/>(partial rows cleared, restart)
@@ -918,6 +920,7 @@ stateDiagram-v2
     completed --> [*]: (GitHub) review posted on the PR
     failed --> [*]
     superseded --> [*]
+    failed --> queued: Review again, or Ollama back after an outage<br/>(a new row, same commit, D181)
 ```
 
 ### 9.4 A pull request, end to end (Phase 5 step 3b)
@@ -1005,6 +1008,7 @@ FastAPI (`services/api`). `/health` is public; everything under `/api/v1` needs 
 | GET | `/api/v1/reviews` | Reviews across every repo the caller may see, newest first, keyset pages, `?status=`; eval runs left out unless `?include_eval=true` (D155); each with its repo's name |
 | GET | `/api/v1/stats` | The overview's numbers over the visible repos, `?days=` (1–90, default 7), ending today or, with `?anchor=latest`, on the newest review's day (the demo, D157): reviews by outcome, posted findings by severity, the median from queued to finished, one row per UTC day, what is queued or running, repos by index status; eval runs left out unless asked for (D155) |
 | GET | `/api/v1/reviews/{id}` | A review: summary, counts, token usage, exact pipeline config, findings (`?include_dropped=true`) |
+| POST | `/api/v1/reviews/{id}/retry` | Queue a failed pull request review's commit again, if it's the PR's newest review; `202 {review_id, status, head_sha}`, `409 not_retryable`, `403` on the demo (D181) |
 | GET | `/api/v1/reviews/{id}/events` | The review's timeline as **Server-Sent Events**: replay after `Last-Event-ID` (or `?after=`), then live, until `end` (§10.2) |
 | GET | `/api/v1/reviews/{id}/diff` | The unified diff and the changed nodes, as stored with the review (D110) |
 | GET | `/api/v1/reviews/{id}/trace` | Every retrieved candidate per chunk, included or not, with its stage scores; the packing budgets |
@@ -1397,6 +1401,10 @@ while it decides (D170).
   installation's repos would cost over 2,500 requests an hour with every list changed.
 - **Not covered:** installations by accounts outside `GITHUB_ALLOWED_ACCOUNTS` are never
   asked about; a suspended one gets no token.
+- **Ollama outages (D181):** after each look, the reviews that failed only because Ollama
+  didn't answer (`core/github/retry.py`) are queued again once it does: the PR's newest
+  review, failed in the last day, at most 3 such tries of a commit. The worker itself
+  waits up to 10 minutes for Ollama before a review, so this covers longer outages.
 
 ---
 

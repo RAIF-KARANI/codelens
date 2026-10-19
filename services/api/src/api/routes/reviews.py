@@ -30,6 +30,7 @@ from api.sse import review_stream
 from core.db import models
 from core.diff import git
 from core.enums import FindingStatus, RepoSource, ReviewSource, ReviewStatus, Severity
+from core.github import retry
 
 # Router-level too: auth runs before any other validation (cached per request).
 router = APIRouter(prefix="/api/v1/reviews", tags=["reviews"], dependencies=[Depends(current_user)])
@@ -114,6 +115,41 @@ async def create_review(
         await session.commit()
         raise
     return schemas.ReviewQueued(review_id=review.id, status=review.status, head_sha=head_sha)
+
+
+@router.post(
+    "/{review_id}/retry",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_writable)],
+)
+async def retry_review(
+    review_id: int,
+    session: Session,
+    user: CurrentUser,
+    queue: Annotated[JobQueue, Depends(get_queue)],
+) -> schemas.ReviewQueued:
+    """Review a failed pull request review's commit again: the dashboard's
+    Review again button (D181). A new review, like a push; the failed one stays.
+    Only the PR's newest review, and only one that failed."""
+    await access.review_for(session, user, review_id)
+    try:
+        again = await retry.retry_review(await session.connection(), review_id)
+    except retry.RetryRefused as refused:
+        raise ApiError(
+            404 if refused.code == "not_found" else 409, refused.code, str(refused)
+        ) from refused
+    # Commit before enqueueing, or the worker could pick the job up first.
+    await session.commit()
+    review = await session.get_one(models.Review, again.review_id)
+    try:
+        await queue.review(again.review_id, again.base_sha, title=again.title)
+    except QueueUnavailable:
+        review.status = ReviewStatus.FAILED
+        review.finished_at = func.now()
+        review.error = "could not enqueue: the job queue is unavailable"
+        await session.commit()
+        raise
+    return schemas.ReviewQueued(review_id=review.id, status=review.status, head_sha=review.head_sha)
 
 
 def _resolve_refs(checkout: Path, head: str, base: str) -> tuple[str, str]:

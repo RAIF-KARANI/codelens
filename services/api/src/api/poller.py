@@ -4,20 +4,32 @@ Looks at GitHub every GITHUB_POLL_INTERVAL_S seconds (core.github.poll) and
 queues what it finds through the API's own job queue, so it lives in the API's
 package and image. CodeLens Desktop runs it instead of a webhook relay; the
 development stack can run either, or both (`docker compose --profile poller`).
+
+After each look it also queues again the pull request reviews that failed only
+because Ollama didn't answer, once it does (core.github.retry, D181).
 """
 
 import asyncio
 import logging
 import signal
+from collections.abc import Awaitable, Callable
 
-from api.queue import CeleryJobQueue
+from sqlalchemy import func, update
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from api.queue import CeleryJobQueue, JobQueue, QueueUnavailable
 from core.config import Settings, get_settings
 from core.db import create_engine
+from core.db.models import Review
+from core.enums import ReviewStatus
 from core.github.auth import InstallationTokens, app_jwt, load_private_key
 from core.github.client import GitHubClient
 from core.github.poll import Poller
+from core.github.retry import RetryRefused, model_outages, retry_review
 from core.github.webhooks import Policy
 from core.logs import configure_logging
+from core.providers.base import ProviderUnavailableError
+from core.providers.ollama import OllamaClient
 
 logger = logging.getLogger("api.poller")
 
@@ -25,6 +37,53 @@ logger = logging.getLogger("api.poller")
 # doubling up to the cap, so an outage isn't met with a request a second.
 RETRY_S = 30
 RETRY_CAP_S = 15 * 60
+
+
+async def ollama_answers(base_url: str) -> bool:
+    """One quick look, no retries."""
+    try:
+        async with OllamaClient(base_url, timeout_s=5, max_retries=0) as client:
+            await client.version()
+    except ProviderUnavailableError:
+        return False
+    return True
+
+
+async def requeue_model_outages(
+    engine: AsyncEngine, queue: JobQueue, answers: Callable[[], Awaitable[bool]]
+) -> list[int]:
+    """The reviews that failed because Ollama didn't answer, queued again now
+    that it does. Ollama is asked only when there is something to queue."""
+    async with engine.connect() as conn:
+        failed = await model_outages(conn)
+    if not failed or not await answers():
+        return []
+    queued: list[int] = []
+    for review_id in failed:
+        try:
+            async with engine.begin() as conn:
+                again = await retry_review(conn, review_id)
+        except RetryRefused:
+            continue  # a push got there first
+        try:
+            await queue.review(again.review_id, again.base_sha, title=again.title)
+        except QueueUnavailable:
+            async with engine.begin() as conn:
+                await conn.execute(
+                    update(Review)
+                    .where(Review.id == again.review_id)
+                    .values(
+                        status=ReviewStatus.FAILED,
+                        finished_at=func.now(),
+                        error="could not enqueue: the job queue is unavailable",
+                    )
+                )
+            continue
+        logger.info(
+            "review %s failed while Ollama was down: queued again as %s", review_id, again.review_id
+        )
+        queued.append(again.review_id)
+    return queued
 
 
 async def run(settings: Settings) -> None:
@@ -59,6 +118,12 @@ async def run(settings: Settings) -> None:
                     await asyncio.sleep(wait)
                     continue
                 failures = 0
+                try:
+                    await requeue_model_outages(
+                        engine, queue, lambda: ollama_answers(settings.ollama_base_url)
+                    )
+                except Exception:
+                    logger.exception("queuing reviews again after an Ollama outage failed")
                 for event in cycle.events:
                     logger.info("%s", event)
                 logger.info(

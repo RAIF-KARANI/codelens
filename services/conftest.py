@@ -166,6 +166,14 @@ def worker_on_fakes(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Fake
     async def fake_providers(s: Settings) -> AsyncIterator[Providers]:
         yield Providers(FakeEmbedder(s.embed_dim), llm)
 
+    # Whether Ollama answers the worker's check before a review (D181): a test
+    # sets `llm.answers` to a list of answers, one per check, then always yes.
+    llm.answers = []  # type: ignore[attr-defined]
+
+    async def model_answers(s: Settings) -> bool:
+        return llm.answers.pop(0) if llm.answers else True  # type: ignore[attr-defined]
+
     monkeypatch.setattr(worker.tasks, "get_settings", lambda: settings)
     monkeypatch.setattr(worker.tasks, "open_providers", fake_providers)
+    monkeypatch.setattr(worker.tasks, "_model_answers", model_answers)
     return llm

@@ -76,6 +76,8 @@ class FakeGitHub:
     down: bool = False  # answer 502 to every review posted
     # What GitHub calls each repo id now; a rename changes it (D135).
     names: dict[int, str] = field(default_factory=lambda: {42: "octo/shop"})
+    # Pull requests as GET /repos/{name}/pulls/{n} returns them (a retry, D181).
+    pulls: dict[int, dict[str, Any]] = field(default_factory=dict)
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -88,6 +90,14 @@ class FakeGitHub:
             github_id = int(path.split("/")[2])
             repo = {"id": github_id, "full_name": self.names[github_id], "default_branch": "main"}
             return httpx.Response(200, json=repo)
+        parts = path.split("/")  # /repos/{owner}/{name}/pulls/{n}[/reviews]
+        if request.method == "GET" and len(parts) == 6 and parts[4] == "pulls":
+            pr = self.pulls.get(int(parts[5]))
+            return (
+                httpx.Response(200, json=pr)
+                if pr
+                else httpx.Response(404, json={"message": "Not Found"})
+            )
         if path.startswith("/repos/") and "/pulls/" in path and path.endswith("/reviews"):
             if self.down:
                 return httpx.Response(502, json={"message": "Bad Gateway"})

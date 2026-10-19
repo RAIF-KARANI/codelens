@@ -32,6 +32,11 @@ group("describe", () => {
       tone: "bad",
     });
     expect(describe({ id: null, type: "end", data: { status: "failed" } }).tone).toBe("bad");
+    // Step 8 (D181): a review waiting for Ollama, and a retry that stood down.
+    expect(describe({ id: "1", type: "waiting_for_model", data: {} }).text).toContain("Waiting for Ollama");
+    expect(describe({ id: "2", type: "superseded", data: { why: "octo/shop#1 is closed" } }).text).toBe(
+      "Not reviewed: octo/shop#1 is closed",
+    );
   });
 
   it("survives fields it doesn't expect", () => {
