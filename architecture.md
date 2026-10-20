@@ -1330,7 +1330,7 @@ Graph, Trace) and one evidence drawer that every tab can open.
   Host header, like `/login`), and the page itself redirects as a fallback. `/download`
   (D179) forwards to `/` (`next.config.ts`).
 - **Shared links** show `opengraph-image.tsx`'s picture (1200 × 630, rendered once at build,
-  in Geist from the `geist` package): what CodeLens is beside the demo's SQL injection
+  in Geist, from the app's own `assets/og` with its licence, D185): what CodeLens is beside the demo's SQL injection
   finding. `metadataBase` is the demo site (`SITE_URL` to change it). Link-preview crawlers
   get the same page as browsers (`htmlLimitedBots` matches nothing, D184): Next's fully
   rendered page for them failed on Vercel, and every tag is in the normal page's `<head>`.
