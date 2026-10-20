@@ -28,15 +28,18 @@ const C = {
   addedSoft: "rgba(16, 185, 129, 0.16)",
 };
 
-const font = (dir: string, file: string) =>
-  readFile(join(process.cwd(), "node_modules", "geist", "dist", "fonts", dir, file));
+// The fonts are the app's own files (assets/og, with Geist's licence), not
+// read from node_modules/geist: on Vercel that's a pnpm symlink the function
+// doesn't get, and since every page's metadata loads this module, the missing
+// file broke every page (D185).
+const font = (file: string) => readFile(join(process.cwd(), "assets", "og", file));
 
 // Read once, when the module loads: inside the handler they would make it
 // request-time work, rendered on every share instead of once at build.
 const [regular, semibold, mono] = await Promise.all([
-  font("geist-sans", "Geist-Regular.ttf"),
-  font("geist-sans", "Geist-SemiBold.ttf"),
-  font("geist-mono", "GeistMono-Regular.ttf"),
+  font("Geist-Regular.ttf"),
+  font("Geist-SemiBold.ttf"),
+  font("GeistMono-Regular.ttf"),
 ]);
 
 function Mark({ size: px }: { size: number }) {
