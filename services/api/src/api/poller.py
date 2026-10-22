@@ -50,10 +50,15 @@ async def ollama_answers(base_url: str) -> bool:
 
 
 async def requeue_model_outages(
-    engine: AsyncEngine, queue: JobQueue, answers: Callable[[], Awaitable[bool]]
+    engine: AsyncEngine,
+    queue: JobQueue,
+    answers: Callable[[], Awaitable[bool]],
+    *,
+    reviews_per_hour: int = 0,
 ) -> list[int]:
     """The reviews that failed because Ollama didn't answer, queued again now
-    that it does. Ollama is asked only when there is something to queue."""
+    that it does. Ollama is asked only when there is something to queue. Each
+    counts against its account's GITHUB_REVIEWS_PER_HOUR (D186)."""
     async with engine.connect() as conn:
         failed = await model_outages(conn)
     if not failed or not await answers():
@@ -62,9 +67,9 @@ async def requeue_model_outages(
     for review_id in failed:
         try:
             async with engine.begin() as conn:
-                again = await retry_review(conn, review_id)
+                again = await retry_review(conn, review_id, reviews_per_hour=reviews_per_hour)
         except RetryRefused:
-            continue  # a push got there first
+            continue  # a push got there first, or the account is at its limit: next cycle
         try:
             await queue.review(again.review_id, again.base_sha, title=again.title)
         except QueueUnavailable:
@@ -120,7 +125,10 @@ async def run(settings: Settings) -> None:
                 failures = 0
                 try:
                     await requeue_model_outages(
-                        engine, queue, lambda: ollama_answers(settings.ollama_base_url)
+                        engine,
+                        queue,
+                        lambda: ollama_answers(settings.ollama_base_url),
+                        reviews_per_hour=settings.github_reviews_per_hour,
                     )
                 except Exception:
                     logger.exception("queuing reviews again after an Ollama outage failed")
