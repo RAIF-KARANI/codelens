@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { MAX_LOG_BYTES, ServiceLogs, splitLogLine, stopFollowersScript } from "../src/logs.js";
+import { appendLog, MAX_LOG_BYTES, ServiceLogs, splitLogLine, stopFollowersScript } from "../src/logs.js";
 
 const P = "codelens-desktop";
 
@@ -64,5 +64,20 @@ describe("stopFollowersScript", () => {
 
   it("refuses a project name that could change the script", () => {
     expect(() => stopFollowersScript("x'; Remove-Item C:\ -Recurse; '")).toThrow();
+  });
+});
+
+describe("appendLog (security audit run-2)", () => {
+  it("moves the app's own log aside past MAX_LOG_BYTES", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "codelens-applog-"));
+    try {
+      const file = join(dir, "desktop.log");
+      await writeFile(file, "x".repeat(MAX_LOG_BYTES + 1));
+      await appendLog(file, "next line\n");
+      expect(await readFile(file, "utf8")).toBe("next line\n");
+      expect((await stat(`${file}.1`)).size).toBe(MAX_LOG_BYTES + 1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

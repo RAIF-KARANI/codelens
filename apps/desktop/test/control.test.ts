@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { applyChanges, checkChanges, envChanges, manageUrl, readSettings, type SettingsView } from "../src/appsettings.js";
-import { checkRequest, startControl } from "../src/control.js";
+import { checkRequest, REFUSAL_LOG_MS, refusalLogger, startControl } from "../src/control.js";
 import { parseRegQuery, readyForLong } from "../src/ollamaenv.js";
 
 const ENV = "POSTGRES_PASSWORD=p\nGITHUB_APP_ID=5\nGITHUB_ALLOWED_ACCOUNTS=RAIF-KARANI:1,friend\nGITHUB_REVIEWS_PER_HOUR=7\n";
@@ -174,5 +174,22 @@ describe("the user's Ollama settings", () => {
     env.set("OLLAMA_KV_CACHE_TYPE", "f16");
     expect(readyForLong(env)).toBe(false);
     expect(readyForLong(new Map())).toBe(false);
+  });
+});
+
+describe("refusalLogger (security audit run-2)", () => {
+  it("logs one refusal per window, counts the rest, and cuts long URLs", () => {
+    let now = 0;
+    const log = refusalLogger(() => now);
+    const long = "/" + "a".repeat(15_000);
+
+    const first = log("GET", long, "bad_key");
+    expect(first).toMatch(/^control: refused GET \/a+… \(bad_key\)$/);
+    expect(first?.length).toBeLessThan(260);
+    expect(log("GET", "/x", "bad_key")).toBeNull();
+    expect(log("PUT", "/y", "bad_host")).toBeNull();
+
+    now += REFUSAL_LOG_MS;
+    expect(log("GET", "/z", "bad_key")).toBe("control: refused GET /z (bad_key); 2 more refused since the last line");
   });
 });

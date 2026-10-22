@@ -20,6 +20,31 @@ import type { UpdateView } from "./updates.js";
 /** Bodies are a few settings: anything bigger isn't the dashboard. */
 const MAX_BODY = 16 * 1024;
 
+/** Refused requests come from anything that can reach the port, before any
+ * key is checked, so their log lines are bounded (D190, security audit run-2):
+ * one line per REFUSAL_LOG_MS with a count of the rest, the URL cut short. */
+export const REFUSAL_LOG_MS = 10_000;
+const REFUSAL_URL_CHARS = 200;
+
+/** One refused request's log line, or null while refusals are being counted. */
+export function refusalLogger(now: () => number = Date.now) {
+  let last = -Infinity;
+  let quiet = 0;
+  return (method: string | undefined, url: string | undefined, refusal: Refusal): string | null => {
+    const time = now();
+    if (time - last < REFUSAL_LOG_MS) {
+      quiet += 1;
+      return null;
+    }
+    last = time;
+    const shown = (url ?? "").slice(0, REFUSAL_URL_CHARS);
+    const cut = (url ?? "").length > REFUSAL_URL_CHARS ? "…" : "";
+    const more = quiet ? `; ${quiet} more refused since the last line` : "";
+    quiet = 0;
+    return `control: refused ${method} ${shown}${cut} (${refusal})${more}`;
+  };
+}
+
 export type ControlHandlers = {
   getSettings(): Promise<SettingsView>;
   /** Changes already checked as JSON; returns field errors or the new view. */
@@ -81,10 +106,12 @@ export async function startControl(
   onError: (message: string) => void = () => {},
 ): Promise<{ port: number; server: Server; close(): Promise<void> }> {
   let port = 0;
+  const refused = refusalLogger();
   const server = createServer(async (req, res) => {
     const refusal = checkRequest(req.headers.host, req.headers.authorization, port, key);
     if (refusal) {
-      onError(`control: refused ${req.method} ${req.url} (${refusal})`);
+      const line = refused(req.method, req.url, refusal);
+      if (line) onError(line);
       send(res, 403, { error: { code: "forbidden", message: "not for you" } });
       return;
     }

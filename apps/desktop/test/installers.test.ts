@@ -21,6 +21,18 @@ describe("organisation", () => {
   it("isn't fooled by an O= inside another field", () => {
     expect(organisation("CN=Docker Inc, OU=O=Docker Inc, O=Evil Ltd")).toBe("Evil Ltd");
   });
+
+  it("isn't fooled by an O= inside a quoted value (security audit run-2)", () => {
+    // How Windows formats a subject whose CN or L holds a comma.
+    expect(organisation('CN="Evil, O=Docker Inc, Ltd", O=Evil Corp, C=US')).toBe("Evil Corp");
+    expect(organisation('CN=Evil Corp, L="x, O=Ollama Inc., y", O=Evil Corp, C=US')).toBe("Evil Corp");
+    expect(organisation('CN=x, O="Say ""hi"", Inc.", C=US')).toBe('Say "hi", Inc.');
+  });
+
+  it("has no publisher when the O is missing or repeated", () => {
+    expect(organisation("CN=Docker Inc, O=Docker Inc, O=Evil Ltd")).toBeNull();
+    expect(organisation("CN=Docker Inc + O=Docker Inc, O=Evil Ltd")).toBeNull();
+  });
 });
 
 describe("signatureProblem", () => {

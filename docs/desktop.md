@@ -20,6 +20,11 @@ owner is involved.
   Without one, reviews run on the CPU, in a few minutes each.
 - **A GitHub account**, and repositories in Python, JavaScript or TypeScript to review.
 - About **30 minutes** the first time, most of it downloads.
+- **A PC that is yours.** CodeLens trusts whatever answers on this PC's Ollama port
+  (127.0.0.1:11434), as every Ollama client does: Ollama has no password. On a PC shared
+  with other Windows accounts, another account could start its own program there while
+  your Ollama is off, and receive your code with each review. The dashboard itself is
+  protected with a key that changes whenever its port is let go.
 
 ## 1. Download and install
 
