@@ -295,6 +295,16 @@ def check_github_settings(settings: Settings) -> list[Check]:
                 by_setup=True,
             )
         )
+    if settings.admins.unpinned:
+        # The same weakness as an unpinned allowed account, for admins (D192).
+        checks.append(
+            Check(
+                "admin logins",
+                Status.WARN,
+                f"{', '.join(settings.admins.unpinned)} matched by login only (D136)",
+                "pin each as login:id in API_ADMIN_LOGINS (gh api users/LOGIN --jq .id)",
+            )
+        )
     if not settings.api_jwt_secret.get_secret_value():
         checks.append(
             Check(

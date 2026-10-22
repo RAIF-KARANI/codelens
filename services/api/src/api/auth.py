@@ -11,6 +11,7 @@ every repo: by login, or pinned to the user id (`login:id`) that the token's
 themselves are in api/access.py.
 """
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -24,8 +25,16 @@ from api.dependencies import get_settings
 from api.errors import ApiError
 from core.config import Settings
 
+logger = logging.getLogger(__name__)
+
 ALGORITHM = "HS256"
 TOKEN_TTL = timedelta(minutes=5)
+
+# D137 accepts per-installation visibility while the owner is the only one
+# signed in. The first time anyone else is, the log says what they can see
+# (D192, security audit run-2). Bounded, so it can't grow without end.
+_NOTED_USERS: set[str] = set()
+_MAX_NOTED = 1000
 
 # auto_error=False: a missing header becomes our own 401 shape, not FastAPI's 403.
 _bearer = HTTPBearer(auto_error=False)
@@ -91,7 +100,7 @@ def current_user(
     ):
         raise ApiError(401, "invalid_token", "installations must be a list of ids")
     login, sub = str(claims.get("login", "")), str(claims["sub"])
-    return User(
+    user = User(
         github_id=sub,
         login=login,
         installations=frozenset(installations),
@@ -101,6 +110,16 @@ def current_user(
         or settings.admins.allows(login, int(sub) if sub.isdigit() else None),
         demo=settings.demo_mode,
     )
+    noted = sub in _NOTED_USERS or len(_NOTED_USERS) >= _MAX_NOTED
+    if not user.is_admin and not user.demo and not noted:
+        _NOTED_USERS.add(sub)
+        logger.warning(
+            "dashboard user %s (not in API_ADMIN_LOGINS) sees every repo of their"
+            " installations %s, not only the repos they can open on GitHub (D137)",
+            login,
+            sorted(installations),
+        )
+    return user
 
 
 def require_writable(settings: Annotated[Settings, Depends(get_settings)]) -> None:

@@ -177,6 +177,11 @@ reopening the PR, reviews that commit once the hour has room.
    body is never parsed.
 3. **Records the delivery** by its `X-GitHub-Delivery` id. A delivery already handled
    is answered `duplicate` and skipped; one that failed halfway is handled again (D95).
+   Its body's SHA-256 is recorded too, so the same signed body under a new delivery id
+   is a `duplicate` as well. Deliveries handled before that (migration `a8d3c41f0b27`,
+   2026-10-16) have no digest: **if your CodeLens received webhooks before then, rotate
+   the webhook secret once** (the App's settings, then `GITHUB_WEBHOOK_SECRET` in `.env`),
+   so none of those old signed bodies can be replayed (security audit run-2, D192).
 4. **Mirrors `installation` events** (created, suspend, unsuspend, deleted,
    new_permissions_accepted) into the `installations` table, for accounts in
    `GITHUB_ALLOWED_ACCOUNTS` only (§6); others are recorded as `ignored`.

@@ -160,6 +160,13 @@ token and one signed with the laptop's secret (401).
 Every push to `main` redeploys both. The API project's daily cron (`deploy/api/vercel.json`)
 calls `/health`, which keeps the free Supabase project from pausing after a week idle.
 
+**Secrets are Production only.** Vercel also builds a Preview of every branch and pull
+request, with that branch's code, and a new variable is ticked for every environment by
+default. In both projects, untick Preview and Development for `DATABASE_URL` and
+`API_JWT_SECRET`, and keep **Git Fork Protection** on (Settings → Git), so a fork's pull
+request is never built with them without your say. A Preview without them shows the
+dashboard's error page, which is all a preview needs (security audit run-2, D192).
+
 ### Cloudflare: the subdomain
 
 1. In the dashboard project on Vercel: **Settings → Domains → Add**
