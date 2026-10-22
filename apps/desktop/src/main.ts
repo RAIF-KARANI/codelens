@@ -20,7 +20,7 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { appendFile, readFile, rm, statfs, writeFile } from "node:fs/promises";
+import { readFile, rm, statfs, writeFile } from "node:fs/promises";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 
@@ -42,7 +42,7 @@ import { APP_KEY_COOKIE } from "./key.js";
 import { uninstall } from "./uninstall.js";
 import { backupBeforeMigrating, removeStaleImages } from "./backup.js";
 import { CHECK_EVERY_MS, Updates } from "./updates.js";
-import { ServiceLogs, stopLeftoverFollowers } from "./logs.js";
+import { appendLog, ServiceLogs, stopLeftoverFollowers } from "./logs.js";
 import { applyChanges, checkChanges, envChanges, manageUrl, readSettings, type SettingsView, WINDOWS } from "./appsettings.js";
 import { startControl } from "./control.js";
 import { firstRun } from "./firstrun.js";
@@ -121,6 +121,11 @@ const ASSETS = join(APP_DIR, "assets");
 
 let stack: Stack | null = null;
 let launch: Launch | null = null;
+/** The next bringUp makes a new dashboard port and app key (D191). Set
+ * wherever the web container may have let its port go: Docker stopping, a
+ * failed start, a restart or repair of `web`. Whatever took the port
+ * meanwhile is then never sent the key again, nor trusted as the dashboard. */
+let rotateNext = false;
 let settings: DesktopSettings = { ...DEFAULTS };
 /** The wizard waiting for one of these buttons. */
 let waiting: { actions: AppAction[]; resolve: (action: AppAction) => void } | null = null;
@@ -150,7 +155,7 @@ const launchedAt = performance.now();
 async function log(message: string): Promise<void> {
   const line = `${new Date().toISOString()} ${message}\n`;
   process.stdout.write(line);
-  if (stack) await appendFile(join(stack.home, "logs", "desktop.log"), line).catch(() => {});
+  if (stack) await appendLog(join(stack.home, "logs", "desktop.log"), line).catch(() => {});
 }
 
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
@@ -280,6 +285,12 @@ async function bringUp(): Promise<void> {
           : "The first start downloads CodeLens's containers (about 500 MB). This takes a minute or a few, with your connection.",
       ),
     );
+    if (launch && rotateNext) {
+      await win?.webContents.session.cookies.remove(appOrigin(launch.port), APP_KEY_COOKIE).catch(() => {});
+      await log(`dashboard: new port and key (the old port ${launch.port} may have been released)`);
+      launch = null;
+    }
+    rotateNext = false;
     launch ??= await newLaunch();
     if (control) {
       launch.controlPort = control.port;
@@ -287,7 +298,7 @@ async function bringUp(): Promise<void> {
     }
     const started = performance.now();
     const home = stack.home;
-    const toCompose = (chunk: string) => void appendFile(join(home, "logs", "compose.log"), chunk);
+    const toCompose = (chunk: string) => void appendLog(join(home, "logs", "compose.log"), chunk);
     // The first start of a new version: keep a copy of the database if its
     // migrations are about to change it (D151).
     const version = app.getVersion();
@@ -318,6 +329,7 @@ async function bringUp(): Promise<void> {
     const took = performance.now() - started;
     if (run.code !== 0) {
       await log(`docker compose up failed (exit ${run.code}) after ${seconds(took)}`);
+      rotateNext = true; // the port may be taken: the next try picks another
       await explainFailure();
       return;
     }
@@ -447,6 +459,7 @@ async function tick(): Promise<void> {
     if (dockerNow !== "running") waitForUser = false; // its return is worth a new try
     if (dockerNow !== "running" && stackUp) {
       stackUp = false;
+      rotateNext = true;
       await show(
         statusPage("Docker Desktop stopped", "CodeLens is waiting for it, and comes back by itself once Docker answers.", {
           buttons: [{ label: "Start Docker Desktop", href: "codelens://start-docker" }],
@@ -460,15 +473,27 @@ async function tick(): Promise<void> {
       for (const service of states.map((s) => s.service)) {
         if (!needed.some((r) => r.service === service)) backoff.fine(service, clock);
       }
+      let relaunch = false;
       for (const repair of needed) {
         now.repairing.push(repair);
         if (!backoff.ready(repair.service, clock)) continue;
+        if (repair.service === "web") {
+          // Down, its port was free to take: a new one, with a new key.
+          backoff.tried(repair.service, clock);
+          await log(`web is ${repair.why}: starting the dashboard again on a new port`);
+          relaunch = true;
+          continue;
+        }
         const wait = backoff.tried(repair.service, clock);
         await log(`${repair.service} is ${repair.why}: ${repair.action}ing it (next try in ${seconds(wait)} if needed)`);
         if (repair.action === "start") await upServices(stack, launch, [repair.service]);
         else await restartServices(stack, [repair.service]);
       }
       if (!logsChild) followLogs();
+      if (relaunch) {
+        rotateNext = true;
+        stackUp = false;
+      }
     }
     for (const message of changes(health, now)) {
       await log(message);
@@ -656,7 +681,7 @@ async function applySettings(home: string, update: (envText: string) => string):
   try {
     const envFile = join(home, "codelens.env");
     await writeFile(envFile, update(await readFile(envFile, "utf8")), { mode: 0o600 });
-    const run = await up(stack, launch, (chunk) => void appendFile(join(home, "logs", "compose.log"), chunk));
+    const run = await up(stack, launch, (chunk) => void appendLog(join(home, "logs", "compose.log"), chunk));
     if (run.code !== 0) throw new Error("the services didn't come back healthy: see logs/compose.log");
   } finally {
     applying = false;
@@ -729,6 +754,14 @@ function systemApi(home: string) {
     restartService: async (service: string) => {
       if (!stack || !launch) throw new Error("CodeLens isn't running yet");
       await log(`system: restarting ${service}`);
+      if (service === "web") {
+        // Restarting it in place frees its port; start it on a new one, with
+        // a new key (D191). This request's own page goes with it.
+        rotateNext = true;
+        stackUp = false;
+        void bringUp();
+        return;
+      }
       const run = await restartServices(stack, [service]);
       // A container that's gone can't be restarted: create it instead.
       if (run.code !== 0) await upServices(stack, launch, [service]);

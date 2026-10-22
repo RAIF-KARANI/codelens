@@ -5,10 +5,24 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
+import { appendFile, rename, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 /** A file is moved aside to `<name>.log.1` past this size: two per service at most. */
 export const MAX_LOG_BYTES = 10 * 1024 * 1024;
+
+/** Appends to one of the app's own logs (desktop.log, compose.log), moving it
+ * aside to `<name>.1` past MAX_LOG_BYTES as the service logs are. They grew
+ * without end, and anything that could reach the control API's port could
+ * fill one with refused requests (D190, security audit run-2). */
+export async function appendLog(file: string, text: string): Promise<void> {
+  try {
+    if ((await stat(file)).size > MAX_LOG_BYTES) await rename(file, `${file}.1`);
+  } catch {
+    // No file yet.
+  }
+  await appendFile(file, text);
+}
 
 /** A line of `docker compose logs` as (service, text), or null for one that
  * isn't a service's line. Compose v2 starts each line with `<service>-<n>`

@@ -92,11 +92,54 @@ export async function download(
 
 export type Signature = { status: string; subject: string };
 
-/** The `O=` part of a certificate subject ("CN=Docker Inc, O=Docker Inc, L=..."). */
+/** The `O=` part of a certificate subject ("CN=Docker Inc, O=Docker Inc, L=...").
+ * Windows quotes a value that holds a comma ('O="Comma, Inc."', a quote
+ * doubled inside), so the subject is split into its attributes first: a regex
+ * over the whole string also matched an "O=" inside another quoted value, and
+ * 'CN="Evil, O=Docker Inc, Ltd", O=Evil Corp' passed as Docker (D189, security
+ * audit run-2). No O, or more than one, is no publisher. */
 export function organisation(subject: string): string | null {
-  const match = /(?:^|,\s*)O=("([^"]*)"|[^,]*)/.exec(subject);
-  if (!match) return null;
-  return (match[2] ?? match[1] ?? "").trim();
+  const values = attributes(subject)
+    .filter(([key]) => key === "O")
+    .map(([, value]) => value);
+  return values.length === 1 ? (values[0] ?? null) : null;
+}
+
+/** A subject's attributes as [key, value], in order. Commas and plus signs
+ * inside a quoted value don't split it. */
+function attributes(subject: string): [string, string][] {
+  const out: [string, string][] = [];
+  let part = "";
+  let quoted = false;
+  const flush = () => {
+    const eq = part.indexOf("=");
+    if (eq > 0) out.push([part.slice(0, eq).trim(), unquote(part.slice(eq + 1).trim())]);
+    part = "";
+  };
+  for (let i = 0; i < subject.length; i++) {
+    const ch = subject[i];
+    if (ch === '"') {
+      if (quoted && subject[i + 1] === '"') {
+        part += '""';
+        i++;
+        continue;
+      }
+      quoted = !quoted;
+    } else if (!quoted && (ch === "," || ch === "+")) {
+      flush();
+      continue;
+    }
+    part += ch;
+  }
+  flush();
+  return out;
+}
+
+function unquote(value: string): string {
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+    return value.slice(1, -1).replace(/""/g, '"');
+  }
+  return value;
 }
 
 /** Whether a file's signature is one to trust: Windows says Valid (signed,
