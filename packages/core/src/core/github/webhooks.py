@@ -341,7 +341,7 @@ async def _pull_request(
     if done is not None:
         return EventOutcome("ignored")
     if policy.reviews_per_hour:
-        started = await _reviews_started(conn, account_id, besides=same_pr)
+        started = await reviews_started(conn, account_id, besides=same_pr)
         if started >= policy.reviews_per_hour:
             # Recorded, not queued: the dashboard says why. A failed review
             # may be retried, so the next push, or reopening the PR, reviews
@@ -397,7 +397,7 @@ async def _pull_request(
     return EventOutcome("processed", reviews=[queued])
 
 
-async def _reviews_started(
+async def reviews_started(
     conn: AsyncConnection, account_id: int, *, besides: ColumnElement[bool]
 ) -> int:
     """Reviews of the account's repos that started in the last hour or are
@@ -405,7 +405,16 @@ async def _reviews_started(
     limit and superseded ones never start, so they don't count; neither do
     the PR's own queued reviews (`besides`), which the new one supersedes.
     Counted by the account's id: another account under a login it gave up
-    neither shares nor uses up its budget (D136)."""
+    neither shares nor uses up its budget (D136).
+
+    Takes the account's lock first, held until the transaction ends (D186):
+    the caller counts, then inserts, and without it two intakes for different
+    PRs of one account each counted the other's row as not there yet, so both
+    passed the limit. Callers already hold the PR's lock; taking this one
+    second, always, keeps the order the same everywhere."""
+    await conn.execute(
+        select(func.pg_advisory_xact_lock(func.hashtext(f"reviews_per_hour:{account_id}")))
+    )
     return await conn.scalar(
         select(func.count())
         .select_from(

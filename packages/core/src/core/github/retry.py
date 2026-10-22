@@ -22,11 +22,13 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from core.db.models import Review
+from core.db.models import Installation, Repo, Review
 from core.enums import ReviewSource, ReviewStatus
-from core.github.webhooks import QueuedReview
+from core.github.webhooks import QueuedReview, reviews_started
 
 reviews_t = Review.__table__
+repos_t = Repo.__table__
+installations_t = Installation.__table__
 
 # How a review that failed because Ollama didn't answer is recorded: the
 # pipeline (and the worker, for a failure before it) store repr(exc).
@@ -54,11 +56,17 @@ def is_model_outage(error: str | None) -> bool:
     return bool(error and error.startswith(MODEL_OUTAGE))
 
 
-async def retry_review(conn: AsyncConnection, review_id: int) -> QueuedReview:
+async def retry_review(
+    conn: AsyncConnection, review_id: int, *, reviews_per_hour: int = 0
+) -> QueuedReview:
     """Queue a failed pull request review again, for the same commit. Only the
     PR's newest review can be: anything newer already reviews a later push, or
     this one again. Under the intake's per-PR lock, so a push arriving at the
-    same moment doesn't queue a second review (D170)."""
+    same moment doesn't queue a second review (D170).
+
+    A retry counts against the account's GITHUB_REVIEWS_PER_HOUR like a push
+    does (`reviews_per_hour`, 0 for no limit; D186). Without that, Review again
+    on a review the limit refused queued it anyway."""
     row = (
         await conn.execute(
             select(
@@ -93,6 +101,25 @@ async def retry_review(conn: AsyncConnection, review_id: int) -> QueuedReview:
         raise RetryRefused(
             "not_retryable", f"review #{newer} is newer: it reviews this pull request"
         )
+    if reviews_per_hour:
+        account_id = await conn.scalar(
+            select(installations_t.c.account_id).where(
+                repos_t.c.id == row.repo_id, repos_t.c.installation_id == installations_t.c.id
+            )
+        )
+        # A repo without an installation has nothing to count against; the
+        # worker refuses to review it anyway (it isn't covered).
+        if account_id is not None:
+            same_pr = (reviews_t.c.repo_id == row.repo_id) & (
+                reviews_t.c.pr_number == row.pr_number
+            )
+            started = await reviews_started(conn, account_id, besides=same_pr)
+            if started >= reviews_per_hour:
+                raise RetryRefused(
+                    "over_limit",
+                    f"the account started {started} reviews in the last hour, the limit"
+                    f" (GITHUB_REVIEWS_PER_HOUR={reviews_per_hour}); try again later",
+                )
     new_id = await conn.scalar(
         insert(reviews_t)
         .values(

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from api import access, schemas
 from api.auth import User, current_user, require_writable
-from api.dependencies import get_engine, get_events_redis, get_queue, get_session
+from api.dependencies import get_engine, get_events_redis, get_queue, get_session, get_settings
 from api.errors import ApiError
 from api.graph import review_graph
 from api.queries import (
@@ -27,6 +27,7 @@ from api.queries import (
 )
 from api.queue import JobQueue, QueueUnavailable
 from api.sse import review_stream
+from core.config import Settings
 from core.db import models
 from core.diff import git
 from core.enums import FindingStatus, RepoSource, ReviewSource, ReviewStatus, Severity
@@ -127,13 +128,19 @@ async def retry_review(
     session: Session,
     user: CurrentUser,
     queue: Annotated[JobQueue, Depends(get_queue)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> schemas.ReviewQueued:
     """Review a failed pull request review's commit again: the dashboard's
     Review again button (D181). A new review, like a push; the failed one stays.
-    Only the PR's newest review, and only one that failed."""
+    Only the PR's newest review, only one that failed, and only while the
+    account is under GITHUB_REVIEWS_PER_HOUR (D186)."""
     await access.review_for(session, user, review_id)
     try:
-        again = await retry.retry_review(await session.connection(), review_id)
+        again = await retry.retry_review(
+            await session.connection(),
+            review_id,
+            reviews_per_hour=settings.github_reviews_per_hour,
+        )
     except retry.RetryRefused as refused:
         raise ApiError(
             404 if refused.code == "not_found" else 409, refused.code, str(refused)
