@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from core.diff import FileStatus
+from core.diff import git as gitmod
 from core.diff.git import GitError
 from core.review import ChangeKind, collect_changes
 
@@ -152,6 +153,45 @@ def test_a_too_complex_file_is_skipped_not_parsed(repo: Path) -> None:
     deep = next(c for c in changes.files if c.diff.path == "deep.js")
 
     assert (deep.head, deep.skipped, deep.seeds) == (None, "too_complex", ())
+
+
+def test_a_review_stops_parsing_past_its_byte_budget(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Security audit run-2 (D188): per-file limits held, but nothing bounded a
+    # whole review. Once the budget is spent the rest stay in the diff unparsed.
+    monkeypatch.setattr("core.review.changes.MAX_REVIEW_SOURCE_BYTES", 1)
+
+    changes = collect_changes(repo, "main", "feature")
+
+    read = [c for c in changes.files if c.skipped != "review_too_large"]
+    left = changes.files[len(read) :]
+    assert read and left
+    assert all(
+        (c.head, c.base, c.seeds, c.skipped) == (None, None, (), "review_too_large") for c in left
+    )
+
+
+def test_a_file_over_the_size_limit_is_never_read(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write(repo, "big.py", "x = 1\n" * 200_000)  # 1.2 MB, over MAX_FILE_BYTES
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "big")
+    shown: list[str] = []
+    real_show = gitmod.show
+
+    def show(r: Path, rev: str, path: str) -> bytes:
+        shown.append(path)
+        return real_show(r, rev, path)
+
+    monkeypatch.setattr(gitmod, "show", show)
+
+    changes = collect_changes(repo, "main", "feature")
+    big = next(c for c in changes.files if c.diff.path == "big.py")
+
+    assert (big.head, big.skipped) == (None, "too_large")
+    assert "big.py" not in shown
 
 
 def test_files_past_the_cap_stay_in_the_diff_unparsed(

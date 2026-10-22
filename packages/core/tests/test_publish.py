@@ -1,6 +1,7 @@
 """Turning a review into a GitHub review: placement, repeats, the summary,
 and defused @mentions. Pure functions; no database or GitHub."""
 
+import html
 import re
 from dataclasses import replace
 from typing import Any
@@ -188,6 +189,40 @@ def test_no_mention_survives_in_any_text(payload: str, inline: bool) -> None:
         inline=inline,
     )
     assert _live_mentions(pub) == []
+
+
+# Security audit run-2 (D187): GitHub's Markdown decodes character references
+# in text, so these would read "@octocat" and "@org/team" once rendered.
+ENTITY_MENTIONS = [
+    "&#64;octocat",
+    "&#x40;octocat",
+    "&#X40;octocat",
+    "&commat;octocat",
+    "@&#111;ctocat",
+    "&#64;org/team",
+    "cc &#64;a and &#x40;b",
+]
+
+
+@pytest.mark.parametrize("payload", ENTITY_MENTIONS)
+def test_no_character_reference_decodes_into_a_mention(payload: str) -> None:
+    # What GitHub shows is the text with references decoded once: "&amp;" back
+    # to "&", the rest left literal. No live @mention may come out of it.
+    shown = html.unescape(defuse(payload))
+    assert re.findall(r"(?<![A-Za-z0-9])@[A-Za-z0-9]", shown) == []
+
+
+def test_text_reads_the_same_apart_from_mentions() -> None:
+    # Escaping an & that only looks like a reference ("AT&T;") changes the
+    # Markdown, not what it shows.
+    plain = "a & b, x&y, AT&T; 3 < 4"
+    assert html.unescape(defuse(plain)) == plain
+    assert defuse("ping @admin &#64;admin") == "ping @​admin &amp;#64;admin"
+
+
+def test_a_code_span_keeps_references_as_typed() -> None:
+    # Code spans never decode references, so they are left alone there.
+    assert _code("a&#64;b.py") == "`a&#64;b.py`"
 
 
 def test_a_file_path_cant_close_its_code_span() -> None:
