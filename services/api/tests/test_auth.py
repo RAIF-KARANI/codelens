@@ -124,6 +124,33 @@ def test_a_pinned_admin_needs_its_user_id_not_only_its_login() -> None:
     assert user("5", "old").is_admin  # type: ignore[attr-defined]  # unpinned: by login
 
 
+def test_a_non_admin_is_noted_once_in_the_log(caplog: pytest.LogCaptureFixture) -> None:
+    # D137 accepts per-installation visibility while the owner is the only
+    # user; the log says so the first time anyone else signs in (D192).
+    from fastapi.security import HTTPAuthorizationCredentials
+
+    from api import auth
+
+    settings = Settings(_env_file=None, api_jwt_secret=SECRET, api_admin_logins="boss:1001")
+
+    def call(sub: str, login: str) -> None:
+        token = issue_token(SECRET, sub, login, installations=[7])
+        auth.current_user(
+            settings, HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        )
+
+    auth._NOTED_USERS.discard("2002")
+    with caplog.at_level("WARNING", logger="api.auth"):
+        call("1001", "boss")  # an admin: nothing to say
+        call("2002", "friend")
+        call("2002", "friend")
+    notes = [r.getMessage() for r in caplog.records if "D137" in r.getMessage()]
+    assert notes == [
+        "dashboard user friend (not in API_ADMIN_LOGINS) sees every repo of their"
+        " installations [7], not only the repos they can open on GitHub (D137)"
+    ]
+
+
 def test_local_mode_makes_every_caller_the_owner() -> None:
     # CodeLens Desktop (D147): no sign-in, one owner; only its own dashboard
     # holds the secret, so a valid token is the owner's, whatever it says.

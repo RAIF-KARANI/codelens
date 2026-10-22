@@ -136,6 +136,11 @@ def test_github_settings_complete(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert "friend matched by login only" in allowed.detail
     assert allowed.fix is not None and "login:id" in allowed.fix
 
+    # The same for an admin listed by login alone (D192, security audit run-2).
+    admin = s.model_copy(update={"api_admin_logins": "Me"})
+    [warning] = [c for c in check_github_settings(admin) if c.name == "admin logins"]
+    assert warning.status is Status.WARN and "me matched by login only" in warning.detail
+
 
 def test_ports_held_by_our_own_containers_are_fine() -> None:
     # Postgres and Redis up, the API stopped: their ports are ours (seen on the

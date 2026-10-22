@@ -30,6 +30,14 @@ Environment variables:
 
 No Redis, GitHub or model settings: a demo runs on Postgres alone.
 
+**Scope `DATABASE_URL` and `API_JWT_SECRET` to Production only, and keep Git Fork
+Protection on** (Settings → Git). Vercel builds a Preview of every branch and pull request,
+running that branch's code (this project installs `services/api` and `packages/core` from
+it), and adding a variable ticks every environment by default. A Preview that got
+`DATABASE_URL` would hand the demo database's owner password to a pull request's code,
+which could write to the database directly, past the API's read-only mode (security audit
+run-2, D192).
+
 ## Checked locally
 
 A fresh Python 3.12 environment from `uv sync --frozen --no-dev --no-editable` in this
