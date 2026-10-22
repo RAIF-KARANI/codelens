@@ -86,6 +86,11 @@ def show(repo: Path, rev: str, path: str) -> bytes:
     return _git(repo, "show", f"{_rev(rev)}:{path}")
 
 
+def size(repo: Path, rev: str, path: str) -> int:
+    """A file's size in bytes at a revision, without reading it."""
+    return int(_git(repo, "cat-file", "-s", f"{_rev(rev)}:{path}"))
+
+
 def list_files(repo: Path, rev: str) -> list[str]:
     """All tracked file paths at a revision."""
     out = _git(repo, "-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", _rev(rev))

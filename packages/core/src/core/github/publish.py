@@ -39,6 +39,11 @@ _ORDER = {Severity.CRITICAL: 0, Severity.WARNING: 1, Severity.SUGGESTION: 2}
 # (D133) let "`x`@user", "é@user" and "_@user" through: a backtick can close
 # a span as well as open one, and Python's \w is wider than GitHub's.
 _MENTION = re.compile(r"(?<![A-Za-z0-9])@(?=[A-Za-z0-9])")
+# An HTML character reference: GitHub's Markdown decodes "&#64;", "&#x40;" and
+# "&commat;" into "@" in text, after any @ above was looked for, so
+# "&#64;user" or "@&#111;ctocat" became a live mention (D187; security audit
+# run-2). Escaping the & shows the reference as typed instead.
+_REFERENCE = re.compile(r"&(?=#[0-9]+;|#[xX][0-9A-Fa-f]+;|[A-Za-z][A-Za-z0-9]*;)")
 # GitHub caps a comment or review body at 65,536 characters.
 _MAX_BODY = 60_000
 
@@ -222,18 +227,21 @@ def build_failure_note(head_sha: str, reason: str) -> dict[str, Any]:
 
 def defuse(text: str) -> str:
     """Stop "@name" in model output from notifying anyone: a zero-width space
-    after the @ keeps it readable but breaks the mention."""
-    return _MENTION.sub("@​", text)
+    after the @ keeps it readable but breaks the mention. A character
+    reference is escaped first, so none can decode into a new "@name"."""
+    return _MENTION.sub("@​", _REFERENCE.sub("&amp;", text))
 
 
 def _code(text: str) -> str:
     """`text` as one inline code span, whatever backticks it holds: fenced by
     a longer run of backticks than any inside it (CommonMark), on one line,
-    and defused too (a zero-width space in code is harmless)."""
+    and its @ defused too (a zero-width space in code is harmless). Character
+    references stay as they are: a code span shows them literally, never
+    decoded, so escaping them would only garble the text."""
     text = " ".join(text.splitlines())
     fence = "`" * (max(map(len, re.findall(r"`+", text)), default=0) + 1)
     pad = " " if text.startswith("`") or text.endswith("`") else ""
-    return f"{fence}{pad}{defuse(text)}{pad}{fence}"
+    return f"{fence}{pad}{_MENTION.sub('@​', text)}{pad}{fence}"
 
 
 def _cap(text: str) -> str:

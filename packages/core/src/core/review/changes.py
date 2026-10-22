@@ -12,16 +12,23 @@ from pathlib import Path
 
 from core.diff import FileDiff, FileStatus, git, parse_unified_diff
 from core.parser.builder import TooComplex
+from core.parser.languages import detect
 from core.parser.modules import python_package_dirs
 from core.parser.repository import parse_source
 from core.parser.types import ParsedFile, SkippedFile
-from core.parser.walker import source_from_content
+from core.parser.walker import MAX_FILE_BYTES, source_from_content
 from core.review.seeds import Seed, find_seeds
 
 # Files parsed per review. Each changed file is read and parsed twice (base and
-# head), and nothing else bounds a PR's size, so the rest stay in the diff
-# unparsed: a review reads its first chunks anyway (max_chunks, D131).
+# head), so the rest stay in the diff unparsed: a review reads its first chunks
+# anyway (max_chunks, D131).
 MAX_REVIEW_FILES = 300
+# Source bytes read per review, both sides of every file together (D188). The
+# per-file limits (MAX_FILE_BYTES, TooComplex) bound one file, but 300 large
+# files, each changed by one line, kept about 3.6 GB on the shared review
+# worker (security audit run-2: a parsed file holds ~12x its size). Past this,
+# the rest stay in the diff unparsed, like files past MAX_REVIEW_FILES.
+MAX_REVIEW_SOURCE_BYTES = 8 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,15 +63,21 @@ def collect_changes(repo: Path, base: str, head: str) -> ChangeSet:
     base_packages = python_package_dirs(git.list_files(repo, base_sha))
 
     files: list[FileChange] = []
+    read = 0  # source bytes read so far, against MAX_REVIEW_SOURCE_BYTES
     for index, diff in enumerate(diffs):
         if index >= MAX_REVIEW_FILES:
             files.append(FileChange(diff, None, None, (), "too_many_files"))
             continue
+        if read >= MAX_REVIEW_SOURCE_BYTES:
+            files.append(FileChange(diff, None, None, (), "review_too_large"))
+            continue
         head_file, base_file, skipped = None, None, None
         if diff.new_path and diff.status is not FileStatus.DELETED and not diff.binary:
-            head_file, skipped = _parse_at(repo, head_sha, diff.new_path, head_packages)
+            head_file, skipped, size = _parse_at(repo, head_sha, diff.new_path, head_packages)
+            read += size
         if diff.old_path and diff.status is not FileStatus.ADDED and not diff.binary:
-            base_file, base_skipped = _parse_at(repo, base_sha, diff.old_path, base_packages)
+            base_file, base_skipped, size = _parse_at(repo, base_sha, diff.old_path, base_packages)
+            read += size
             skipped = skipped or base_skipped
         if diff.binary:
             skipped = "binary"
@@ -75,15 +88,21 @@ def collect_changes(repo: Path, base: str, head: str) -> ChangeSet:
 
 def _parse_at(
     repo: Path, rev: str, path: str, package_dirs: frozenset[str]
-) -> tuple[ParsedFile | None, str | None]:
+) -> tuple[ParsedFile | None, str | None, int]:
+    """(the parsed file, why it wasn't parsed, the bytes read). A file over the
+    per-file limit is skipped by its size, without reading it."""
+    if detect(path) is None:
+        return None, "not_source", 0
+    if git.size(repo, rev, path) > MAX_FILE_BYTES:
+        return None, "too_large", 0
     content = git.show(repo, rev, path)
     source = source_from_content(path, content)
     if source is None:
-        return None, "not_source"
+        return None, "not_source", len(content)
     if isinstance(source, SkippedFile):
-        return None, source.reason
+        return None, source.reason, len(content)
     try:
-        return parse_source(source, package_dirs), None
+        return parse_source(source, package_dirs), None, len(content)
     except TooComplex:
         # Deeply nested or huge definitions: skipped, as minified files are (D131).
-        return None, "too_complex"
+        return None, "too_complex", len(content)
